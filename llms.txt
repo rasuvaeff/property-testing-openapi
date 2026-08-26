@@ -1,0 +1,16 @@
+# property-testing-openapi
+
+Namespace: `Rasuvaeff\PropertyTesting\OpenApi`.
+
+Purpose: create reproducible, JSON-compatible OpenAPI request cases and turn
+them into PSR-7 requests before an explicit transport is called.
+
+Public API:
+- `SchemaArbitraryCompiler::compile(array $schema): ArbitraryInterface`
+- `RequestCaseArbitrary::forOperation(Operation): ArbitraryInterface`
+- `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
+- `UnsupportedGeneration` for unsupported schema/body/parameter input.
+
+`RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
+an optional `{mediaType, encoding: 'json', value}` body, and `misuse: null`.
+It must contain only JSON-compatible values and never secrets or PSR-7 objects.
