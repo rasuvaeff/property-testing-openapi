@@ -35,8 +35,10 @@ $contract->validateRequest($request)->assertValid();
 ```
 
 `RequestCaseData` - JSON-compatible associative array с раздельными `path`,
-`query`, `headers`, `cookies` и optional JSON `body`. В нём нет credentials,
-поэтому case можно сохранять в property corpus.
+`query`, `headers`, `cookies` и optional JSON `body`. Required parameters и
+request bodies присутствуют всегда; для optional parameters и JSON body
+генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
+case можно сохранять в property corpus.
 
 Неподдерживаемые schema assertions и non-JSON request bodies бросают
 `UnsupportedGeneration`; они не расширяются молча до произвольных строк.

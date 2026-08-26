@@ -60,16 +60,19 @@ final readonly class RequestCaseArbitrary
             if ($parameter['in'] !== $location) {
                 continue;
             }
-            $shape[$parameter['name']] = Gen::map(
+            $value = Gen::map(
                 $this->schemas->compile($parameter['schema']),
                 fn(mixed $value): string|array => $this->wireValue($value, $parameter['schema']),
             );
+            $shape[$parameter['name']] = $parameter['required']
+                ? $this->included($value)
+                : $this->optional($value);
         }
         if ($shape === []) {
             return Gen::constant([]);
         }
 
-        return Gen::record($shape);
+        return Gen::map(Gen::record($shape), fn(array $values): array => $this->includedValues($values));
     }
 
     private function body(Operation $operation): ArbitraryInterface
@@ -91,14 +94,116 @@ final readonly class RequestCaseArbitrary
             }
             /** @var array<string, mixed> $schema */
 
-            return Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
+            $body = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
                 'mediaType' => $mediaType,
                 'encoding' => 'json',
                 'value' => $value,
             ]);
+
+            if (($operation->requestBody['required'] ?? false) === true) {
+                return $body;
+            }
+
+            return Gen::map($this->optional($body), fn(array $choice): ?array => $this->bodyChoice($choice));
         }
 
         throw new UnsupportedGeneration('Request body has no supported JSON media type');
+    }
+
+    private function included(ArbitraryInterface $value): ArbitraryInterface
+    {
+        return Gen::map($value, static fn(mixed $value): array => ['included' => true, 'value' => $value]);
+    }
+
+    private function optional(ArbitraryInterface $value): ArbitraryInterface
+    {
+        return Gen::frequency([
+            [1, Gen::constant(['included' => false])],
+            [1, $this->included($value)],
+        ]);
+    }
+
+    /**
+     * @param array<array-key, mixed> $values
+     * @return array<string, string|list<string>|array<string, string>>
+     */
+    private function includedValues(array $values): array
+    {
+        $result = [];
+        foreach ($values as $name => $choice) {
+            if (!is_string($name) || !is_array($choice) || !array_key_exists('included', $choice) || !is_bool($choice['included'])) {
+                throw new \LogicException('Generated parameter choice has an invalid shape');
+            }
+            if (!$choice['included']) {
+                continue;
+            }
+            if (!array_key_exists('value', $choice)) {
+                throw new \LogicException('Included parameter value is missing');
+            }
+            $result[$name] = $this->parameterValue($choice['value']);
+        }
+
+        return $result;
+    }
+
+    /** @return string|list<string>|array<string, string> */
+    private function parameterValue(mixed $value): string|array
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+        if (!is_array($value)) {
+            throw new \LogicException('Included parameter value has an invalid type');
+        }
+        if (array_is_list($value)) {
+            $list = [];
+            foreach ($value as $item) {
+                if (!is_string($item)) {
+                    throw new \LogicException('Included parameter list has an invalid shape');
+                }
+                $list[] = $item;
+            }
+
+            return $list;
+        }
+        $object = [];
+        foreach (array_keys($value) as $key) {
+            if (!is_string($key) || !is_string($value[$key])) {
+                throw new \LogicException('Included parameter object has an invalid shape');
+            }
+            $object[$key] = $value[$key];
+        }
+
+        return $object;
+    }
+
+    /**
+     * @param array<array-key, mixed> $choice
+     * @return null|array{mediaType: string, encoding: 'json', value: mixed}
+     */
+    private function bodyChoice(array $choice): ?array
+    {
+        $included = $choice['included'] ?? null;
+        if (!is_bool($included)) {
+            throw new \LogicException('Generated body choice has an invalid shape');
+        }
+        if (!$included) {
+            return null;
+        }
+        $body = $choice['value'] ?? null;
+        if (!is_array($body)) {
+            throw new \LogicException('Included request body has an invalid shape');
+        }
+        $mediaType = $body['mediaType'] ?? null;
+        if (!is_string($mediaType) || ($body['encoding'] ?? null) !== 'json' || !array_key_exists('value', $body)) {
+            throw new \LogicException('Included request body has an invalid shape');
+        }
+
+        return [
+            'mediaType' => $mediaType,
+            'encoding' => 'json',
+            'value' => $body['value'],
+        ];
     }
 
     /** @param array<string, mixed> $schema */

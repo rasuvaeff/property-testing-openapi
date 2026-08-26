@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\Property;
@@ -26,6 +27,10 @@ final class RequestCaseArbitraryTest
         $factory = new Psr17Factory();
         $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('pets.update'), $case);
 
+        Classify::cover(condition: array_key_exists('tags', $case['query']), label: 'optional query present', minPercent: 20.0);
+        Classify::cover(condition: !array_key_exists('tags', $case['query']), label: 'optional query absent', minPercent: 20.0);
+        Classify::cover(condition: $case['body'] !== null, label: 'optional body present', minPercent: 20.0);
+        Classify::cover(condition: $case['body'] === null, label: 'optional body absent', minPercent: 20.0);
         Assert::true($contract->validateRequest($request)->isValid());
     }
 
@@ -53,7 +58,7 @@ final class RequestCaseArbitraryTest
                             ['name' => 'session', 'in' => 'cookie', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 5]],
                         ],
                         'requestBody' => [
-                            'required' => true,
+                            'required' => false,
                             'content' => [
                                 'application/json' => [
                                     'schema' => [

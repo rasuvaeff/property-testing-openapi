@@ -14,3 +14,5 @@ Public API:
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
 an optional `{mediaType, encoding: 'json', value}` body, and `misuse: null`.
 It must contain only JSON-compatible values and never secrets or PSR-7 objects.
+Required parameters and request bodies are always generated. Optional parameters
+and JSON bodies are generated as both present and absent branches.

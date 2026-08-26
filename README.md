@@ -36,9 +36,10 @@ $contract->validateRequest($request)->assertValid();
 ```
 
 `RequestCaseData` is an associative JSON-compatible array with independent
-`path`, `query`, `headers`, `cookies`, and optional JSON `body` maps. It does
-not include security credentials and can therefore be persisted by the property
-corpus.
+`path`, `query`, `headers`, `cookies`, and optional JSON `body` maps. Required
+parameters and request bodies are always present; optional parameters and JSON
+bodies take both present and absent branches. It does not include security
+credentials and can therefore be persisted by the property corpus.
 
 Unsupported schema assertions and non-JSON request bodies throw
 `UnsupportedGeneration`; they are never silently widened to arbitrary strings.
