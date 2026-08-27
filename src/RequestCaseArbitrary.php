@@ -217,15 +217,13 @@ final readonly class RequestCaseArbitrary
             return array_map($this->scalar(...), $value);
         }
         if ($this->isObjectSchema($schema)) {
-            if (!is_array($value) || array_is_list($value)) {
+            if (!is_array($value) || ($value !== [] && array_is_list($value))) {
                 throw new \LogicException('Object schema arbitrary must produce an object map');
             }
+            /** @var array<array-key, mixed> $value */
             $result = [];
             foreach (array_keys($value) as $key) {
-                if (!is_string($key)) {
-                    throw new \LogicException('Object schema arbitrary must produce string keys');
-                }
-                $result[$key] = $this->scalar($value[$key]);
+                $result[(string) $key] = $this->scalar($value[$key]);
             }
 
             return $result;

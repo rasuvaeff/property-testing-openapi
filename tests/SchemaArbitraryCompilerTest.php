@@ -38,7 +38,9 @@ final class SchemaArbitraryCompilerTest
             Assert::true(is_array($value));
             Assert::true(is_int($value['id']) && $value['id'] >= 2 && $value['id'] <= 9);
             Assert::true(is_string($value['name']) && mb_strlen($value['name']) >= 1 && mb_strlen($value['name']) <= 8);
-            Assert::true(is_array($value['tags']) && count($value['tags']) >= 1 && count($value['tags']) <= 3);
+            if (array_key_exists('tags', $value)) {
+                Assert::true(is_array($value['tags']) && count($value['tags']) >= 1 && count($value['tags']) <= 3);
+            }
         }
     }
 
@@ -52,25 +54,133 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
-    public function rejectsUnimplementedAssertionKeywords(): void
+    public function supportsNullableFormatsAndMultiples(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
+        $compiler = new SchemaArbitraryCompiler();
 
-        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'pattern' => '[a-z]+']);
+        $nullable = Gen::sample($compiler->compile(['type' => ['string', 'null'], 'minLength' => 2]), count: 30, seed: 11);
+        Assert::true(in_array(null, $nullable, strict: true));
+        foreach ($nullable as $value) {
+            Assert::true($value === null || (is_string($value) && strlen($value) >= 2));
+        }
+
+        foreach (Gen::sample($compiler->compile(['type' => 'integer', 'minimum' => -20, 'maximum' => 20, 'multipleOf' => 4]), count: 20, seed: 7) as $value) {
+            Assert::true(is_int($value) && $value % 4 === 0);
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'string', 'format' => 'uuid']), count: 5, seed: 3) as $value) {
+            Assert::true(is_string($value) && preg_match('/^[0-9a-f-]{36}$/', $value) === 1);
+        }
     }
 
-    public function rejectsUnimplementedFormats(): void
+    public function optionalObjectPropertiesAreGeneratedAsBranches(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
-
-        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'uuid']);
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'required' => ['id'],
+            'properties' => [
+                'id' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 5],
+                'label' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+            ],
+        ]);
+        $values = Gen::sample($arbitrary, count: 40, seed: 5);
+        Assert::true(count(array_filter($values, static fn(mixed $value): bool => is_array($value) && array_key_exists('label', $value))) > 0);
+        Assert::true(count(array_filter($values, static fn(mixed $value): bool => is_array($value) && !array_key_exists('label', $value))) > 0);
+        foreach ($values as $value) {
+            Assert::true(is_array($value) && array_key_exists('id', $value));
+        }
     }
 
-    public function rejectsUnimplementedObjectCardinality(): void
+    public function rejectsUnsupportedPatternSyntax(): void
     {
         Expect::exception(UnsupportedGeneration::class);
 
-        (new SchemaArbitraryCompiler())->compile(['type' => 'object', 'maxProperties' => 1]);
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'pattern' => '(?=x)']);
+    }
+
+    public function rejectsUnknownFormats(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'binary']);
+    }
+
+    public function honorsObjectCardinalityAndAdditionalPropertyPolicy(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'minProperties' => 2,
+            'maxProperties' => 3,
+            'additionalProperties' => false,
+            'properties' => [
+                'id' => ['type' => 'integer'],
+                'label' => ['type' => 'string'],
+                'active' => ['type' => 'boolean'],
+            ],
+        ];
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: 13) as $value) {
+            Assert::true(is_array($value));
+            Assert::true(count($value) >= 2 && count($value) <= 3);
+            Assert::true(array_diff(array_keys($value), ['id', 'label', 'active']) === []);
+        }
+    }
+
+    public function rejectsImpossibleObjectCardinality(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'minProperties' => 2,
+            'additionalProperties' => false,
+            'properties' => ['id' => ['type' => 'integer']],
+        ]);
+    }
+
+    public function generatesSchemaConstrainedAdditionalProperties(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'minProperties' => 2,
+            'maxProperties' => 2,
+            'additionalProperties' => [
+                'type' => 'integer',
+                'minimum' => 7,
+                'maximum' => 7,
+            ],
+            'properties' => [],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 20, seed: 19) as $value) {
+            Assert::true(is_array($value) && count($value) === 2);
+            Assert::same(array_values($value), [7, 7]);
+        }
+    }
+
+    public function rejectsInvalidAdditionalPropertiesShape(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'additionalProperties' => ['string'],
+        ]);
+    }
+
+    public function acceptsAnEmptyAdditionalPropertiesSchema(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'minProperties' => 1,
+            'maxProperties' => 1,
+            'additionalProperties' => [],
+            'properties' => [],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 20, seed: 23) as $value) {
+            Assert::true(is_array($value) && count($value) === 1);
+            Assert::true(is_string(array_values($value)[0]) || is_int(array_values($value)[0])
+                || is_bool(array_values($value)[0]) || array_values($value)[0] === null);
+        }
     }
 
     public function rejectsUnsupportedNumericExclusiveBounds(): void

@@ -9,6 +9,8 @@ Public API:
 - `SchemaArbitraryCompiler::compile(array $schema): ArbitraryInterface`
 - `RequestCaseArbitrary::forOperation(Operation): ArbitraryInterface`
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
+- `TransportInterface::send(RequestInterface): ResponseInterface`
+- `CallableTransport` and `Psr15Transport` execute an explicit transport boundary.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
@@ -16,3 +18,5 @@ an optional `{mediaType, encoding: 'json', value}` body, and `misuse: null`.
 It must contain only JSON-compatible values and never secrets or PSR-7 objects.
 Required parameters and request bodies are always generated. Optional parameters
 and JSON bodies are generated as both present and absent branches.
+Object generation supports bounded `minProperties`, `maxProperties`, and
+boolean or schema-valued `additionalProperties`.

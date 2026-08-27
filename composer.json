@@ -22,8 +22,10 @@
     },
     "require": {
         "php": "8.3 - 8.5",
+        "ext-mbstring": "*",
         "psr/http-factory": "^1.1",
         "psr/http-message": "^1.1 || ^2.0",
+        "psr/http-server-handler": "^1.0",
         "rasuvaeff/openapi-contract": "dev-main",
         "rasuvaeff/property-testing-core": "^0.4"
     },
@@ -33,8 +35,9 @@
         "infection/infection": "^0.35",
         "maglnet/composer-require-checker": "^4.17",
         "nyholm/psr7": "^1.8",
-        "rasuvaeff/property-testing-testo": "dev-main",
+        "rasuvaeff/property-testing-testo": "^0.6",
         "rasuvaeff/rector-named-literals": "^1.0",
+        "rasuvaeff/understudy-testo": "^0.1",
         "rector/rector": "^2.4",
         "roave/backward-compatibility-check": "^8.0",
         "testo/bridge-infection": "^0.1.6",
@@ -45,13 +48,6 @@
         {
             "type": "path",
             "url": "../openapi-contract",
-            "options": {
-                "symlink": false
-            }
-        },
-        {
-            "type": "path",
-            "url": "../property-testing-testo",
             "options": {
                 "symlink": false
             }

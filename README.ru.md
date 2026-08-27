@@ -40,7 +40,26 @@ request bodies присутствуют всегда; для optional parameters
 генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
 case можно сохранять в property corpus.
 
+Для object schemas поддерживаются `minProperties`, `maxProperties` и boolean-
+или schema-valued `additionalProperties` в пределах generation budget.
+
 Неподдерживаемые schema assertions и non-JSON request bodies бросают
 `UnsupportedGeneration`; они не расширяются молча до произвольных строк.
+
+## Transports
+
+Исполнение всегда явно задаётся пользователем. Для closure используется
+`CallableTransport`, для in-process PSR-15 handler - `Psr15Transport`:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\Psr15Transport;
+
+$transport = new Psr15Transport($handler, $serverRequestFactory);
+$response = $transport->send($request);
+```
+
+Адаптеры не выполняют сетевой I/O и не добавляют credentials. Исключение
+transport пробрасывается вызывающему коду; будущий suite layer будет
+классифицировать его отдельно от contract violations.
 
 Runnable script находится в [examples](examples/README.md).

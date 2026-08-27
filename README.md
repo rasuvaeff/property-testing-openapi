@@ -41,7 +41,26 @@ parameters and request bodies are always present; optional parameters and JSON
 bodies take both present and absent branches. It does not include security
 credentials and can therefore be persisted by the property corpus.
 
+Object schemas honor `minProperties`, `maxProperties`, and boolean or
+schema-valued `additionalProperties` within the generation budget.
+
 Unsupported schema assertions and non-JSON request bodies throw
 `UnsupportedGeneration`; they are never silently widened to arbitrary strings.
+
+## Transports
+
+Execution is explicit. Use `CallableTransport` for a closure or
+`Psr15Transport` for an in-process PSR-15 handler:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\Psr15Transport;
+
+$transport = new Psr15Transport($handler, $serverRequestFactory);
+$response = $transport->send($request);
+```
+
+Neither adapter performs network I/O or adds credentials. A transport exception
+propagates to the caller; the future suite layer will classify it separately
+from contract violations.
 
 See [examples](examples/README.md) for the runnable script.

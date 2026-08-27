@@ -111,9 +111,14 @@ final readonly class ParameterSerializer
     /** @param string|list<string>|array<string, string> $value */
     private function deepObject(string $name, string|array $value, bool $allowReserved): string
     {
-        if (is_string($value) || array_is_list($value)) {
+        // PHP represents both an empty object and an empty list as `[]`. An
+        // empty deepObject has no pairs on the wire, so preserve it as the
+        // valid empty object rather than rejecting it as a list.
+        if (is_string($value) || ($value !== [] && array_is_list($value))) {
             throw new UnsupportedGeneration('deepObject parameters require an object value');
         }
+
+        /** @var array<array-key, mixed> $value */
 
         $parts = [];
         foreach ($this->object($value) as $key => $item) {
@@ -165,7 +170,7 @@ final readonly class ParameterSerializer
      */
     private function object(array $value): array
     {
-        if (array_is_list($value)) {
+        if ($value !== [] && array_is_list($value)) {
             throw new UnsupportedGeneration('Parameter requires an object value');
         }
         $result = [];

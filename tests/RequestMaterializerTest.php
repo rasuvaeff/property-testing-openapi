@@ -55,4 +55,34 @@ final class RequestMaterializerTest
         Assert::same($request->getHeaderLine('Cookie'), 'session=abc');
         Assert::true($contract->validateRequest($request)->isValid());
     }
+
+    public function acceptsAnEmptyDeepObject(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets' => ['get' => [
+                'operationId' => 'pets.list',
+                'parameters' => [[
+                    'name' => 'filter',
+                    'in' => 'query',
+                    'style' => 'deepObject',
+                    'schema' => ['type' => 'object', 'properties' => ['state' => ['type' => 'string']]],
+                ]],
+                'responses' => ['200' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('pets.list'), [
+            'operationKey' => 'pets.list',
+            'path' => [],
+            'query' => ['filter' => []],
+            'headers' => [],
+            'cookies' => [],
+            'body' => null,
+            'misuse' => null,
+        ]);
+
+        Assert::same($request->getUri()->getQuery(), '');
+        Assert::true($contract->validateRequest($request)->isValid());
+    }
 }
