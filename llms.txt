@@ -13,7 +13,8 @@ Public API:
 - `CallableTransport` and `Psr15Transport` execute an explicit transport boundary.
 - `SecurityRequirement`, `CredentialsProviderInterface`, `CredentialsUnavailable`,
   and `SecuritySelector` model OR alternatives and AND schemes without putting
-  secrets in generated cases.
+  secrets in generated cases; an empty requirement object selects anonymous
+  credentials without calling the provider.
 - `Credentials` applies secret headers/query/cookies at materialization time;
   pass the selected credentials as the optional third argument to
   `RequestMaterializer::materialize`.

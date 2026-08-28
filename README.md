@@ -46,8 +46,9 @@ schema-valued `additionalProperties` within the generation budget.
 
 ## Security Credentials
 
-Security requirements are inherited by operations and an explicit empty
-requirement means anonymous access. `SecuritySelector` tries alternatives in
+Security requirements are inherited by operations; an explicit empty
+`security` list means anonymous access, and an empty requirement object (`{}`)
+is an anonymous alternative. `SecuritySelector` tries alternatives in
 document order through a `CredentialsProviderInterface`; a provider can reject
 one alternative with `CredentialsUnavailable`:
 

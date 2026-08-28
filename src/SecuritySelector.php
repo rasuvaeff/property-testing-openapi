@@ -24,6 +24,10 @@ final readonly class SecuritySelector
         foreach ($operation->security as $rawRequirement) {
             $requirement = new SecurityRequirement($rawRequirement);
 
+            if ($requirement->schemes === []) {
+                return ['requirement' => $requirement, 'credentials' => new Credentials()];
+            }
+
             try {
                 $credentials = $provider->provide($requirement);
             } catch (CredentialsUnavailable) {

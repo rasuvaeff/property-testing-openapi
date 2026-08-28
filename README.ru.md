@@ -45,8 +45,9 @@ case можно сохранять в property corpus.
 
 ## Credentials для security
 
-Security requirements наследуются операциями, а явный пустой requirement
-означает anonymous access. `SecuritySelector` пробует alternatives в порядке
+Security requirements наследуются операциями; явный пустой список `security`
+означает anonymous access, а пустой requirement object (`{}`) - anonymous
+alternative. `SecuritySelector` пробует alternatives в порядке
 документа через `CredentialsProviderInterface`; provider может отклонить одну
 alternative исключением `CredentialsUnavailable`:
 

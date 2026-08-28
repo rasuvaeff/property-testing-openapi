@@ -65,6 +65,24 @@ final class SecurityTest
         verify(fn() => $provider->provide(Arg::any()), never: true);
     }
 
+    public function selectsAnEmptySecurityRequirementWithoutProviderCall(): void
+    {
+        $operation = new Operation(
+            key: 'health',
+            operationId: 'health',
+            method: 'GET',
+            path: '/health',
+            security: [[]],
+        );
+        $provider = Understudy::for(CredentialsProviderInterface::class);
+
+        $selected = (new SecuritySelector())->select($operation, $provider);
+
+        Assert::same($selected['requirement']->schemes, []);
+        Assert::same($selected['credentials']->headers, []);
+        verify(fn() => $provider->provide(Arg::any()), never: true);
+    }
+
     public function failsWhenNoAlternativeCanBeSatisfied(): void
     {
         Expect::exception(CredentialsUnavailable::class);
