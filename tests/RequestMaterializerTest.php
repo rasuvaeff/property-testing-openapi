@@ -6,10 +6,13 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
+use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 
 #[Test]
@@ -84,5 +87,119 @@ final class RequestMaterializerTest
 
         Assert::same($request->getUri()->getQuery(), '');
         Assert::true($contract->validateRequest($request)->isValid());
+    }
+
+    public function preservesNestedJsonObjectsAndArrays(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/items' => ['post' => [
+                'operationId' => 'items.create',
+                'requestBody' => [
+                    'required' => true,
+                    'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['items', 'metadata'],
+                        'properties' => [
+                            'items' => ['type' => 'array', 'items' => [
+                                'type' => 'object',
+                                'required' => ['name'],
+                                'properties' => ['name' => ['type' => 'string']],
+                            ]],
+                            'metadata' => ['type' => 'object'],
+                        ],
+                    ]]],
+                ],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('items.create'), [
+            'operationKey' => 'items.create',
+            'path' => [],
+            'query' => [],
+            'headers' => [],
+            'cookies' => [],
+            'body' => [
+                'mediaType' => 'application/json',
+                'encoding' => 'json',
+                'value' => ['items' => [['name' => 'first'], ['name' => 'second']], 'metadata' => []],
+            ],
+            'misuse' => null,
+        ]);
+
+        Assert::same((string) $request->getBody(), '{"items":[{"name":"first"},{"name":"second"}],"metadata":{}}');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/json');
+        Assert::true($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsCaseForAnotherOperation(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize($this->bodyOperation([]), $this->bodyCase('other', null));
+    }
+
+    public function rejectsMissingBodyContentDefinition(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => 'invalid']),
+            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'value']),
+        );
+    }
+
+    public function rejectsUndeclaredBodyMediaType(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['type' => 'string']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/problem+json', 'encoding' => 'json', 'value' => 'value']),
+        );
+    }
+
+    public function rejectsListBodySchema(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['invalid']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'value']),
+        );
+    }
+
+    /** @param array<array-key, mixed> $requestBody */
+    private function bodyOperation(array $requestBody): Operation
+    {
+        return new Operation(
+            key: 'body.test',
+            operationId: 'body.test',
+            method: 'POST',
+            path: '/body',
+            requestBody: $requestBody,
+        );
+    }
+
+    /**
+     * @param null|array{mediaType: string, encoding: 'json', value: mixed} $body
+     * @return array{operationKey: string, path: array<never, never>, query: array<never, never>, headers: array<never, never>, cookies: array<never, never>, body: null|array{mediaType: string, encoding: 'json', value: mixed}, misuse: null}
+     */
+    private function bodyCase(string $operationKey, ?array $body): array
+    {
+        return [
+            'operationKey' => $operationKey,
+            'path' => [],
+            'query' => [],
+            'headers' => [],
+            'cookies' => [],
+            'body' => $body,
+            'misuse' => null,
+        ];
     }
 }

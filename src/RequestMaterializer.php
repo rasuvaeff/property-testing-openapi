@@ -117,7 +117,7 @@ final readonly class RequestMaterializer
 
             return array_map(fn(mixed $item): mixed => $this->jsonValue($item, $items), $value);
         }
-        if ($this->isObjectSchema($schema) && is_array($value) && !array_is_list($value)) {
+        if ($this->isObjectSchema($schema) && is_array($value) && ($value === [] || !array_is_list($value))) {
             $properties = $this->schemaObject($schema['properties'] ?? [], 'Object properties must be an object');
             /** @var array<string, mixed> $result */
             $result = [];
@@ -150,7 +150,10 @@ final readonly class RequestMaterializer
     /** @return array<string, mixed> */
     private function schemaObject(mixed $value, string $message): array
     {
-        if (!is_array($value) || array_is_list($value)) {
+        if (!is_array($value)) {
+            throw new UnsupportedGeneration($message);
+        }
+        if ($value !== [] && array_is_list($value)) {
             throw new UnsupportedGeneration($message);
         }
 

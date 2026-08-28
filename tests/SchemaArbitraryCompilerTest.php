@@ -9,6 +9,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -70,6 +71,148 @@ final class SchemaArbitraryCompilerTest
         foreach (Gen::sample($compiler->compile(['type' => 'string', 'format' => 'uuid']), count: 5, seed: 3) as $value) {
             Assert::true(is_string($value) && preg_match('/^[0-9a-f-]{36}$/', $value) === 1);
         }
+        $nullable = Gen::sample($compiler->compile(['type' => 'string', 'nullable' => true, 'const' => 'value']), count: 30, seed: 73);
+        Assert::true(in_array(null, $nullable, strict: true));
+        Assert::true(in_array('value', $nullable, strict: true));
+    }
+
+    public function honorsPatternAndLengthBounds(): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'pattern' => '^x+$',
+            'minLength' => 2,
+            'maxLength' => 4,
+        ]), count: 20, seed: 61) as $value) {
+            Assert::true(is_string($value) && preg_match('/^x+$/', $value) === 1);
+            Assert::true(mb_strlen($value) >= 2 && mb_strlen($value) <= 4);
+        }
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'pattern' => '^xx$',
+            'minLength' => 2,
+            'maxLength' => 2,
+        ]), count: 5, seed: 79) as $value) {
+            Assert::same($value, 'xx');
+        }
+    }
+
+    public function generatesSupportedDateFormats(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach (['date', 'date-time'] as $format) {
+            foreach (Gen::sample($compiler->compile(['type' => 'string', 'format' => $format]), count: 5, seed: 67) as $value) {
+                Assert::true(is_string($value));
+                Assert::true($format === 'date'
+                    ? preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1
+                    : preg_match('/^\d{4}-\d{2}-\d{2}T/', $value) === 1);
+            }
+        }
+    }
+
+    #[DataProvider('stringFormatCases')]
+    public function generatesEverySupportedStringFormat(string $format, string $pattern): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format]), count: 10, seed: 97) as $value) {
+            Assert::true(is_string($value) && preg_match($pattern, $value) === 1);
+        }
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function stringFormatCases(): iterable
+    {
+        yield 'email' => ['email', '/^[^@]+@[^@]+\\.[^@]+$/'];
+        yield 'ipv4' => ['ipv4', '/^(?:\\d{1,3}\\.){3}\\d{1,3}$/'];
+        yield 'uri' => ['uri', '/^[a-z]+:\\/\\//'];
+        yield 'uri-reference' => ['uri-reference', '/^.+$/'];
+        yield 'url' => ['url', '/^[a-z]+:\\/\\//'];
+    }
+
+    public function honorsExclusiveNumberBoundaries(): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => 1.0,
+            'maximum' => 2.0,
+            'exclusiveMinimum' => true,
+            'exclusiveMaximum' => true,
+        ]), count: 20, seed: 101) as $value) {
+            Assert::true(is_float($value) && $value > 1.0 && $value < 2.0);
+        }
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => 1.0,
+            'maximum' => 1.2,
+            'exclusiveMinimum' => true,
+        ]), count: 20, seed: 109) as $value) {
+            Assert::true(is_float($value) && $value > 1.0 && $value <= 1.2);
+        }
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => 1.0,
+            'maximum' => 1.2,
+            'exclusiveMaximum' => true,
+        ]), count: 20, seed: 113) as $value) {
+            Assert::true(is_float($value) && $value >= 1.0 && $value < 1.2);
+        }
+    }
+
+    public function honorsNumberBoundsAndMultiples(): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => -4.0,
+            'maximum' => 4.0,
+            'multipleOf' => 2,
+        ]), count: 20, seed: 71) as $value) {
+            Assert::true(is_float($value) && $value >= -4.0 && $value <= 4.0);
+            Assert::same(fmod($value, 2.0), 0.0);
+        }
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => -4.0,
+            'maximum' => 4.0,
+            'multipleOf' => 2.5,
+        ]), count: 50, seed: 107);
+        foreach ($values as $value) {
+            Assert::true(in_array($value, [-2.5, 0.0, 2.5], strict: true));
+        }
+    }
+
+    public function honorsNonAlignedIntegerMultipleBounds(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'integer',
+            'minimum' => -5,
+            'maximum' => 5,
+            'multipleOf' => 4,
+        ]), count: 100, seed: 89);
+
+        Assert::true(in_array(-4, $values, strict: true));
+        Assert::true(in_array(0, $values, strict: true));
+        Assert::true(in_array(4, $values, strict: true));
+        foreach ($values as $value) {
+            Assert::true(is_int($value) && $value >= -5 && $value <= 5 && $value % 4 === 0);
+        }
+    }
+
+    #[DataProvider('invalidMultipleCases')]
+    public function rejectsInvalidMultipleOf(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function invalidMultipleCases(): iterable
+    {
+        yield 'integer zero' => [['type' => 'integer', 'multipleOf' => 0]];
+        yield 'integer float' => [['type' => 'integer', 'multipleOf' => 2.5]];
+        yield 'number zero' => [['type' => 'number', 'multipleOf' => 0]];
+        yield 'number negative' => [['type' => 'number', 'multipleOf' => -1]];
+        yield 'number infinite' => [['type' => 'number', 'multipleOf' => INF]];
+        yield 'number string' => [['type' => 'number', 'multipleOf' => '2']];
     }
 
     public function optionalObjectPropertiesAreGeneratedAsBranches(): void
@@ -195,6 +338,154 @@ final class SchemaArbitraryCompilerTest
         Expect::exception(UnsupportedGeneration::class);
 
         (new SchemaArbitraryCompiler())->compile(['type' => 'object', 'required' => ['id'], 'properties' => []]);
+    }
+
+    #[DataProvider('invalidSchemaCases')]
+    public function rejectsMalformedSchemaShapes(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function invalidSchemaCases(): iterable
+    {
+        yield 'invalid enum shape' => [['enum' => 'value']];
+        yield 'empty enum' => [['enum' => []]];
+        yield 'unknown type' => [['type' => 'binary']];
+        yield 'invalid type union' => [['type' => ['string', 42]]];
+        yield 'invalid integer minimum' => [['type' => 'integer', 'minimum' => 1.5]];
+        yield 'invalid integer maximum' => [['type' => 'integer', 'maximum' => '10']];
+        yield 'invalid number minimum' => [['type' => 'number', 'minimum' => '0']];
+        yield 'invalid string min length' => [['type' => 'string', 'minLength' => -1]];
+        yield 'invalid string max length' => [['type' => 'string', 'maxLength' => 1.5]];
+        yield 'invalid array items' => [['type' => 'array', 'items' => ['string']]];
+        yield 'invalid array min items' => [['type' => 'array', 'items' => ['type' => 'string'], 'minItems' => -1]];
+        yield 'invalid object properties' => [['type' => 'object', 'properties' => ['id']]];
+        yield 'invalid object required' => [['type' => 'object', 'required' => ['id' => true], 'properties' => []]];
+        yield 'invalid additional properties' => [['type' => 'object', 'additionalProperties' => ['string']]];
+        yield 'unsupported not' => [['type' => 'string', 'not' => ['const' => 'x']]];
+    }
+
+    #[DataProvider('emptyExclusiveSchemas')]
+    public function rejectsExclusiveBoundsWithNoValue(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function emptyExclusiveSchemas(): iterable
+    {
+        yield 'integer exclusive minimum' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 0, 'exclusiveMinimum' => true]];
+        yield 'integer exclusive maximum' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 0, 'exclusiveMaximum' => true]];
+        yield 'number exclusive minimum' => [['type' => 'number', 'minimum' => 0, 'maximum' => 0, 'exclusiveMinimum' => true]];
+        yield 'number exclusive maximum' => [['type' => 'number', 'minimum' => 0, 'maximum' => 0, 'exclusiveMaximum' => true]];
+    }
+
+    public function honorsExclusiveIntegerBoundaries(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'integer',
+            'minimum' => 1,
+            'maximum' => 3,
+            'exclusiveMinimum' => true,
+            'exclusiveMaximum' => true,
+        ]), count: 10, seed: 47);
+
+        foreach ($values as $value) {
+            Assert::true(is_int($value) && $value === 2);
+        }
+    }
+
+    public function honorsUniqueArrayItemsAndCardinality(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'array',
+            'items' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 4],
+            'minItems' => 2,
+            'maxItems' => 2,
+            'uniqueItems' => true,
+        ]), count: 20, seed: 53);
+
+        foreach ($values as $value) {
+            Assert::true(is_array($value) && count($value) === 2 && $value[0] !== $value[1]);
+        }
+    }
+
+    public function enforcesObjectAdditionalPropertyFalseWhenShapeIsEmpty(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'additionalProperties' => false,
+            'maxProperties' => 0,
+        ]), count: 5, seed: 59);
+
+        Assert::same($values, [[], [], [], [], []]);
+    }
+
+    public function preservesOptionalPropertiesWhenAdditionalPropertiesAreAllowed(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'maxProperties' => 3,
+            'properties' => ['id' => ['type' => 'integer', 'const' => 1]],
+        ]), count: 50, seed: 103);
+
+        foreach ($values as $value) {
+            Assert::true(is_array($value) && count($value) <= 3);
+            foreach ($value as $key => $item) {
+                Assert::true(is_string($key));
+                if ($key === 'id') {
+                    Assert::same($item, 1);
+                }
+            }
+        }
+    }
+
+    #[DataProvider('malformedCombinatorCases')]
+    public function rejectsMalformedCombinatorBranches(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function malformedCombinatorCases(): iterable
+    {
+        yield 'anyOf scalar' => [['anyOf' => 'invalid']];
+        yield 'anyOf empty' => [['anyOf' => []]];
+        yield 'anyOf list branch' => [['anyOf' => [['type' => 'string'], ['string']]]];
+        yield 'oneOf scalar' => [['oneOf' => 'invalid']];
+        yield 'oneOf empty' => [['oneOf' => []]];
+        yield 'oneOf list branch' => [['oneOf' => [['type' => 'string'], ['string']]]];
+        yield 'allOf scalar' => [['allOf' => 'invalid']];
+        yield 'allOf empty' => [['allOf' => []]];
+        yield 'allOf list branch' => [['allOf' => [['type' => 'object'], ['object']]]];
+        yield 'allOf conflicting type' => [['allOf' => [['type' => 'string'], ['type' => 'integer']]]];
+        yield 'allOf invalid required' => [['allOf' => [['type' => 'object', 'required' => 'id']]]];
+        yield 'allOf invalid property' => [['allOf' => [['type' => 'object', 'properties' => ['id' => ['string']]]]]];
+        yield 'allOf conflicting constraint' => [['allOf' => [['type' => 'string', 'minLength' => 1], ['type' => 'string', 'minLength' => 2]]]];
+    }
+
+    #[DataProvider('combinatorAnnotationCases')]
+    public function permitsCombinatorAnnotations(array $schema): void
+    {
+        Assert::same(Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 1, seed: 83), ['value']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function combinatorAnnotationCases(): iterable
+    {
+        foreach (['title', 'description', 'deprecated', 'examples', '$comment'] as $annotation) {
+            yield $annotation => [[
+                'anyOf' => [['const' => 'value']],
+                $annotation => $annotation === 'deprecated' ? true : ($annotation === 'examples' ? ['value'] : 'note'),
+            ]];
+        }
     }
 
     public function compilesAnyOfBranches(): void
