@@ -30,7 +30,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'missing-required'|'type', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     misuse: array{kind: 'missing-required'|'type'|'enum', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
@@ -136,6 +136,63 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
+     * Replaces one required scalar parameter with a value absent from its
+     * finite enum.
+     *
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: array{kind: 'enum', location: 'path'|'query'|'header'|'cookie', name: string},
+     * }>
+     */
+    public function enumMismatchForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->enumTarget($operation);
+
+        return Gen::map($this->valid->forOperation($operation), /**
+         * @param array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: null,
+         * } $case
+         * @return array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: array{kind: 'enum', location: 'path'|'query'|'header'|'cookie', name: string},
+         * }
+         */ static function (array $case) use ($target): array {
+            if ($target['location'] === 'path') {
+                $case['path'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'query') {
+                $case['query'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'header') {
+                $case['headers'][$target['name']] = $target['invalid'];
+            } else {
+                $case['cookies'][$target['name']] = $target['invalid'];
+            }
+            $case['misuse'] = [
+                'kind' => 'enum',
+                'location' => $target['location'],
+                'name' => $target['name'],
+            ];
+
+            return $case;
+        });
+    }
+
+    /**
      * @return array{location: 'path'|'query'|'header'|'cookie'|'body', name: string}
      */
     private function target(Operation $operation): array
@@ -179,5 +236,41 @@ final readonly class NegativeRequestCaseArbitrary
         }
 
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible type mismatch', $operation->key));
+    }
+
+    /**
+     * @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}
+     */
+    private function enumTarget(Operation $operation): array
+    {
+        foreach ($operation->parameters as $parameter) {
+            if (!$parameter['required'] || !array_key_exists('enum', $parameter['schema'])) {
+                continue;
+            }
+            $enum = $parameter['schema']['enum'];
+            if (!is_array($enum) || $enum === [] || !$this->isScalarEnum($enum)) {
+                continue;
+            }
+            $invalid = '__openapi_invalid_enum__';
+            while (in_array($invalid, $enum, true)) {
+                $invalid .= '_';
+            }
+
+            return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible enum mismatch', $operation->key));
+    }
+
+    /** @param array<array-key, mixed> $enum */
+    private function isScalarEnum(array $enum): bool
+    {
+        foreach ($enum as $value) {
+            if ($value !== null && !is_scalar($value)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

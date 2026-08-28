@@ -145,6 +145,31 @@ final class RequestCaseArbitraryTest
         (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation);
     }
 
+    public function enumMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/state' => ['get' => [
+                'operationId' => 'state.get',
+                'parameters' => [[
+                    'name' => 'state',
+                    'in' => 'query',
+                    'required' => true,
+                    'schema' => ['type' => 'string', 'enum' => ['ready', 'busy']],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('state.get');
+        $case = (new NegativeRequestCaseArbitrary())->enumMismatchForOperation($operation)->generate(new Random(29))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'enum', 'location' => 'query', 'name' => 'state']);
+        Assert::string($request->getUri()->getQuery())->contains('__openapi_invalid_enum__');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
     public function removesARequiredBodyWhenNoParameterExists(): void
     {
         $operation = new Operation(

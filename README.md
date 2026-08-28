@@ -72,7 +72,9 @@ time. Secrets never enter `RequestCaseData` or persisted property examples.
 body component and records `misuse.kind = 'missing-required'`. The
 `typeMismatchForOperation()` arbitrary replaces one required scalar
 `integer`/`number`/`boolean`/`null` parameter with a deliberately invalid wire
-value and records `misuse.kind = 'type'`. Resulting requests are expected to
+value and records `misuse.kind = 'type'`. `enumMismatchForOperation()` similarly
+uses a value outside a required scalar enum and records `misuse.kind = 'enum'.
+Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.
 

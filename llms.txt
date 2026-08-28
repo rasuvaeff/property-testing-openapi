@@ -24,6 +24,9 @@ Public API:
   one required scalar integer/number/boolean/null parameter with an invalid wire
   value and records `misuse.kind = 'type'`; both methods throw
   `UnsupportedGeneration` when their mutation cannot be constructed.
+- `NegativeRequestCaseArbitrary::enumMismatchForOperation(Operation)` replaces
+  one required scalar enum parameter with a value outside the enum and records
+  `misuse.kind = 'enum'`.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

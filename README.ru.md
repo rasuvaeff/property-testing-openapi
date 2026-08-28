@@ -73,7 +73,9 @@ examples.
 и записывает `misuse.kind = 'missing-required'`.
 `typeMismatchForOperation()` заменяет один обязательный scalar-параметр типа
 `integer`/`number`/`boolean`/`null` заведомо неверным wire-значением и записывает
-`misuse.kind = 'type'`. Такие request должны отвергаться contract validation до
+`misuse.kind = 'type'`. `enumMismatchForOperation()` аналогично выбирает
+значение вне scalar enum и записывает `misuse.kind = 'enum'`. Такие request
+должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.
 
