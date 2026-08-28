@@ -55,6 +55,37 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    public function compilesAnEmptySchemaToJsonCompatibleValues(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([]), count: 40, seed: 13);
+
+        foreach ($values as $value) {
+            Assert::true($value === null || is_bool($value) || is_int($value) || is_string($value));
+        }
+        Assert::true(count(array_unique(array_map(get_debug_type(...), $values))) >= 2);
+    }
+
+    public function keepsNullOnlySchemasNull(): void
+    {
+        Assert::same(Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'null']), count: 5, seed: 17), [null, null, null, null, null]);
+    }
+
+    public function infersArrayAndObjectFromStructuralKeywords(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        foreach (Gen::sample($compiler->compile(['items' => ['type' => 'integer', 'const' => 3]]), count: 5, seed: 19) as $value) {
+            Assert::true(is_array($value) && array_is_list($value));
+            foreach ($value as $item) {
+                Assert::same($item, 3);
+            }
+        }
+        foreach (Gen::sample($compiler->compile(['properties' => ['id' => ['type' => 'integer', 'const' => 3]], 'required' => ['id']]), count: 5, seed: 23) as $value) {
+            Assert::true(is_array($value) && !array_is_list($value));
+            Assert::same($value['id'], 3);
+        }
+    }
+
     public function supportsNullableFormatsAndMultiples(): void
     {
         $compiler = new SchemaArbitraryCompiler();
@@ -323,6 +354,20 @@ final class SchemaArbitraryCompilerTest
             Assert::true(is_array($value) && count($value) === 1);
             Assert::true(is_string(array_values($value)[0]) || is_int(array_values($value)[0])
                 || is_bool(array_values($value)[0]) || array_values($value)[0] === null);
+        }
+    }
+
+    public function treatsOmittedAdditionalPropertiesAsAllowed(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'minProperties' => 1,
+            'maxProperties' => 1,
+            'properties' => [],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 10, seed: 29) as $value) {
+            Assert::true(is_array($value) && count($value) === 1);
         }
     }
 

@@ -133,6 +133,34 @@ final class RequestMaterializerTest
         Assert::true($contract->validateRequest($request)->isValid());
     }
 
+    public function convertsStructuralArrayAndObjectSchemasToJsonObjects(): void
+    {
+        $operation = $this->bodyOperation([
+            'content' => ['application/json' => ['schema' => [
+                'properties' => [
+                    'items' => ['items' => ['properties' => ['name' => ['type' => 'string']]]],
+                ],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $this->bodyCase('body.test', [
+            'mediaType' => 'application/json',
+            'encoding' => 'json',
+            'value' => ['items' => [['name' => 'first']]],
+        ]));
+
+        Assert::same((string) $request->getBody(), '{"items":[{"name":"first"}]}');
+
+        $emptyNested = $operation;
+        $request = (new RequestMaterializer($factory, $factory))->materialize($emptyNested, $this->bodyCase('body.test', [
+            'mediaType' => 'application/json',
+            'encoding' => 'json',
+            'value' => ['items' => [[]]],
+        ]));
+
+        Assert::same((string) $request->getBody(), '{"items":[{}]}');
+    }
+
     public function rejectsCaseForAnotherOperation(): void
     {
         Expect::exception(\InvalidArgumentException::class);

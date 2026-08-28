@@ -64,6 +64,47 @@ final class ParameterSerializerTest
         (new ParameterSerializer())->serialize('value', $value, $style, explode: true);
     }
 
+    public function preservesReservedCharactersInEveryEncodedListForm(): void
+    {
+        $serializer = new ParameterSerializer();
+
+        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'simple', explode: false), 'a%2Fb,c%3Fd');
+        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'form', explode: false), 'value=a%2Fb,c%3Fd');
+        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'spaceDelimited', explode: false), 'value=a%2Fb c%3Fd');
+        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'pipeDelimited', explode: false), 'value=a%2Fb|c%3Fd');
+        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'simple', explode: false, allowReserved: true), 'a/b,c?d');
+    }
+
+    public function rejectsDelimitedNonListValuesWithoutTypeCoercion(): void
+    {
+        $serializer = new ParameterSerializer();
+
+        Expect::exception(UnsupportedGeneration::class);
+        $serializer->serialize('value', ['key' => 'item'], 'spaceDelimited', explode: false);
+    }
+
+    public function rejectsUnknownStyleExplicitly(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        (new ParameterSerializer())->serialize('value', 'item', 'unsupported', explode: false);
+    }
+
+    public function rejectsNonStringItemsInListShapes(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new ParameterSerializer())->serialize('value', ['item', 42], 'simple', explode: false);
+    }
+
+    public function keepsEmptyObjectAndListBoundariesObservable(): void
+    {
+        $serializer = new ParameterSerializer();
+
+        Assert::same($serializer->serialize('value', [], 'deepObject', explode: true), '');
+        Assert::same($serializer->serialize('value', ['key' => 'item'], 'deepObject', explode: true), 'value%5Bkey%5D=item');
+        Assert::same($serializer->serialize('value', [], 'simple', explode: false), '');
+    }
+
     /** @return iterable<string, array{string|list<string>|array<string, string>, string}> */
     public static function invalidShapeCases(): iterable
     {

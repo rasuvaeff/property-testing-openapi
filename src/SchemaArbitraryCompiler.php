@@ -147,15 +147,14 @@ final readonly class SchemaArbitraryCompiler
                 /** @var array<string, mixed> $propertyMap */
                 $propertyMap = $this->schemaObject($branch['properties'], 'allOf properties must be an object');
                 foreach (array_keys($propertyMap) as $name) {
-                    /** @var mixed $property */
-                    $property = $propertyMap[$name];
-                    if (!is_array($property) || ($property !== [] && array_is_list($property))) {
+                    if (!is_array($propertyMap[$name]) || ($propertyMap[$name] !== [] && array_is_list($propertyMap[$name]))) {
                         throw UnsupportedGeneration::forSchema('allOf properties must contain schema objects');
                     }
+                    /** @var array<string, mixed> $property */
+                    $property = $propertyMap[$name];
                     if (isset($properties[$name])) {
                         /** @var array<string, mixed> $existing */
                         $existing = $properties[$name];
-                        /** @var array<string, mixed> $property */
                         $properties[$name] = $this->mergeAllOf([$existing, $property]);
                     } else {
                         /** @var array<string, mixed> $property */
