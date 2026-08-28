@@ -17,6 +17,9 @@ Public API:
 - `Credentials` applies secret headers/query/cookies at materialization time;
   pass the selected credentials as the optional third argument to
   `RequestMaterializer::materialize`.
+- `NegativeRequestCaseArbitrary::forOperation(Operation)` removes one required
+  request component and records `misuse.kind = 'missing-required'`; it throws
+  `UnsupportedGeneration` when the operation has nothing required to remove.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

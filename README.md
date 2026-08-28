@@ -63,6 +63,12 @@ $request = (new RequestMaterializer($requests, $streams))->materialize(
 `Credentials` applies headers, query values, and cookies only at materialization
 time. Secrets never enter `RequestCaseData` or persisted property examples.
 
+`NegativeRequestCaseArbitrary` provides the first safe negative category: it
+removes one required path, query, header, cookie, or body component and records
+`misuse: {kind: 'missing-required', ...}`. The resulting request is expected to
+fail contract validation before a transport is called; other negative
+categories remain unsupported until they have their own invalidation oracle.
+
 Unsupported schema assertions and non-JSON request bodies throw
 `UnsupportedGeneration`; they are never silently widened to arbitrary strings.
 

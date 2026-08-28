@@ -6,17 +6,23 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
+use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
+use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Property;
+use Rasuvaeff\PropertyTesting\Random;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 
 #[Test]
 #[Covers(RequestCaseArbitrary::class)]
+#[Covers(NegativeRequestCaseArbitrary::class)]
 #[Covers(RequestMaterializer::class)]
 final class RequestCaseArbitraryTest
 {
@@ -77,5 +83,30 @@ final class RequestCaseArbitraryTest
                 ],
             ],
         ]);
+    }
+
+    public function missingRequiredComponentIsInvalidBeforeTransport(): void
+    {
+        $contract = self::contract();
+        $operation = $contract->operation('pets.update');
+        $case = (new NegativeRequestCaseArbitrary())->forOperation($operation)->generate(new Random(11))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'missing-required', 'location' => 'path', 'name' => 'id']);
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsOperationsWithoutARequiredComponent(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'optional',
+            operationId: 'optional',
+            method: 'GET',
+            path: '/optional',
+        );
+
+        (new NegativeRequestCaseArbitrary())->forOperation($operation);
     }
 }
