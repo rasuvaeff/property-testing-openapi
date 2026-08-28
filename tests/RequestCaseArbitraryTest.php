@@ -170,6 +170,29 @@ final class RequestCaseArbitraryTest
         Assert::false($contract->validateRequest($request)->isValid());
     }
 
+    public function constMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/version' => ['get' => [
+                'operationId' => 'version.get',
+                'parameters' => [[
+                    'name' => 'version', 'in' => 'header', 'required' => true,
+                    'schema' => ['type' => 'string', 'const' => 'v1'],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('version.get');
+        $case = (new NegativeRequestCaseArbitrary())->constMismatchForOperation($operation)->generate(new Random(31))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'const', 'location' => 'header', 'name' => 'version']);
+        Assert::same($request->getHeaderLine('version'), '__openapi_invalid_const__');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
     public function removesARequiredBodyWhenNoParameterExists(): void
     {
         $operation = new Operation(

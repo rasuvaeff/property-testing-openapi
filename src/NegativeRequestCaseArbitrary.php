@@ -30,7 +30,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'missing-required'|'type'|'enum', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
@@ -193,6 +193,56 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: array{kind: 'const', location: 'path'|'query'|'header'|'cookie', name: string},
+     * }>
+     */
+    public function constMismatchForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->constTarget($operation);
+
+        return Gen::map($this->valid->forOperation($operation), /**
+         * @param array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: null,
+         * } $case
+         * @return array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: array{kind: 'const', location: 'path'|'query'|'header'|'cookie', name: string},
+         * }
+         */ static function (array $case) use ($target): array {
+            if ($target['location'] === 'path') {
+                $case['path'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'query') {
+                $case['query'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'header') {
+                $case['headers'][$target['name']] = $target['invalid'];
+            } else {
+                $case['cookies'][$target['name']] = $target['invalid'];
+            }
+            $case['misuse'] = ['kind' => 'const', 'location' => $target['location'], 'name' => $target['name']];
+
+            return $case;
+        });
+    }
+
+    /**
      * @return array{location: 'path'|'query'|'header'|'cookie'|'body', name: string}
      */
     private function target(Operation $operation): array
@@ -272,5 +322,25 @@ final readonly class NegativeRequestCaseArbitrary
         }
 
         return true;
+    }
+
+    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
+    private function constTarget(Operation $operation): array
+    {
+        foreach ($operation->parameters as $parameter) {
+            if (!$parameter['required'] || !array_key_exists('const', $parameter['schema']) || !is_scalar($parameter['schema']['const'])) {
+                continue;
+            }
+            $invalid = '__openapi_invalid_const__';
+            if (is_int($parameter['schema']['const']) || is_float($parameter['schema']['const'])) {
+                $invalid = 'not-a-const-number';
+            } elseif (is_bool($parameter['schema']['const'])) {
+                $invalid = 'not-a-const-boolean';
+            }
+
+            return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible const mismatch', $operation->key));
     }
 }
