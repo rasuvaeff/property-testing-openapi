@@ -237,6 +237,30 @@ final class SchemaArbitraryCompilerTest
         ]);
     }
 
+    public function supportsNullAsASeparateOneOfBranch(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'oneOf' => [
+                ['type' => 'null'],
+                ['type' => 'string', 'const' => 'value'],
+            ],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 20, seed: 43) as $value) {
+            Assert::true($value === null || $value === 'value');
+        }
+    }
+
+    public function rejectsCombinatorAssertionSiblings(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile([
+            'anyOf' => [['type' => 'string']],
+            'minLength' => 1,
+        ]);
+    }
+
     public function mergesObjectAllOfBranches(): void
     {
         $arbitrary = (new SchemaArbitraryCompiler())->compile([

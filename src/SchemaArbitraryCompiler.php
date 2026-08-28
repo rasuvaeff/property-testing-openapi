@@ -85,6 +85,7 @@ final readonly class SchemaArbitraryCompiler
             if (!array_key_exists($keyword, $schema)) {
                 continue;
             }
+            $this->assertNoCombinatorSiblings($schema, $keyword);
             $schemas = $this->schemaBranches($schema[$keyword], $keyword);
 
             if ($keyword === 'allOf') {
@@ -202,7 +203,7 @@ final readonly class SchemaArbitraryCompiler
         $seen = [];
         foreach ($branches as $branch) {
             $types = $this->types($branch['type'] ?? null);
-            if ($types === null || count($types) !== 1 || $types[0] === 'null') {
+            if ($types === null || count($types) !== 1) {
                 return false;
             }
             $type = $types[0];
@@ -213,6 +214,25 @@ final readonly class SchemaArbitraryCompiler
         }
 
         return true;
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function assertNoCombinatorSiblings(array $schema, string $keyword): void
+    {
+        $annotations = [
+            '$comment' => true,
+            'deprecated' => true,
+            'description' => true,
+            'examples' => true,
+            'title' => true,
+        ];
+        foreach (array_keys($schema) as $name) {
+            if ($name === $keyword || isset($annotations[$name])) {
+                continue;
+            }
+
+            throw UnsupportedGeneration::forSchema(sprintf('%s with sibling keyword "%s" is outside the supported subset', $keyword, $name));
+        }
     }
 
     /** @param array<string, mixed> $schema */
