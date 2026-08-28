@@ -19,8 +19,11 @@ Public API:
   pass the selected credentials as the optional third argument to
   `RequestMaterializer::materialize`.
 - `NegativeRequestCaseArbitrary::forOperation(Operation)` removes one required
-  request component and records `misuse.kind = 'missing-required'`; it throws
-  `UnsupportedGeneration` when the operation has nothing required to remove.
+  request component and records `misuse.kind = 'missing-required'`.
+- `NegativeRequestCaseArbitrary::typeMismatchForOperation(Operation)` replaces
+  one required scalar integer/number/boolean/null parameter with an invalid wire
+  value and records `misuse.kind = 'type'`; both methods throw
+  `UnsupportedGeneration` when their mutation cannot be constructed.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

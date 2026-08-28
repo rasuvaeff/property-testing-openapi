@@ -31,7 +31,7 @@ final readonly class RequestMaterializer
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: null,
+     *     misuse: null|array{kind: 'missing-required'|'type', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * } $case
      */
     public function materialize(Operation $operation, array $case, ?Credentials $credentials = null): RequestInterface

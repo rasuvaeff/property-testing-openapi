@@ -67,9 +67,12 @@ $request = (new RequestMaterializer($requests, $streams))->materialize(
 `Credentials` applies headers, query values, and cookies only at materialization
 time. Secrets never enter `RequestCaseData` or persisted property examples.
 
-`NegativeRequestCaseArbitrary` provides the first safe negative category: it
-removes one required path, query, header, cookie, or body component and records
-`misuse: {kind: 'missing-required', ...}`. The resulting request is expected to
+`NegativeRequestCaseArbitrary` provides constructive negative categories. The
+`forOperation()` arbitrary removes one required path, query, header, cookie, or
+body component and records `misuse.kind = 'missing-required'`. The
+`typeMismatchForOperation()` arbitrary replaces one required scalar
+`integer`/`number`/`boolean`/`null` parameter with a deliberately invalid wire
+value and records `misuse.kind = 'type'`. Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.
 

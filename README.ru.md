@@ -68,11 +68,14 @@ $request = (new RequestMaterializer($requests, $streams))->materialize(
 materialization. Секреты не попадают в `RequestCaseData` и сохранённые property
 examples.
 
-`NegativeRequestCaseArbitrary` пока предоставляет одну безопасную negative
-категорию: удаляет один обязательный path, query, header, cookie или body и
-записывает `misuse: {kind: 'missing-required', ...}`. Такой request должен
-отвергаться contract validation до вызова transport; остальные negative
-категории появятся только вместе с отдельным invalidation oracle.
+`NegativeRequestCaseArbitrary` предоставляет конструктивные negative-категории.
+`forOperation()` удаляет один обязательный path, query, header, cookie или body
+и записывает `misuse.kind = 'missing-required'`.
+`typeMismatchForOperation()` заменяет один обязательный scalar-параметр типа
+`integer`/`number`/`boolean`/`null` заведомо неверным wire-значением и записывает
+`misuse.kind = 'type'`. Такие request должны отвергаться contract validation до
+вызова transport; остальные negative-категории появятся только вместе с
+отдельным invalidation oracle.
 
 Неподдерживаемые schema assertions и non-JSON request bodies бросают
 `UnsupportedGeneration`; они не расширяются молча до произвольных строк.

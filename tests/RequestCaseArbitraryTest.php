@@ -97,6 +97,19 @@ final class RequestCaseArbitraryTest
         Assert::false($contract->validateRequest($request)->isValid());
     }
 
+    public function typeMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = self::contract();
+        $operation = $contract->operation('pets.update');
+        $case = (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation)->generate(new Random(23))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'type', 'location' => 'path', 'name' => 'id']);
+        Assert::string($request->getUri()->getPath())->contains('not-an-integer');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
     public function rejectsOperationsWithoutARequiredComponent(): void
     {
         Expect::exception(UnsupportedGeneration::class);
@@ -108,6 +121,28 @@ final class RequestCaseArbitraryTest
         );
 
         (new NegativeRequestCaseArbitrary())->forOperation($operation);
+    }
+
+    public function rejectsOperationsWithoutAConstructibleTypeMismatch(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'string-only',
+            operationId: 'string-only',
+            method: 'GET',
+            path: '/string-only',
+            parameters: [[
+                'name' => 'name',
+                'in' => 'query',
+                'required' => true,
+                'style' => 'form',
+                'explode' => true,
+                'allowReserved' => false,
+                'schema' => ['type' => 'string'],
+            ]],
+        );
+
+        (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation);
     }
 
     public function removesARequiredBodyWhenNoParameterExists(): void
