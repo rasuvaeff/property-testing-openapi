@@ -89,7 +89,11 @@ examples.
 фиксированным значением, доказуемо нарушающим его `format` (`uuid`, `email`,
 `ipv4`, `uri`, `uri-reference`, `date`, `date-time`), и записывает
 `misuse.kind = 'format'`; `url` исключён — validation backend его не
-ассертит. Такие request
+ассертит.
+`additionalPropertyForOperation()` добавляет одно необъявленное свойство в
+обязательное JSON object body со схемой `additionalProperties: false` и
+записывает `misuse.kind = 'additional-properties'` с именем добавленного
+свойства. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.

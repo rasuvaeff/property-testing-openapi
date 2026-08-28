@@ -47,7 +47,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'additional-properties', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
@@ -615,6 +615,56 @@ final readonly class NegativeRequestCaseArbitrary
         return null;
     }
 
+    /**
+     * Adds one undeclared property to a required JSON object body whose schema
+     * sets `additionalProperties: false`.
+     *
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: array{kind: 'additional-properties', location: 'body', name: string},
+     * }>
+     */
+    public function additionalPropertyForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->additionalPropertyTarget($operation);
+
+        return Gen::map($this->valid->forOperation($operation), /**
+         * @param array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: null,
+         * } $case
+         * @return array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: array{kind: 'additional-properties', location: 'body', name: string},
+         * }
+         */ static function (array $case) use ($target): array {
+            $body = $case['body'];
+            if ($body === null || !is_array($body['value'])) {
+                throw new \LogicException('Required JSON object body expected for an additional property misuse');
+            }
+            $body['value'][$target['name']] = true;
+            $case['body'] = $body;
+            $case['misuse'] = ['kind' => 'additional-properties', 'location' => 'body', 'name' => $target['name']];
+
+            return $case;
+        });
+    }
+
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
     private function formatTarget(Operation $operation): array
     {
@@ -629,6 +679,63 @@ final readonly class NegativeRequestCaseArbitrary
         }
 
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible format mismatch', $operation->key));
+    }
+
+    /** @return array{name: non-empty-string} */
+    private function additionalPropertyTarget(Operation $operation): array
+    {
+        $schema = $this->jsonBodySchema($operation);
+        if ($schema !== null
+            && in_array('object', $this->declaredTypes($schema), strict: true)
+            && ($schema['additionalProperties'] ?? null) === false
+        ) {
+            return ['name' => $this->unusedPropertyName($schema['properties'] ?? null)];
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON object body rejecting additional properties', $operation->key));
+    }
+
+    /** @return non-empty-string */
+    private function unusedPropertyName(mixed $properties): string
+    {
+        $name = '__openapi_extra_property__';
+        if (is_array($properties)) {
+            while (array_key_exists($name, $properties)) {
+                $name .= '_';
+            }
+        }
+
+        return $name;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function jsonBodySchema(Operation $operation): ?array
+    {
+        if (($operation->requestBody['required'] ?? false) !== true) {
+            return null;
+        }
+        $content = $operation->requestBody['content'] ?? null;
+        if (!is_array($content)) {
+            return null;
+        }
+        foreach ($content as $mediaType => $definition) {
+            if (!is_string($mediaType) || !is_array($definition)) {
+                continue;
+            }
+            $name = strtolower(trim(explode(';', $mediaType, 2)[0]));
+            if ($name !== 'application/json' && !str_ends_with($name, '+json')) {
+                continue;
+            }
+            $schema = $definition['schema'] ?? [];
+            if (!is_array($schema) || array_is_list($schema)) {
+                return null;
+            }
+            /** @var array<string, mixed> $schema */
+
+            return $schema;
+        }
+
+        return null;
     }
 
     /**

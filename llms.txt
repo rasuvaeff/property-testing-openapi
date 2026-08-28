@@ -42,6 +42,10 @@ Public API:
   replaces one required string parameter with a fixed witness violating its
   `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
   `misuse.kind = 'format'`; `url` is not asserted by the backend and is skipped.
+- `NegativeRequestCaseArbitrary::additionalPropertyForOperation(Operation)`
+  adds one undeclared property to a required JSON object body with
+  `additionalProperties: false` and records
+  `misuse.kind = 'additional-properties'`.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

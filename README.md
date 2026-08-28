@@ -89,6 +89,9 @@ fixed witness that provably violates its `format` (`uuid`, `email`, `ipv4`,
 `uri`, `uri-reference`, `date`, `date-time`) and records
 `misuse.kind = 'format'`; `url` is excluded because the validation backend does
 not assert it.
+`additionalPropertyForOperation()` adds one undeclared property to a required
+JSON object body whose schema sets `additionalProperties: false` and records
+`misuse.kind = 'additional-properties'` with the injected property name.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.

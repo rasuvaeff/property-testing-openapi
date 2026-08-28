@@ -358,6 +358,52 @@ final class RequestCaseArbitraryTest
         (new NegativeRequestCaseArbitrary())->formatMismatchForOperation($operation);
     }
 
+    public function additionalPropertyIsInvalidBeforeTransport(): void
+    {
+        $contract = $this->sealedBodyContract(additionalProperties: false);
+        $operation = $contract->operation('pets.create');
+        $case = (new NegativeRequestCaseArbitrary())->additionalPropertyForOperation($operation)->generate(new Random(61))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'additional-properties', 'location' => 'body', 'name' => '__openapi_extra_property__']);
+        Assert::true(is_array($case['body']['value']) && array_key_exists('__openapi_extra_property__', $case['body']['value']));
+        Assert::string((string) $request->getBody())->contains('__openapi_extra_property__');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsAdditionalPropertyWhenTheBodyAcceptsExtras(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = $this->sealedBodyContract(additionalProperties: null)->operation('pets.create');
+
+        (new NegativeRequestCaseArbitrary())->additionalPropertyForOperation($operation);
+    }
+
+    private function sealedBodyContract(?bool $additionalProperties): Contract
+    {
+        $schema = [
+            'type' => 'object',
+            'required' => ['name'],
+            'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8]],
+        ];
+        if ($additionalProperties !== null) {
+            $schema['additionalProperties'] = $additionalProperties;
+        }
+
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets' => ['post' => [
+                'operationId' => 'pets.create',
+                'requestBody' => [
+                    'required' => true,
+                    'content' => ['application/json' => ['schema' => $schema]],
+                ],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
+    }
+
     public function rejectsOperationsWithoutAConstructibleBoundaryMismatch(): void
     {
         Expect::exception(UnsupportedGeneration::class);
