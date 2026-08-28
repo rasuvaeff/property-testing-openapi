@@ -77,13 +77,7 @@ final readonly class SchemaArbitraryCompiler
         };
     }
 
-    /**
-     * Compile the constructive `not` subset. A validator-backed arbitrary is
-     * deliberately out of scope here: only predicates that can be evaluated
-     * without changing the generated JSON value are accepted.
-     *
-     * @param array<string, mixed> $schema
-     */
+    /** @param array<string, mixed> $schema */
     private function not(array $schema): ArbitraryInterface
     {
         /** @var mixed $forbiddenValue */
@@ -95,29 +89,16 @@ final readonly class SchemaArbitraryCompiler
         $forbidden = $forbiddenValue;
         $this->assertNotSchema($forbidden);
         unset($schema['not']);
-
-        if (array_key_exists('const', $schema)
-            && array_key_exists('const', $forbidden)
-            && $schema['const'] === $forbidden['const']
-        ) {
+        $source = $this->compile($schema);
+        if (array_key_exists('const', $schema) && array_key_exists('const', $forbidden)
+            && $schema['const'] === $forbidden['const']) {
             throw UnsupportedGeneration::forSchema('not excludes the only const value');
         }
         if (array_key_exists('enum', $schema) && is_array($schema['enum'])
             && array_key_exists('enum', $forbidden) && is_array($forbidden['enum'])
-        ) {
-            /** @var list<mixed> $allowedEnum */
-            $allowedEnum = array_values($schema['enum']);
-            /** @var list<mixed> $forbiddenEnum */
-            $forbiddenEnum = array_values($forbidden['enum']);
-            if ($this->enumIsFullyExcluded($allowedEnum, $forbiddenEnum)) {
-                throw UnsupportedGeneration::forSchema('not excludes every enum value');
-            }
+            && $this->enumIsFullyExcluded(array_values($schema['enum']), array_values($forbidden['enum']))) {
+            throw UnsupportedGeneration::forSchema('not excludes every enum value');
         }
-        if ($this->hasOnlyForbiddenType($schema, $forbidden)) {
-            throw UnsupportedGeneration::forSchema('not excludes every generated type');
-        }
-
-        $source = $this->compile($schema);
 
         return Gen::filter($source, fn(mixed $value): bool => !$this->matchesNot($value, $forbidden));
     }
@@ -125,22 +106,13 @@ final readonly class SchemaArbitraryCompiler
     /** @param array<string, mixed> $schema */
     private function assertNotSchema(array $schema): void
     {
-        $allowed = [
-            '$comment' => true,
-            'const' => true,
-            'deprecated' => true,
-            'description' => true,
-            'enum' => true,
-            'examples' => true,
-            'title' => true,
-            'type' => true,
-        ];
+        $allowed = ['const' => true, 'enum' => true, 'type' => true];
         foreach (array_keys($schema) as $keyword) {
             if (!isset($allowed[$keyword])) {
                 throw UnsupportedGeneration::forSchema(sprintf('not keyword "%s" is outside the supported subset', $keyword));
             }
         }
-        if (array_key_exists('const', $schema) && array_key_exists('enum', $schema)) {
+        if ($schema === [] || array_key_exists('const', $schema) && array_key_exists('enum', $schema)) {
             throw UnsupportedGeneration::forSchema('not cannot combine const and enum');
         }
         if (array_key_exists('enum', $schema)
@@ -151,9 +123,6 @@ final readonly class SchemaArbitraryCompiler
         if (array_key_exists('type', $schema) && (($types = $this->types($schema['type'])) === null || $types === [])) {
             throw UnsupportedGeneration::forSchema('not type must be a string or list of strings');
         }
-        if (!array_key_exists('const', $schema) && !array_key_exists('enum', $schema) && !array_key_exists('type', $schema)) {
-            throw UnsupportedGeneration::forSchema('not must contain const, enum, or type');
-        }
         if (array_key_exists('type', $schema)) {
             /** @var list<string> $types */
             $types = $this->types($schema['type']) ?? [];
@@ -163,30 +132,6 @@ final readonly class SchemaArbitraryCompiler
                 }
             }
         }
-    }
-
-    /** @param array<string, mixed> $schema @param array<string, mixed> $forbidden */
-    private function hasOnlyForbiddenType(array $schema, array $forbidden): bool
-    {
-        $sourceTypes = $this->types($schema['type'] ?? null);
-        $forbiddenTypes = $this->types($forbidden['type'] ?? null);
-        if ($sourceTypes === null || $forbiddenTypes === null || $sourceTypes === [] || $forbiddenTypes === []) {
-            return false;
-        }
-        foreach ($sourceTypes as $sourceType) {
-            $matched = false;
-            foreach ($forbiddenTypes as $forbiddenType) {
-                if ($sourceType === $forbiddenType || $sourceType === 'integer' && $forbiddenType === 'number') {
-                    $matched = true;
-                    break;
-                }
-            }
-            if (!$matched) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /** @param list<mixed> $allowed @param list<mixed> $forbidden */

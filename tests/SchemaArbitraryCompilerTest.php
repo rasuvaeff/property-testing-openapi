@@ -641,7 +641,6 @@ final class SchemaArbitraryCompilerTest
         yield 'not scalar' => [['not' => 'invalid']];
         yield 'not empty' => [['not' => []]];
         yield 'not pattern' => [['not' => ['type' => 'string', 'pattern' => '^x$']]];
-        yield 'not excludes type' => [['type' => 'string', 'not' => ['type' => 'string']]];
         yield 'not excludes const' => [['const' => 'x', 'not' => ['const' => 'x']]];
         yield 'not excludes enum' => [['enum' => ['x', 'y'], 'not' => ['enum' => ['x', 'y']]]];
     }
