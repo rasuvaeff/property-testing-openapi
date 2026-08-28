@@ -43,6 +43,10 @@ case можно сохранять в property corpus.
 Для object schemas поддерживаются `minProperties`, `maxProperties` и boolean-
 или schema-valued `additionalProperties` в пределах generation budget.
 
+Конструктивное подмножество `not` поддерживает исключения через `const`, `enum`
+и `type`; остальные negative assertions остаются fail-closed с
+`UnsupportedGeneration`.
+
 ## Credentials для security
 
 Security requirements наследуются операциями; явный пустой список `security`

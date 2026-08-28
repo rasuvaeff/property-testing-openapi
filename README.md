@@ -44,6 +44,9 @@ credentials and can therefore be persisted by the property corpus.
 Object schemas honor `minProperties`, `maxProperties`, and boolean or
 schema-valued `additionalProperties` within the generation budget.
 
+The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
+other negative assertions remain fail-closed as `UnsupportedGeneration`.
+
 ## Security Credentials
 
 Security requirements are inherited by operations; an explicit empty

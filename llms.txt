@@ -30,3 +30,5 @@ Required parameters and request bodies are always generated. Optional parameters
 and JSON bodies are generated as both present and absent branches.
 Object generation supports bounded `minProperties`, `maxProperties`, and
 boolean or schema-valued `additionalProperties`.
+The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
+other negative assertions fail closed.

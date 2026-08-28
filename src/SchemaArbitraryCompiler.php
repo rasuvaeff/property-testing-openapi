@@ -27,6 +27,9 @@ final readonly class SchemaArbitraryCompiler
         if ($combinator instanceof ArbitraryInterface) {
             return $combinator;
         }
+        if (array_key_exists('not', $schema)) {
+            return $this->not($schema);
+        }
         $this->assertSupported($schema);
         if ($schema === []) {
             return $this->additionalValue();
@@ -71,6 +74,192 @@ final readonly class SchemaArbitraryCompiler
             'array' => $this->array($schema),
             'object' => $this->object($schema),
             default => throw UnsupportedGeneration::forSchema(sprintf('type "%s" is not supported', $type)),
+        };
+    }
+
+    /**
+     * Compile the constructive `not` subset. A validator-backed arbitrary is
+     * deliberately out of scope here: only predicates that can be evaluated
+     * without changing the generated JSON value are accepted.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function not(array $schema): ArbitraryInterface
+    {
+        /** @var mixed $forbiddenValue */
+        $forbiddenValue = $schema['not'];
+        if (!is_array($forbiddenValue) || ($forbiddenValue !== [] && array_is_list($forbiddenValue))) {
+            throw UnsupportedGeneration::forSchema('not must be a schema object');
+        }
+        /** @var array<string, mixed> $forbidden */
+        $forbidden = $forbiddenValue;
+        $this->assertNotSchema($forbidden);
+        unset($schema['not']);
+
+        if (array_key_exists('const', $schema)
+            && array_key_exists('const', $forbidden)
+            && $schema['const'] === $forbidden['const']
+        ) {
+            throw UnsupportedGeneration::forSchema('not excludes the only const value');
+        }
+        if (array_key_exists('enum', $schema) && is_array($schema['enum'])
+            && array_key_exists('enum', $forbidden) && is_array($forbidden['enum'])
+        ) {
+            /** @var list<mixed> $allowedEnum */
+            $allowedEnum = array_values($schema['enum']);
+            /** @var list<mixed> $forbiddenEnum */
+            $forbiddenEnum = array_values($forbidden['enum']);
+            if ($this->enumIsFullyExcluded($allowedEnum, $forbiddenEnum)) {
+                throw UnsupportedGeneration::forSchema('not excludes every enum value');
+            }
+        }
+        if ($this->hasOnlyForbiddenType($schema, $forbidden)) {
+            throw UnsupportedGeneration::forSchema('not excludes every generated type');
+        }
+
+        $source = $this->compile($schema);
+
+        return Gen::filter($source, fn(mixed $value): bool => !$this->matchesNot($value, $forbidden));
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function assertNotSchema(array $schema): void
+    {
+        $allowed = [
+            '$comment' => true,
+            'const' => true,
+            'deprecated' => true,
+            'description' => true,
+            'enum' => true,
+            'examples' => true,
+            'title' => true,
+            'type' => true,
+        ];
+        foreach (array_keys($schema) as $keyword) {
+            if (!isset($allowed[$keyword])) {
+                throw UnsupportedGeneration::forSchema(sprintf('not keyword "%s" is outside the supported subset', $keyword));
+            }
+        }
+        if (array_key_exists('const', $schema) && array_key_exists('enum', $schema)) {
+            throw UnsupportedGeneration::forSchema('not cannot combine const and enum');
+        }
+        if (array_key_exists('enum', $schema)
+            && (!is_array($schema['enum']) || $schema['enum'] === [] || !array_is_list($schema['enum']))
+        ) {
+            throw UnsupportedGeneration::forSchema('not enum must be a non-empty list');
+        }
+        if (array_key_exists('type', $schema) && (($types = $this->types($schema['type'])) === null || $types === [])) {
+            throw UnsupportedGeneration::forSchema('not type must be a string or list of strings');
+        }
+        if (!array_key_exists('const', $schema) && !array_key_exists('enum', $schema) && !array_key_exists('type', $schema)) {
+            throw UnsupportedGeneration::forSchema('not must contain const, enum, or type');
+        }
+        if (array_key_exists('type', $schema)) {
+            /** @var list<string> $types */
+            $types = $this->types($schema['type']) ?? [];
+            foreach ($types as $type) {
+                if (!in_array($type, ['array', 'boolean', 'integer', 'null', 'number', 'object', 'string'], true)) {
+                    throw UnsupportedGeneration::forSchema(sprintf('not type "%s" is not supported', $type));
+                }
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $schema @param array<string, mixed> $forbidden */
+    private function hasOnlyForbiddenType(array $schema, array $forbidden): bool
+    {
+        $sourceTypes = $this->types($schema['type'] ?? null);
+        $forbiddenTypes = $this->types($forbidden['type'] ?? null);
+        if ($sourceTypes === null || $forbiddenTypes === null || $sourceTypes === [] || $forbiddenTypes === []) {
+            return false;
+        }
+        foreach ($sourceTypes as $sourceType) {
+            $matched = false;
+            foreach ($forbiddenTypes as $forbiddenType) {
+                if ($sourceType === $forbiddenType || $sourceType === 'integer' && $forbiddenType === 'number') {
+                    $matched = true;
+                    break;
+                }
+            }
+            if (!$matched) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param list<mixed> $allowed @param list<mixed> $forbidden */
+    private function enumIsFullyExcluded(array $allowed, array $forbidden): bool
+    {
+        foreach (array_keys($allowed) as $index) {
+            /** @var mixed $candidate */
+            $candidate = $allowed[$index];
+            $excluded = false;
+            foreach (array_keys($forbidden) as $blockedIndex) {
+                /** @var mixed $blocked */
+                $blocked = $forbidden[$blockedIndex];
+                if ($candidate === $blocked) {
+                    $excluded = true;
+                    break;
+                }
+            }
+            if (!$excluded) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function matchesNot(mixed $value, array $schema): bool
+    {
+        if (array_key_exists('const', $schema)) {
+            return $value === $schema['const'];
+        }
+        if (array_key_exists('enum', $schema)) {
+            /** @var mixed $enumValue */
+            $enumValue = $schema['enum'];
+            if (!is_array($enumValue)) {
+                throw new \LogicException('not enum predicate has an invalid shape');
+            }
+            /** @var list<mixed> $enum */
+            $enum = array_values($enumValue);
+            foreach (array_keys($enum) as $index) {
+                /** @var mixed $candidate */
+                $candidate = $enum[$index];
+                if ($value === $candidate) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        $types = $this->types($schema['type'] ?? null);
+        if ($types === null) {
+            throw new \LogicException('not predicate has no supported assertion');
+        }
+        foreach ($types as $type) {
+            if ($this->valueType($value) === $type || $type === 'number' && is_int($value)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function valueType(mixed $value): string
+    {
+        return match (true) {
+            $value === null => 'null',
+            is_bool($value) => 'boolean',
+            is_int($value) => 'integer',
+            is_float($value) => 'number',
+            is_string($value) => 'string',
+            is_array($value) && array_is_list($value) => 'array',
+            is_array($value) => 'object',
+            default => throw new \LogicException('Generated value is not JSON-compatible'),
         };
     }
 
@@ -592,7 +781,7 @@ final readonly class SchemaArbitraryCompiler
     private function assertSupported(array $schema): void
     {
         foreach ([
-            '$ref', 'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else',
+            '$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else',
             'contains', 'prefixItems', 'patternProperties',
             'propertyNames', 'unevaluatedProperties',
         ] as $keyword) {

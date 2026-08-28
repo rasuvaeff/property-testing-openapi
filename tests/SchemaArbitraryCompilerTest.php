@@ -410,7 +410,6 @@ final class SchemaArbitraryCompilerTest
         yield 'invalid object properties' => [['type' => 'object', 'properties' => ['id']]];
         yield 'invalid object required' => [['type' => 'object', 'required' => ['id' => true], 'properties' => []]];
         yield 'invalid additional properties' => [['type' => 'object', 'additionalProperties' => ['string']]];
-        yield 'unsupported not' => [['type' => 'string', 'not' => ['const' => 'x']]];
     }
 
     #[DataProvider('emptyExclusiveSchemas')]
@@ -595,6 +594,56 @@ final class SchemaArbitraryCompilerTest
             'anyOf' => [['type' => 'string']],
             'minLength' => 1,
         ]);
+    }
+
+    public function compilesNotConstWithoutGeneratingTheForbiddenValue(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'minLength' => 1,
+            'maxLength' => 4,
+            'not' => ['const' => 'blocked'],
+        ]), count: 30, seed: 127);
+
+        foreach ($values as $value) {
+            Assert::true(is_string($value) && $value !== 'blocked');
+        }
+        Assert::true(count(array_unique($values, SORT_STRING)) > 1);
+    }
+
+    public function compilesNotEnumAndNotType(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach (Gen::sample($compiler->compile([
+            'type' => 'integer',
+            'minimum' => 0,
+            'maximum' => 3,
+            'not' => ['enum' => [1, 2]],
+        ]), count: 20, seed: 131) as $value) {
+            Assert::true(is_int($value) && !in_array($value, [1, 2], strict: true));
+        }
+        foreach (Gen::sample($compiler->compile(['not' => ['type' => 'string']]), count: 30, seed: 137) as $value) {
+            Assert::true(!is_string($value));
+        }
+    }
+
+    #[DataProvider('malformedNotSchemas')]
+    public function rejectsUnsupportedNotSchemas(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function malformedNotSchemas(): iterable
+    {
+        yield 'not scalar' => [['not' => 'invalid']];
+        yield 'not empty' => [['not' => []]];
+        yield 'not pattern' => [['not' => ['type' => 'string', 'pattern' => '^x$']]];
+        yield 'not excludes type' => [['type' => 'string', 'not' => ['type' => 'string']]];
+        yield 'not excludes const' => [['const' => 'x', 'not' => ['const' => 'x']]];
+        yield 'not excludes enum' => [['enum' => ['x', 'y'], 'not' => ['enum' => ['x', 'y']]]];
     }
 
     public function mergesObjectAllOfBranches(): void
