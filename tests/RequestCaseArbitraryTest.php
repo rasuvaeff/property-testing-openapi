@@ -193,6 +193,89 @@ final class RequestCaseArbitraryTest
         Assert::false($contract->validateRequest($request)->isValid());
     }
 
+    public function boundaryMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = self::contract();
+        $operation = $contract->operation('pets.update');
+        $case = (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation)->generate(new Random(37))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'path', 'name' => 'id']);
+        Assert::same($case['path']['id'], '0');
+        Assert::string($request->getUri()->getPath())->contains('/pets/0');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function boundaryMismatchHonoursBooleanExclusiveMinimum(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.0.3',
+            'info' => ['title' => 'limits', 'version' => '1.0.0'],
+            'paths' => ['/items' => ['get' => [
+                'operationId' => 'items.list',
+                'parameters' => [[
+                    'name' => 'limit', 'in' => 'query', 'required' => true,
+                    'schema' => ['type' => 'integer', 'minimum' => 5, 'exclusiveMinimum' => true],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('items.list');
+        $case = (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation)->generate(new Random(41))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'query', 'name' => 'limit']);
+        Assert::same($case['query']['limit'], '5');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function boundaryMismatchExceedsMaximum(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/items' => ['get' => [
+                'operationId' => 'items.list',
+                'parameters' => [[
+                    'name' => 'limit', 'in' => 'query', 'required' => true,
+                    'schema' => ['type' => 'integer', 'maximum' => 10],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('items.list');
+        $case = (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation)->generate(new Random(43))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'query', 'name' => 'limit']);
+        Assert::same($case['query']['limit'], '11');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsOperationsWithoutAConstructibleBoundaryMismatch(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'string-only',
+            operationId: 'string-only',
+            method: 'GET',
+            path: '/string-only',
+            parameters: [[
+                'name' => 'name',
+                'in' => 'query',
+                'required' => true,
+                'style' => 'form',
+                'explode' => true,
+                'allowReserved' => false,
+                'schema' => ['type' => 'string'],
+            ]],
+        );
+
+        (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation);
+    }
+
     public function removesARequiredBodyWhenNoParameterExists(): void
     {
         $operation = new Operation(

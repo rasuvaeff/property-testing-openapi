@@ -30,7 +30,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
@@ -243,6 +243,59 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
+     * Replaces one required numeric parameter with a wire value just outside
+     * its `minimum`/`maximum` bound, honouring boolean exclusive bounds.
+     *
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: array{kind: 'boundary', location: 'path'|'query'|'header'|'cookie', name: string},
+     * }>
+     */
+    public function boundaryMismatchForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->boundaryTarget($operation);
+
+        return Gen::map($this->valid->forOperation($operation), /**
+         * @param array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: null,
+         * } $case
+         * @return array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: array{kind: 'boundary', location: 'path'|'query'|'header'|'cookie', name: string},
+         * }
+         */ static function (array $case) use ($target): array {
+            if ($target['location'] === 'path') {
+                $case['path'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'query') {
+                $case['query'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'header') {
+                $case['headers'][$target['name']] = $target['invalid'];
+            } else {
+                $case['cookies'][$target['name']] = $target['invalid'];
+            }
+            $case['misuse'] = ['kind' => 'boundary', 'location' => $target['location'], 'name' => $target['name']];
+
+            return $case;
+        });
+    }
+
+    /**
      * @return array{location: 'path'|'query'|'header'|'cookie'|'body', name: string}
      */
     private function target(Operation $operation): array
@@ -268,19 +321,17 @@ final readonly class NegativeRequestCaseArbitrary
             if (!$parameter['required']) {
                 continue;
             }
-            /** @var mixed $type */
-            $type = $parameter['schema']['type'] ?? null;
-            $types = is_array($type) ? $type : [$type];
-            if (in_array('integer', $types, true)) {
+            $types = $this->declaredTypes($parameter['schema']);
+            if (in_array('integer', $types, strict: true)) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-an-integer'];
             }
-            if (in_array('number', $types, true)) {
+            if (in_array('number', $types, strict: true)) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-a-number'];
             }
-            if (in_array('boolean', $types, true)) {
+            if (in_array('boolean', $types, strict: true)) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-a-boolean'];
             }
-            if (in_array('null', $types, true)) {
+            if (in_array('null', $types, strict: true)) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-null'];
             }
         }
@@ -302,7 +353,7 @@ final readonly class NegativeRequestCaseArbitrary
                 continue;
             }
             $invalid = '__openapi_invalid_enum__';
-            while (in_array($invalid, $enum, true)) {
+            while (in_array($invalid, $enum, strict: true)) {
                 $invalid .= '_';
             }
 
@@ -342,5 +393,93 @@ final readonly class NegativeRequestCaseArbitrary
         }
 
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible const mismatch', $operation->key));
+    }
+
+    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
+    private function boundaryTarget(Operation $operation): array
+    {
+        foreach ($operation->parameters as $parameter) {
+            if (!$parameter['required']) {
+                continue;
+            }
+            $invalid = $this->outOfRangeValue($parameter['schema']);
+            if ($invalid !== null) {
+                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
+            }
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required numeric parameter with a constructible boundary mismatch', $operation->key));
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function outOfRangeValue(array $schema): ?string
+    {
+        $types = $this->declaredTypes($schema);
+        $integer = in_array('integer', $types, strict: true);
+        if (!$integer && !in_array('number', $types, strict: true)) {
+            return null;
+        }
+
+        $minimum = $this->numericBound($schema['minimum'] ?? null);
+        if ($minimum !== null) {
+            if (($schema['exclusiveMinimum'] ?? false) === true) {
+                return $this->numericWire($minimum, $integer);
+            }
+            $below = is_int($minimum) ? ($minimum > PHP_INT_MIN ? $minimum - 1 : null) : $minimum - 1.0;
+            if ($below !== null && $below < $minimum) {
+                return $this->numericWire($below, $integer);
+            }
+        }
+
+        $maximum = $this->numericBound($schema['maximum'] ?? null);
+        if ($maximum !== null) {
+            if (($schema['exclusiveMaximum'] ?? false) === true) {
+                return $this->numericWire($maximum, $integer);
+            }
+            $above = is_int($maximum) ? ($maximum < PHP_INT_MAX ? $maximum + 1 : null) : $maximum + 1.0;
+            if ($above !== null && $above > $maximum) {
+                return $this->numericWire($above, $integer);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @return array<array-key, mixed>
+     */
+    private function declaredTypes(array $schema): array
+    {
+        if (!array_key_exists('type', $schema)) {
+            return [];
+        }
+        if (is_array($schema['type'])) {
+            return $schema['type'];
+        }
+
+        return [$schema['type']];
+    }
+
+    private function numericBound(mixed $value): int|float|null
+    {
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        return null;
+    }
+
+    /**
+     * An integer-typed parameter must stay an integer on the wire, so a float
+     * bound cannot produce a pure boundary mismatch for it.
+     */
+    private function numericWire(int|float $value, bool $integer): ?string
+    {
+        if ($integer && !is_int($value)) {
+            return null;
+        }
+
+        return (string) $value;
     }
 }

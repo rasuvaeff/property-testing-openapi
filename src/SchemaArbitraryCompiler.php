@@ -80,13 +80,11 @@ final readonly class SchemaArbitraryCompiler
     /** @param array<string, mixed> $schema */
     private function not(array $schema): ArbitraryInterface
     {
-        /** @var mixed $forbiddenValue */
-        $forbiddenValue = $schema['not'];
-        if (!is_array($forbiddenValue) || ($forbiddenValue !== [] && array_is_list($forbiddenValue))) {
+        if (!is_array($schema['not']) || ($schema['not'] !== [] && array_is_list($schema['not']))) {
             throw UnsupportedGeneration::forSchema('not must be a schema object');
         }
         /** @var array<string, mixed> $forbidden */
-        $forbidden = $forbiddenValue;
+        $forbidden = $schema['not'];
         $this->assertNotSchema($forbidden);
         unset($schema['not']);
         $source = $this->compile($schema);
@@ -127,7 +125,7 @@ final readonly class SchemaArbitraryCompiler
             /** @var list<string> $types */
             $types = $this->types($schema['type']) ?? [];
             foreach ($types as $type) {
-                if (!in_array($type, ['array', 'boolean', 'integer', 'null', 'number', 'object', 'string'], true)) {
+                if (!in_array($type, ['array', 'boolean', 'integer', 'null', 'number', 'object', 'string'], strict: true)) {
                     throw UnsupportedGeneration::forSchema(sprintf('not type "%s" is not supported', $type));
                 }
             }
@@ -138,18 +136,7 @@ final readonly class SchemaArbitraryCompiler
     private function enumIsFullyExcluded(array $allowed, array $forbidden): bool
     {
         foreach (array_keys($allowed) as $index) {
-            /** @var mixed $candidate */
-            $candidate = $allowed[$index];
-            $excluded = false;
-            foreach (array_keys($forbidden) as $blockedIndex) {
-                /** @var mixed $blocked */
-                $blocked = $forbidden[$blockedIndex];
-                if ($candidate === $blocked) {
-                    $excluded = true;
-                    break;
-                }
-            }
-            if (!$excluded) {
+            if (!in_array($allowed[$index], $forbidden, strict: true)) {
                 return false;
             }
         }
@@ -164,22 +151,14 @@ final readonly class SchemaArbitraryCompiler
             return $value === $schema['const'];
         }
         if (array_key_exists('enum', $schema)) {
-            /** @var mixed $enumValue */
             $enumValue = $schema['enum'];
             if (!is_array($enumValue)) {
                 throw new \LogicException('not enum predicate has an invalid shape');
             }
             /** @var list<mixed> $enum */
             $enum = array_values($enumValue);
-            foreach (array_keys($enum) as $index) {
-                /** @var mixed $candidate */
-                $candidate = $enum[$index];
-                if ($value === $candidate) {
-                    return true;
-                }
-            }
 
-            return false;
+            return in_array($value, $enum, strict: true);
         }
         $types = $this->types($schema['type'] ?? null);
         if ($types === null) {
