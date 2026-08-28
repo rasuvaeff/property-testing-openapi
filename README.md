@@ -79,6 +79,11 @@ and `constMismatchForOperation()` uses a value different from a required scalar
 `boundaryMismatchForOperation()` replaces one required `integer`/`number`
 parameter with a wire value just outside its `minimum`/`maximum` bound
 (honouring boolean exclusive bounds) and records `misuse.kind = 'boundary'`.
+`lengthMismatchForOperation()` replaces one required `string` parameter with a
+value whose length falls just outside its `minLength`/`maxLength` bound and
+records `misuse.kind = 'length'`; parameters carrying `enum`, `const`,
+`pattern`, or `format` are skipped because a pure length mismatch cannot be
+promised there.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.

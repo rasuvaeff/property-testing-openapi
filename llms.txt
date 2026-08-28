@@ -34,6 +34,10 @@ Public API:
   replaces one required integer/number parameter with a wire value just outside
   its `minimum`/`maximum` bound (boolean exclusive bounds honoured) and records
   `misuse.kind = 'boundary'`.
+- `NegativeRequestCaseArbitrary::lengthMismatchForOperation(Operation)`
+  replaces one required string parameter with a value just outside its
+  `minLength`/`maxLength` bound and records `misuse.kind = 'length'`;
+  parameters with `enum`/`const`/`pattern`/`format` are skipped.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

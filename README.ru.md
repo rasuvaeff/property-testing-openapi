@@ -80,7 +80,11 @@ examples.
 `boundaryMismatchForOperation()` заменяет один обязательный
 `integer`/`number`-параметр wire-значением сразу за границей
 `minimum`/`maximum` (с учётом boolean exclusive границ) и записывает
-`misuse.kind = 'boundary'`. Такие request
+`misuse.kind = 'boundary'`.
+`lengthMismatchForOperation()` заменяет один обязательный string-параметр
+значением с длиной сразу за границей `minLength`/`maxLength` и записывает
+`misuse.kind = 'length'`; параметры с `enum`, `const`, `pattern` или `format`
+пропускаются — чистое нарушение длины там не гарантируется. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.

@@ -254,6 +254,65 @@ final class RequestCaseArbitraryTest
         Assert::false($contract->validateRequest($request)->isValid());
     }
 
+    public function lengthMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = self::contract();
+        $operation = $contract->operation('pets.update');
+        $case = (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation)->generate(new Random(47))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'length', 'location' => 'header', 'name' => 'X-Tenant']);
+        Assert::same($case['headers']['X-Tenant'], 'aaaaaa');
+        Assert::same($request->getHeaderLine('X-Tenant'), 'aaaaaa');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function lengthMismatchPrefersAStringBelowMinimumLength(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/codes' => ['get' => [
+                'operationId' => 'codes.get',
+                'parameters' => [[
+                    'name' => 'code', 'in' => 'query', 'required' => true,
+                    'schema' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 8],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('codes.get');
+        $case = (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation)->generate(new Random(53))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'length', 'location' => 'query', 'name' => 'code']);
+        Assert::same($case['query']['code'], 'aa');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsLengthMismatchWhenPurityCannotBePromised(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'patterned',
+            operationId: 'patterned',
+            method: 'GET',
+            path: '/patterned',
+            parameters: [[
+                'name' => 'code',
+                'in' => 'query',
+                'required' => true,
+                'style' => 'form',
+                'explode' => true,
+                'allowReserved' => false,
+                'schema' => ['type' => 'string', 'minLength' => 3, 'pattern' => '^a+$'],
+            ]],
+        );
+
+        (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation);
+    }
+
     public function rejectsOperationsWithoutAConstructibleBoundaryMismatch(): void
     {
         Expect::exception(UnsupportedGeneration::class);
