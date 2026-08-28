@@ -50,6 +50,8 @@ final class ContractSuite
 
     private ?CredentialsProviderInterface $credentials = null;
 
+    private ?RejectionPolicy $rejectionPolicy = null;
+
     private function __construct(
         private readonly Contract $contract,
         private readonly RequestMaterializer $materializer,
@@ -120,6 +122,18 @@ final class ContractSuite
     {
         $suite = clone $this;
         $suite->credentials = $provider;
+
+        return $suite;
+    }
+
+    /**
+     * Opt-in negative oracle: without a policy an accepted invalid request is
+     * not a contract bug, only a 5xx is.
+     */
+    public function rejectionPolicy(RejectionPolicy $policy): self
+    {
+        $suite = clone $this;
+        $suite->rejectionPolicy = $policy;
 
         return $suite;
     }
@@ -251,6 +265,20 @@ final class ContractSuite
         if ($response->getStatusCode() >= 500) {
             throw CheckFailed::serverError($operation->key, $response->getStatusCode());
         }
+        if ($this->rejectionPolicy instanceof RejectionPolicy && !$this->rejectionPolicy->accepts($operation->key, $response->getStatusCode())) {
+            throw CheckFailed::notRejected($operation->key, $response->getStatusCode());
+        }
+    }
+
+    /**
+     * Redacted curl reproducer for one case of a selected operation.
+     * Credentials are never applied here.
+     *
+     * @param CaseData $case
+     */
+    public function reproduce(string $operationKey, array $case, RedactionPolicy $policy = new RedactionPolicy()): string
+    {
+        return (new RequestReproducer($this->materializer))->curl($this->requireSelected($operationKey), $case, $policy);
     }
 
     private function requireSelected(string $operationKey): Operation

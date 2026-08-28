@@ -16,6 +16,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
+use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Random;
@@ -27,6 +28,7 @@ use Testo\Expect;
 use Testo\Test;
 
 use function Rasuvaeff\Understudy\expect;
+use function Rasuvaeff\Understudy\verify;
 
 #[Test]
 #[Covers(ContractSuite::class)]
@@ -182,6 +184,47 @@ final class ContractSuiteTest
 
         Expect::exception(CheckFailed::class);
         $suite->checkNegative('pets.get', $case);
+    }
+
+    public function rejectionPolicyAcceptsAConformingRejection(): void
+    {
+        $calls = 0;
+        $suite = $this->suite()->operations(['pets.get'])
+            ->rejectionPolicy(RejectionPolicy::rejectWith('4XX'))
+            ->transport(new CallableTransport(static function (RequestInterface $request) use (&$calls): ResponseInterface {
+                ++$calls;
+
+                return new Response(422);
+            }));
+        $case = $suite->negativeCases('pets.get')->generate(new Random(47))->value;
+
+        $suite->checkNegative('pets.get', $case);
+
+        Assert::same($calls, 1);
+    }
+
+    public function rejectionPolicyRejectsAnAcceptedInvalidRequest(): void
+    {
+        $suite = $this->suite()->operations(['pets.get'])
+            ->rejectionPolicy(RejectionPolicy::rejectWith('4XX'))
+            ->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(200)));
+        $case = $suite->negativeCases('pets.get')->generate(new Random(53))->value;
+
+        Expect::exception(CheckFailed::class);
+        $suite->checkNegative('pets.get', $case);
+    }
+
+    public function reproduceRendersACurlWithoutCredentials(): void
+    {
+        $provider = Understudy::for(CredentialsProviderInterface::class);
+        $suite = $this->suite()->operations(['secure.get'])->credentials($provider);
+        $case = $suite->validCases('secure.get')->generate(new Random(59))->value;
+
+        $curl = $suite->reproduce('secure.get', $case);
+
+        Assert::string($curl)->contains("curl -X GET '/secure'");
+        Assert::false(str_contains($curl, 'X-Api-Key'));
+        verify(fn() => $provider->provide(Arg::any()), never: true);
     }
 
     public function negativeCasesFailClosedWithoutAConstructibleCategory(): void

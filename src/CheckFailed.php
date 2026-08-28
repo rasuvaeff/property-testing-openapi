@@ -28,6 +28,11 @@ final class CheckFailed extends \RuntimeException
         return new self(sprintf('Operation "%s" responded with server error status %d', $operationKey, $status));
     }
 
+    public static function notRejected(string $operationKey, int $status): self
+    {
+        return new self(sprintf('Operation "%s" answered an invalid request with status %d outside the rejection policy', $operationKey, $status));
+    }
+
     public static function exchangeViolations(string $operationKey, ValidationResult $result): self
     {
         return new self(sprintf('Exchange for operation "%s" violates the contract%s', $operationKey, self::summary($result)));

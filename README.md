@@ -148,12 +148,37 @@ instead of silently filtering it out.
 the configured `CredentialsProviderInterface`), requires the request to be
 valid before transport, sends it, and fails with `CheckFailed` on a 5xx status
 or a non-conforming exchange. `checkNegative()` requires the case to carry
-`misuse` metadata and to be invalid before transport, then only asserts that
-invalid input does not produce a 5xx — a stricter `invalid -> 4xx` oracle is a
-future opt-in rejection policy, not implied by OpenAPI.
+`misuse` metadata and to be invalid before transport, then asserts that
+invalid input does not produce a 5xx. A stricter oracle is the opt-in
+`RejectionPolicy` — OpenAPI itself does not promise `invalid -> 4xx`:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
+
+$suite = $suite->rejectionPolicy(
+    RejectionPolicy::rejectWith('4XX')->forOperation('legacy.get', 200),
+);
+```
+
+With a policy configured, `checkNegative()` additionally fails when the
+response status matches neither the default selectors nor the per-operation
+override (exact codes or `NXX` ranges).
 
 `negativeCases()` is a weighted choice among every negative category the
 operation supports constructively; an operation with no constructible category
 throws `UnsupportedGeneration`.
+
+`reproduce()` renders one case as a redacted curl command. Credentials are
+never applied there, so provider secrets cannot leak by construction;
+`RedactionPolicy` additionally redacts named headers, query parameters,
+cookies, and dot-separated JSON body paths, on top of a default header set
+(`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`). Body
+previews are byte-bounded and never cut a UTF-8 sequence in half.
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
+
+echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
+```
 
 See [examples](examples/README.md) for the runnable scripts.

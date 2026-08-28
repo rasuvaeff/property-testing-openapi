@@ -150,12 +150,38 @@ Selection по умолчанию пуст. `operations()` добавляет я
 настроенный `CredentialsProviderInterface`), требует валидности request до
 transport, отправляет его и падает с `CheckFailed` на 5xx статусе или
 неконформном exchange. `checkNegative()` требует `misuse` metadata и
-invalid-статус case до transport, после чего проверяет только то, что invalid
-input не приводит к 5xx — более строгий oracle `invalid -> 4xx` будет
-отдельной opt-in rejection policy, из OpenAPI он не следует.
+invalid-статус case до transport, после чего проверяет, что invalid input не
+приводит к 5xx. Более строгий oracle — opt-in `RejectionPolicy`: из OpenAPI
+`invalid -> 4xx` не следует:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
+
+$suite = $suite->rejectionPolicy(
+    RejectionPolicy::rejectWith('4XX')->forOperation('legacy.get', 200),
+);
+```
+
+С настроенной policy `checkNegative()` дополнительно падает, когда статус
+ответа не совпадает ни с default selectors, ни с per-operation override
+(точные коды или `NXX`-диапазоны).
 
 `negativeCases()` — взвешенный выбор среди всех negative-категорий,
 конструктивно поддержанных операцией; операция без единой constructible
 категории бросает `UnsupportedGeneration`.
+
+`reproduce()` рендерит один case как redacted curl-команду. Credentials там
+не применяются никогда, поэтому секреты provider-а не могут утечь по
+построению; `RedactionPolicy` дополнительно редактирует названные headers,
+query-параметры, cookies и dot-separated JSON body paths поверх дефолтного
+набора заголовков (`Authorization`, `Proxy-Authorization`, `Cookie`,
+`Set-Cookie`). Body preview ограничен по байтам и никогда не режет UTF-8
+последовательность пополам.
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
+
+echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
+```
 
 Runnable scripts находятся в [examples](examples/README.md).

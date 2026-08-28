@@ -59,7 +59,8 @@ Public API:
   `allSafeOperations()` (opt-in for GET/HEAD), `exclude(list)`,
   `allowUnsafeOperations()` (required for unsafe methods; without it
   `operationKeys()` throws `SuiteConfigurationError`),
-  `transport(TransportInterface)`, `credentials(CredentialsProviderInterface)`.
+  `transport(TransportInterface)`, `credentials(CredentialsProviderInterface)`,
+  `rejectionPolicy(RejectionPolicy)`.
 - `ContractSuite::operationKeys(): list<string>` resolves the selection.
 - `ContractSuite::validCases(string $operationKey)` /
   `negativeCases(string $operationKey)` return case arbitraries for a selected
@@ -70,7 +71,19 @@ Public API:
   a 5xx status or a non-conforming exchange.
 - `ContractSuite::checkNegative(string $operationKey, array $case)` requires
   `misuse` metadata and pre-transport invalidity, then throws `CheckFailed`
-  only if invalid input produces a 5xx.
+  if invalid input produces a 5xx or, with a configured `RejectionPolicy`,
+  a status outside the accepted selectors.
+- `RejectionPolicy::rejectWith(int|string ...)` builds the opt-in negative
+  oracle from exact status codes or `NXX` ranges;
+  `forOperation(string $operationKey, ...)` overrides selectors per operation;
+  `accepts(string $operationKey, int $status): bool`.
+- `ContractSuite::reproduce(string $operationKey, array $case, RedactionPolicy)`
+  renders a redacted curl command; credentials are never applied there.
+- `RequestReproducer::curl(Operation, array $case, RedactionPolicy)` is the
+  standalone form; `RedactionPolicy(headers, queryParameters, cookies,
+  bodyPaths)` names extra redactions on top of the default header set
+  (Authorization, Proxy-Authorization, Cookie, Set-Cookie). Body previews are
+  byte-bounded and UTF-8 safe.
 - `SuiteConfigurationError` for selection/transport misconfiguration;
   `CheckFailed` for built-in check failures.
 
