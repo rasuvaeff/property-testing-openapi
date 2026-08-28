@@ -27,6 +27,9 @@ Public API:
 - `NegativeRequestCaseArbitrary::enumMismatchForOperation(Operation)` replaces
   one required scalar enum parameter with a value outside the enum and records
   `misuse.kind = 'enum'`.
+- `NegativeRequestCaseArbitrary::constMismatchForOperation(Operation)` replaces
+  one required scalar `const` parameter with a different value and records
+  `misuse.kind = 'const'`.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

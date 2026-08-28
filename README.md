@@ -73,7 +73,9 @@ body component and records `misuse.kind = 'missing-required'`. The
 `typeMismatchForOperation()` arbitrary replaces one required scalar
 `integer`/`number`/`boolean`/`null` parameter with a deliberately invalid wire
 value and records `misuse.kind = 'type'`. `enumMismatchForOperation()` similarly
-uses a value outside a required scalar enum and records `misuse.kind = 'enum'.
+uses a value outside a required scalar enum and records `misuse.kind = 'enum'`,
+and `constMismatchForOperation()` uses a value different from a required scalar
+`const` and records `misuse.kind = 'const'`.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.

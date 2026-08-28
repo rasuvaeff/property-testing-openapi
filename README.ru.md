@@ -74,7 +74,9 @@ examples.
 `typeMismatchForOperation()` заменяет один обязательный scalar-параметр типа
 `integer`/`number`/`boolean`/`null` заведомо неверным wire-значением и записывает
 `misuse.kind = 'type'`. `enumMismatchForOperation()` аналогично выбирает
-значение вне scalar enum и записывает `misuse.kind = 'enum'`. Такие request
+значение вне scalar enum и записывает `misuse.kind = 'enum'`, а
+`constMismatchForOperation()` — значение, отличное от обязательного scalar
+`const`, с `misuse.kind = 'const'`. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.
