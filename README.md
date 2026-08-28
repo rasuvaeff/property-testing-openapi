@@ -118,7 +118,42 @@ $response = $transport->send($request);
 ```
 
 Neither transport performs network I/O beyond the callable or PSR-15 boundary
-it was given. Transport exceptions propagate to the caller; the future suite
-layer will classify them separately from contract violations.
+it was given. Transport exceptions propagate to the caller unchanged.
 
-See [examples](examples/README.md) for the runnable script.
+## Suite
+
+`ContractSuite` is the framework-neutral suite model: explicit operation
+selection, a transport, optional credentials, and the built-in per-trial
+checks.
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
+
+$suite = ContractSuite::fromContract($contract, $requestFactory, $streamFactory)
+    ->operations(['pets.get'])
+    ->transport(new Psr15Transport($handler, $serverRequestFactory));
+
+$case = $suite->validCases('pets.get')->generate(new Random(42))->value;
+$suite->checkValid('pets.get', $case);
+```
+
+The default selection is empty. `operations()` adds explicit operation keys,
+`allSafeOperations()` is the opt-in for every GET/HEAD operation, and
+`exclude()` removes keys. An operation with an unsafe HTTP method must be
+listed explicitly **and** enabled with `allowUnsafeOperations()`; a selection
+naming an unsafe operation without that gate throws `SuiteConfigurationError`
+instead of silently filtering it out.
+
+`checkValid()` materializes the case (applying credentials selected through
+the configured `CredentialsProviderInterface`), requires the request to be
+valid before transport, sends it, and fails with `CheckFailed` on a 5xx status
+or a non-conforming exchange. `checkNegative()` requires the case to carry
+`misuse` metadata and to be invalid before transport, then only asserts that
+invalid input does not produce a 5xx — a stricter `invalid -> 4xx` oracle is a
+future opt-in rejection policy, not implied by OpenAPI.
+
+`negativeCases()` is a weighted choice among every negative category the
+operation supports constructively; an operation with no constructible category
+throws `UnsupportedGeneration`.
+
+See [examples](examples/README.md) for the runnable scripts.

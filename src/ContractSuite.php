@@ -1,0 +1,296 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Rasuvaeff\PropertyTesting\OpenApi;
+
+use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Gen;
+
+/**
+ * Framework-neutral suite model: explicit operation selection, transport,
+ * credentials, and the built-in per-trial checks.
+ *
+ * The default selection is empty; every executed operation is either listed
+ * explicitly or added by the {@see allSafeOperations()} opt-in. An unsafe
+ * HTTP method additionally requires {@see allowUnsafeOperations()} —
+ * a selection that names an unsafe operation without that gate fails closed
+ * instead of silently filtering it out.
+ *
+ * @psalm-type CaseData = array{
+ *     operationKey: string,
+ *     path: array<string, string|list<string>|array<string, string>>,
+ *     query: array<string, string|list<string>|array<string, string>>,
+ *     headers: array<string, string|list<string>|array<string, string>>,
+ *     cookies: array<string, string|list<string>|array<string, string>>,
+ *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+ *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
+ * }
+ *
+ * @api
+ */
+final class ContractSuite
+{
+    private const array SAFE_METHODS = ['GET', 'HEAD'];
+
+    /** @var list<string> */
+    private array $selected = [];
+
+    /** @var list<string> */
+    private array $excluded = [];
+
+    private bool $unsafeAllowed = false;
+
+    private ?TransportInterface $transport = null;
+
+    private ?CredentialsProviderInterface $credentials = null;
+
+    private function __construct(
+        private readonly Contract $contract,
+        private readonly RequestMaterializer $materializer,
+        private readonly RequestCaseArbitrary $valid = new RequestCaseArbitrary(),
+        private readonly NegativeRequestCaseArbitrary $negative = new NegativeRequestCaseArbitrary(),
+    ) {}
+
+    public static function fromContract(Contract $contract, RequestFactoryInterface $requests, StreamFactoryInterface $streams): self
+    {
+        return new self($contract, new RequestMaterializer($requests, $streams));
+    }
+
+    /** @param list<string> $operationKeys */
+    public function operations(array $operationKeys): self
+    {
+        $suite = clone $this;
+        foreach ($operationKeys as $key) {
+            $this->contract->operation($key);
+            $suite->selected[] = $key;
+        }
+
+        return $suite;
+    }
+
+    /**
+     * Adds every GET/HEAD operation of the document to the selection.
+     */
+    public function allSafeOperations(): self
+    {
+        $suite = clone $this;
+        foreach ($this->contract->operations() as $operation) {
+            if (in_array(strtoupper($operation->method), self::SAFE_METHODS, strict: true)) {
+                $suite->selected[] = $operation->key;
+            }
+        }
+
+        return $suite;
+    }
+
+    /** @param list<string> $operationKeys */
+    public function exclude(array $operationKeys): self
+    {
+        $suite = clone $this;
+        foreach ($operationKeys as $key) {
+            $suite->excluded[] = $key;
+        }
+
+        return $suite;
+    }
+
+    public function allowUnsafeOperations(): self
+    {
+        $suite = clone $this;
+        $suite->unsafeAllowed = true;
+
+        return $suite;
+    }
+
+    public function transport(TransportInterface $transport): self
+    {
+        $suite = clone $this;
+        $suite->transport = $transport;
+
+        return $suite;
+    }
+
+    public function credentials(CredentialsProviderInterface $provider): self
+    {
+        $suite = clone $this;
+        $suite->credentials = $provider;
+
+        return $suite;
+    }
+
+    /**
+     * The resolved selection in insertion order, with the unsafe gate applied.
+     *
+     * @return list<string>
+     */
+    public function operationKeys(): array
+    {
+        $keys = [];
+        foreach ($this->selected as $key) {
+            if (in_array($key, $this->excluded, strict: true) || in_array($key, $keys, strict: true)) {
+                continue;
+            }
+            $operation = $this->contract->operation($key);
+            if (!$this->unsafeAllowed && !in_array(strtoupper($operation->method), self::SAFE_METHODS, strict: true)) {
+                throw new SuiteConfigurationError(sprintf('Operation "%s" uses unsafe method %s; call allowUnsafeOperations() to include it', $key, $operation->method));
+            }
+            $keys[] = $key;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: null,
+     * }>
+     */
+    public function validCases(string $operationKey): ArbitraryInterface
+    {
+        return $this->valid->forOperation($this->requireSelected($operationKey));
+    }
+
+    /**
+     * Weighted choice among every negative category the operation supports
+     * constructively; an operation with no constructible category fails
+     * closed with {@see UnsupportedGeneration}.
+     */
+    public function negativeCases(string $operationKey): ArbitraryInterface
+    {
+        $operation = $this->requireSelected($operationKey);
+        $factories = [
+            fn(): ArbitraryInterface => $this->negative->forOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->typeMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->enumMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->constMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->boundaryMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->lengthMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->formatMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->additionalPropertyForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->mediaTypeMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->malformedJsonForOperation($operation),
+        ];
+        $pairs = [];
+        foreach ($factories as $factory) {
+            try {
+                $pairs[] = [1, $factory()];
+            } catch (UnsupportedGeneration) {
+            }
+        }
+        if ($pairs === []) {
+            throw new UnsupportedGeneration(sprintf('Operation "%s" supports no constructible negative case category', $operation->key));
+        }
+
+        return Gen::frequency($pairs);
+    }
+
+    /**
+     * Runs the built-in checks for one valid trial: the materialized request
+     * must validate before transport, the response must not be a 5xx, and the
+     * whole exchange must conform to the contract.
+     *
+     * @param CaseData $case
+     */
+    public function checkValid(string $operationKey, array $case): void
+    {
+        if ($case['misuse'] !== null) {
+            throw new \InvalidArgumentException('A valid check requires a case without misuse metadata');
+        }
+        $operation = $this->requireSelected($operationKey);
+        $request = $this->materialize($operation, $case);
+
+        $result = $this->contract->validateRequest($request);
+        if (!$result->isValid()) {
+            throw CheckFailed::invalidGeneratedRequest($operation->key, $result);
+        }
+
+        $response = $this->requireTransport()->send($request);
+        if ($response->getStatusCode() >= 500) {
+            throw CheckFailed::serverError($operation->key, $response->getStatusCode());
+        }
+
+        $exchange = $this->contract->validateExchange($request, $response);
+        if (!$exchange->isValid()) {
+            throw CheckFailed::exchangeViolations($operation->key, $exchange);
+        }
+    }
+
+    /**
+     * Runs the built-in checks for one negative trial: the materialized
+     * request must be invalid before transport, and invalid input must not
+     * produce a 5xx. Any stricter rejection oracle is a separate opt-in
+     * policy, not implied by OpenAPI.
+     *
+     * @param CaseData $case
+     */
+    public function checkNegative(string $operationKey, array $case): void
+    {
+        if ($case['misuse'] === null) {
+            throw new \InvalidArgumentException('A negative check requires a case with misuse metadata');
+        }
+        $operation = $this->requireSelected($operationKey);
+        $request = $this->materialize($operation, $case);
+
+        if ($this->contract->validateRequest($request)->isValid()) {
+            throw CheckFailed::unexpectedlyValidRequest($operation->key);
+        }
+
+        $response = $this->requireTransport()->send($request);
+        if ($response->getStatusCode() >= 500) {
+            throw CheckFailed::serverError($operation->key, $response->getStatusCode());
+        }
+    }
+
+    private function requireSelected(string $operationKey): Operation
+    {
+        if (!in_array($operationKey, $this->operationKeys(), strict: true)) {
+            throw new SuiteConfigurationError(sprintf('Operation "%s" is not part of the suite selection', $operationKey));
+        }
+
+        return $this->contract->operation($operationKey);
+    }
+
+    private function requireTransport(): TransportInterface
+    {
+        if (!$this->transport instanceof TransportInterface) {
+            throw new SuiteConfigurationError('A transport must be configured before checks run');
+        }
+
+        return $this->transport;
+    }
+
+    /** @param CaseData $case */
+    private function materialize(Operation $operation, array $case): RequestInterface
+    {
+        return $this->materializer->materialize($operation, $case, $this->credentialsFor($operation));
+    }
+
+    private function credentialsFor(Operation $operation): ?Credentials
+    {
+        if ($operation->security === []) {
+            return null;
+        }
+        $provider = $this->credentials ?? new class implements CredentialsProviderInterface {
+            #[\Override]
+            public function provide(SecurityRequirement $requirement): Credentials
+            {
+                throw new CredentialsUnavailable('No credentials provider is configured');
+            }
+        };
+        $selection = (new SecuritySelector())->select($operation, $provider);
+
+        return $selection === null ? null : $selection['credentials'];
+    }
+}

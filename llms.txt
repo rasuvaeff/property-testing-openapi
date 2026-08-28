@@ -53,6 +53,26 @@ Public API:
   the required JSON body with a raw malformed payload (`encoding: 'raw'`) and
   records `misuse.kind = 'json-syntax'`.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
+- `ContractSuite::fromContract(Contract, RequestFactoryInterface, StreamFactoryInterface)`
+  builds the framework-neutral suite model. Fluent configuration:
+  `operations(list)` (explicit allow-list, unknown keys throw),
+  `allSafeOperations()` (opt-in for GET/HEAD), `exclude(list)`,
+  `allowUnsafeOperations()` (required for unsafe methods; without it
+  `operationKeys()` throws `SuiteConfigurationError`),
+  `transport(TransportInterface)`, `credentials(CredentialsProviderInterface)`.
+- `ContractSuite::operationKeys(): list<string>` resolves the selection.
+- `ContractSuite::validCases(string $operationKey)` /
+  `negativeCases(string $operationKey)` return case arbitraries for a selected
+  operation; `negativeCases` weights every constructively supported negative
+  category and throws `UnsupportedGeneration` when none applies.
+- `ContractSuite::checkValid(string $operationKey, array $case)` validates the
+  materialized request before transport, sends it, and throws `CheckFailed` on
+  a 5xx status or a non-conforming exchange.
+- `ContractSuite::checkNegative(string $operationKey, array $case)` requires
+  `misuse` metadata and pre-transport invalidity, then throws `CheckFailed`
+  only if invalid input produces a 5xx.
+- `SuiteConfigurationError` for selection/transport misconfiguration;
+  `CheckFailed` for built-in check failures.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
 an optional `{mediaType, encoding: 'json'|'raw', value}` body, and

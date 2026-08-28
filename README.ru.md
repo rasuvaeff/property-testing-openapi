@@ -121,8 +121,41 @@ $response = $transport->send($request);
 ```
 
 Transport не выполняет сетевой I/O за пределами переданного callable или
-PSR-15 boundary. Исключение transport пробрасывается вызывающему коду;
-будущий suite layer будет классифицировать его отдельно от contract
-violations.
+PSR-15 boundary. Исключение transport пробрасывается вызывающему коду без
+преобразования.
 
-Runnable script находится в [examples](examples/README.md).
+## Suite
+
+`ContractSuite` — framework-neutral модель suite: явный выбор операций,
+transport, optional credentials и встроенные per-trial checks.
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
+
+$suite = ContractSuite::fromContract($contract, $requestFactory, $streamFactory)
+    ->operations(['pets.get'])
+    ->transport(new Psr15Transport($handler, $serverRequestFactory));
+
+$case = $suite->validCases('pets.get')->generate(new Random(42))->value;
+$suite->checkValid('pets.get', $case);
+```
+
+Selection по умолчанию пуст. `operations()` добавляет явные operation keys,
+`allSafeOperations()` — opt-in для всех GET/HEAD операций, `exclude()` удаляет
+ключи. Операция с unsafe HTTP-методом должна быть указана явно **и** включена
+через `allowUnsafeOperations()`; selection с unsafe операцией без этого gate
+бросает `SuiteConfigurationError`, а не фильтрует её молча.
+
+`checkValid()` materialize-ит case (применяя credentials, выбранные через
+настроенный `CredentialsProviderInterface`), требует валидности request до
+transport, отправляет его и падает с `CheckFailed` на 5xx статусе или
+неконформном exchange. `checkNegative()` требует `misuse` metadata и
+invalid-статус case до transport, после чего проверяет только то, что invalid
+input не приводит к 5xx — более строгий oracle `invalid -> 4xx` будет
+отдельной opt-in rejection policy, из OpenAPI он не следует.
+
+`negativeCases()` — взвешенный выбор среди всех negative-категорий,
+конструктивно поддержанных операцией; операция без единой constructible
+категории бросает `UnsupportedGeneration`.
+
+Runnable scripts находятся в [examples](examples/README.md).

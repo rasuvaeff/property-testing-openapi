@@ -6,3 +6,7 @@ PSR-17 factory, and validates the result with `openapi-contract`.
 `negative-request.php` walks the constructive negative categories on one
 operation and shows that every misuse case is rejected by contract validation
 before any transport would run.
+
+`suite-check.php` runs `ContractSuite` against an in-process PSR-15 handler:
+valid trials must conform without a 5xx, and a constructive negative case must
+be rejected without a 5xx.
