@@ -116,4 +116,49 @@ final class SecurityTest
         $schemes = ['oauth' => [42]];
         new SecurityRequirement($schemes);
     }
+
+    public function appendsCredentialsToEmptyQueryAndCookieValues(): void
+    {
+        $factory = new Psr17Factory();
+        $request = $factory->createRequest('GET', '/pets');
+        $credentials = new Credentials(
+            query: ['tenant' => ['public']],
+            cookies: ['sid' => ['abc']],
+        );
+
+        $request = $credentials->apply($request);
+
+        Assert::same($request->getUri()->getQuery(), 'tenant=public');
+        Assert::same($request->getHeaderLine('Cookie'), 'sid=abc');
+    }
+
+    public function rejectsNonStringQueryValues(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var array<string, list<string>> $query */
+        $query = ['tenant' => [42]];
+        new Credentials(query: $query);
+    }
+
+    public function rejectsNonStringCookieValues(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var array<string, list<string>> $cookies */
+        $cookies = ['sid' => [42]];
+        new Credentials(cookies: $cookies);
+    }
+
+    public function rejectsNonStringSecretFields(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var list<string> $fields */
+        $fields = [42];
+        new Credentials(secretFields: $fields);
+    }
+
+    public function rejectsMalformedSecuritySchemeMap(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        new SecurityRequirement(['' => []]);
+    }
 }

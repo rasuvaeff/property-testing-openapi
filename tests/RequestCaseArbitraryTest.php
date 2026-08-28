@@ -109,4 +109,22 @@ final class RequestCaseArbitraryTest
 
         (new NegativeRequestCaseArbitrary())->forOperation($operation);
     }
+
+    public function removesARequiredBodyWhenNoParameterExists(): void
+    {
+        $operation = new Operation(
+            key: 'body.required',
+            operationId: 'body.required',
+            method: 'POST',
+            path: '/body',
+            requestBody: [
+                'required' => true,
+                'content' => ['application/json' => ['schema' => ['type' => 'string']]],
+            ],
+        );
+        $case = (new NegativeRequestCaseArbitrary())->forOperation($operation)->generate(new Random(19))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'missing-required', 'location' => 'body', 'name' => 'body']);
+        Assert::null($case['body']);
+    }
 }
