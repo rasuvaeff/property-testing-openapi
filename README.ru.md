@@ -43,6 +43,26 @@ case можно сохранять в property corpus.
 Для object schemas поддерживаются `minProperties`, `maxProperties` и boolean-
 или schema-valued `additionalProperties` в пределах generation budget.
 
+## Credentials для security
+
+Security requirements наследуются операциями, а явный пустой requirement
+означает anonymous access. `SecuritySelector` пробует alternatives в порядке
+документа через `CredentialsProviderInterface`; provider может отклонить одну
+alternative исключением `CredentialsUnavailable`:
+
+```php
+$selection = (new SecuritySelector())->select($operation, $credentials);
+$request = (new RequestMaterializer($requests, $streams))->materialize(
+    $operation,
+    $case,
+    $selection['credentials'] ?? null,
+);
+```
+
+`Credentials` применяет headers, query и cookies только во время
+materialization. Секреты не попадают в `RequestCaseData` и сохранённые property
+examples.
+
 Неподдерживаемые schema assertions и non-JSON request bodies бросают
 `UnsupportedGeneration`; они не расширяются молча до произвольных строк.
 
@@ -58,8 +78,9 @@ $transport = new Psr15Transport($handler, $serverRequestFactory);
 $response = $transport->send($request);
 ```
 
-Адаптеры не выполняют сетевой I/O и не добавляют credentials. Исключение
-transport пробрасывается вызывающему коду; будущий suite layer будет
-классифицировать его отдельно от contract violations.
+Transport не выполняет сетевой I/O за пределами переданного callable или
+PSR-15 boundary. Исключение transport пробрасывается вызывающему коду;
+будущий suite layer будет классифицировать его отдельно от contract
+violations.
 
 Runnable script находится в [examples](examples/README.md).

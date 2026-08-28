@@ -34,7 +34,7 @@ final readonly class RequestMaterializer
      *     misuse: null,
      * } $case
      */
-    public function materialize(Operation $operation, array $case): RequestInterface
+    public function materialize(Operation $operation, array $case, ?Credentials $credentials = null): RequestInterface
     {
         if ($case['operationKey'] !== $operation->key) {
             throw new \InvalidArgumentException(sprintf('Request case targets "%s", not "%s"', $case['operationKey'], $operation->key));
@@ -79,14 +79,16 @@ final readonly class RequestMaterializer
             $request = $request->withHeader('Cookie', implode('; ', $cookies));
         }
         if ($case['body'] === null) {
-            return $request;
+            return $credentials?->apply($request) ?? $request;
         }
         $schema = $this->bodySchema($operation, $case['body']['mediaType']);
         $json = json_encode($this->jsonValue($case['body']['value'], $schema), JSON_THROW_ON_ERROR);
 
-        return $request
+        $request = $request
             ->withHeader('Content-Type', $case['body']['mediaType'])
             ->withBody($this->streams->createStream($json));
+
+        return $credentials?->apply($request) ?? $request;
     }
 
     /** @return array<string, mixed> */

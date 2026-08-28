@@ -44,6 +44,25 @@ credentials and can therefore be persisted by the property corpus.
 Object schemas honor `minProperties`, `maxProperties`, and boolean or
 schema-valued `additionalProperties` within the generation budget.
 
+## Security Credentials
+
+Security requirements are inherited by operations and an explicit empty
+requirement means anonymous access. `SecuritySelector` tries alternatives in
+document order through a `CredentialsProviderInterface`; a provider can reject
+one alternative with `CredentialsUnavailable`:
+
+```php
+$selection = (new SecuritySelector())->select($operation, $credentials);
+$request = (new RequestMaterializer($requests, $streams))->materialize(
+    $operation,
+    $case,
+    $selection['credentials'] ?? null,
+);
+```
+
+`Credentials` applies headers, query values, and cookies only at materialization
+time. Secrets never enter `RequestCaseData` or persisted property examples.
+
 Unsupported schema assertions and non-JSON request bodies throw
 `UnsupportedGeneration`; they are never silently widened to arbitrary strings.
 
@@ -59,8 +78,8 @@ $transport = new Psr15Transport($handler, $serverRequestFactory);
 $response = $transport->send($request);
 ```
 
-Neither adapter performs network I/O or adds credentials. A transport exception
-propagates to the caller; the future suite layer will classify it separately
-from contract violations.
+Neither transport performs network I/O beyond the callable or PSR-15 boundary
+it was given. Transport exceptions propagate to the caller; the future suite
+layer will classify them separately from contract violations.
 
 See [examples](examples/README.md) for the runnable script.
