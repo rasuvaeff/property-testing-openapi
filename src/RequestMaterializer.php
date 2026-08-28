@@ -58,7 +58,7 @@ final readonly class RequestMaterializer
                 value: $values[$parameter['name']],
                 style: $parameter['style'],
                 explode: $parameter['explode'],
-                allowReserved: $parameter['allowReserved'],
+                allowReserved: $parameter['in'] !== 'path' && $parameter['allowReserved'],
             );
             match ($parameter['in']) {
                 'path' => $path = str_replace('{' . $parameter['name'] . '}', $wire, $path),

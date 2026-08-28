@@ -75,6 +75,21 @@ final class ParameterSerializerTest
         Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'simple', explode: false, allowReserved: true), 'a/b,c?d');
     }
 
+    public function keepsQueryDelimitersEncodedWhenAllowReservedIsEnabled(): void
+    {
+        $serializer = new ParameterSerializer();
+
+        Assert::same($serializer->serialize('value', 'a&b=c#fragment', 'form', explode: true, allowReserved: true), 'value=a%26b%3Dc%23fragment');
+    }
+
+    public function escapesLabelDotsSoListBoundariesRemainUnambiguous(): void
+    {
+        $serializer = new ParameterSerializer();
+
+        Assert::same($serializer->serialize('value', ['a.b', 'c'], 'label', explode: false), '.a%2Eb.c');
+        Assert::same($serializer->serialize('value', ['a.b' => 'c.d'], 'label', explode: true), '.a%2Eb=c%2Ed');
+    }
+
     public function rejectsDelimitedNonListValuesWithoutTypeCoercion(): void
     {
         $serializer = new ParameterSerializer();

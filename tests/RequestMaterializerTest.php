@@ -89,6 +89,27 @@ final class RequestMaterializerTest
         Assert::true($contract->validateRequest($request)->isValid());
     }
 
+    public function keepsReservedPathSlashInsideTemplateSlot(): void
+    {
+        $operation = new Operation(
+            key: 'path.reserved',
+            operationId: 'path.reserved',
+            method: 'GET',
+            path: '/items/{id}',
+            parameters: [[
+                'name' => 'id', 'in' => 'path', 'required' => true, 'style' => 'simple',
+                'explode' => false, 'allowReserved' => true, 'schema' => ['type' => 'string'],
+            ]],
+        );
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, [
+            'operationKey' => 'path.reserved', 'path' => ['id' => 'a/b'], 'query' => [],
+            'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null,
+        ]);
+
+        Assert::same($request->getUri()->getPath(), '/items/a%2Fb');
+    }
+
     public function preservesNestedJsonObjectsAndArrays(): void
     {
         $contract = Contract::fromArray([

@@ -18,7 +18,7 @@ final readonly class ParameterSerializer
     {
         return match ($style) {
             'simple' => $this->simple($value, $explode, ',', $allowReserved),
-            'label' => '.' . $this->simple($value, $explode, '.', $allowReserved),
+            'label' => '.' . $this->simple($value, $explode, '.', $allowReserved, encodeDots: true),
             'matrix' => $this->matrix($name, $value, $explode, $allowReserved),
             'form' => $this->form($name, $value, $explode, $allowReserved),
             'spaceDelimited' => $this->delimited($name, $value, ' ', $allowReserved),
@@ -29,18 +29,18 @@ final readonly class ParameterSerializer
     }
 
     /** @param string|list<string>|array<string, string> $value */
-    private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved): string
+    private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved, bool $encodeDots = false): string
     {
         if (is_string($value)) {
-            return $this->encode($value, $allowReserved);
+            return $this->encode($value, $allowReserved, $encodeDots);
         }
         if (array_is_list($value)) {
-            return implode($pairSeparator, array_map(fn(string $item): string => $this->encode($item, $allowReserved), $this->list($value)));
+            return implode($pairSeparator, array_map(fn(string $item): string => $this->encode($item, $allowReserved, $encodeDots), $this->list($value)));
         }
 
         $parts = [];
         foreach ($this->object($value) as $key => $item) {
-            $parts[] = $this->encode($key, $allowReserved) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved);
+            $parts[] = $this->encode($key, $allowReserved, $encodeDots) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved, $encodeDots);
         }
 
         return implode($explode ? $pairSeparator : ',', $parts);
@@ -133,16 +133,19 @@ final readonly class ParameterSerializer
         return $this->encode($name) . '=' . ($valueIsEncoded ? $value : $this->encode($value, $allowReserved));
     }
 
-    private function encode(string $value, bool $allowReserved = false): string
+    private function encode(string $value, bool $allowReserved = false, bool $encodeDots = false): string
     {
         $encoded = rawurlencode($value);
+        if ($encodeDots) {
+            $encoded = str_replace('.', '%2E', $encoded);
+        }
         if (!$allowReserved) {
             return $encoded;
         }
 
         return str_ireplace(
-            ['%3A', '%2F', '%3F', '%23', '%5B', '%5D', '%40', '%21', '%24', '%26', '%27', '%28', '%29', '%2A', '%2B', '%2C', '%3B', '%3D'],
-            [':', '/', '?', '#', '[', ']', '@', '!', '$', '&', "'", '(', ')', '*', '+', ',', ';', '='],
+            ['%3A', '%2F', '%3F', '%5B', '%5D', '%40', '%21', '%24', '%27', '%28', '%29', '%2A', '%2B', '%2C', '%3B'],
+            [':', '/', '?', '[', ']', '@', '!', '$', "'", '(', ')', '*', '+', ',', ';'],
             $encoded,
         );
     }
