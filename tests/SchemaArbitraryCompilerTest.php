@@ -196,4 +196,66 @@ final class SchemaArbitraryCompilerTest
 
         (new SchemaArbitraryCompiler())->compile(['type' => 'object', 'required' => ['id'], 'properties' => []]);
     }
+
+    public function compilesAnyOfBranches(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'anyOf' => [
+                ['type' => 'string', 'const' => 'ready'],
+                ['type' => 'integer', 'minimum' => 3, 'maximum' => 3],
+            ],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 20, seed: 31) as $value) {
+            Assert::true($value === 'ready' || $value === 3);
+        }
+    }
+
+    public function compilesDisjointOneOfBranches(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'oneOf' => [
+                ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+                ['type' => 'integer', 'minimum' => 1, 'maximum' => 4],
+            ],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 20, seed: 37) as $value) {
+            Assert::true((is_string($value) && $value !== '') || (is_int($value) && $value >= 1 && $value <= 4));
+        }
+    }
+
+    public function rejectsOverlappingOneOfBranches(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile([
+            'oneOf' => [
+                ['type' => 'string'],
+                ['type' => 'string', 'minLength' => 2],
+            ],
+        ]);
+    }
+
+    public function mergesObjectAllOfBranches(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'allOf' => [
+                [
+                    'type' => 'object',
+                    'required' => ['id'],
+                    'properties' => ['id' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 4]],
+                ],
+                [
+                    'type' => 'object',
+                    'required' => ['name'],
+                    'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4]],
+                ],
+            ],
+        ]);
+
+        foreach (Gen::sample($arbitrary, count: 20, seed: 41) as $value) {
+            Assert::true(is_array($value) && array_key_exists('id', $value) && array_key_exists('name', $value));
+        }
+    }
 }

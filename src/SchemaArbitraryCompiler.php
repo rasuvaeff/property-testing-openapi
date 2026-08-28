@@ -23,6 +23,10 @@ final readonly class SchemaArbitraryCompiler
      */
     public function compile(array $schema): ArbitraryInterface
     {
+        $combinator = $this->combinator($schema);
+        if ($combinator instanceof ArbitraryInterface) {
+            return $combinator;
+        }
         $this->assertSupported($schema);
         if ($schema === []) {
             return $this->additionalValue();
@@ -68,6 +72,147 @@ final readonly class SchemaArbitraryCompiler
             'object' => $this->object($schema),
             default => throw UnsupportedGeneration::forSchema(sprintf('type "%s" is not supported', $type)),
         };
+    }
+
+    /**
+     * Compile the supported, constructive subset of composition keywords.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function combinator(array $schema): ?ArbitraryInterface
+    {
+        foreach (['anyOf', 'oneOf', 'allOf'] as $keyword) {
+            if (!array_key_exists($keyword, $schema)) {
+                continue;
+            }
+            $schemas = $this->schemaBranches($schema[$keyword], $keyword);
+
+            if ($keyword === 'allOf') {
+                return $this->compile($this->mergeAllOf($schemas));
+            }
+            if ($keyword === 'oneOf' && !$this->areDisjoint($schemas)) {
+                throw UnsupportedGeneration::forSchema('oneOf branches must be provably disjoint');
+            }
+
+            $pairs = [];
+            foreach ($schemas as $branch) {
+                $pairs[] = [1, $this->compile($branch)];
+            }
+
+            return Gen::frequency($pairs);
+        }
+
+        return null;
+    }
+
+    /** @param list<array<string, mixed>> $branches
+     * @return array<string, mixed>
+     */
+    private function mergeAllOf(array $branches): array
+    {
+        $merged = [];
+        $required = [];
+        $properties = [];
+        foreach ($branches as $branch) {
+            if (array_key_exists('type', $branch) && array_key_exists('type', $merged) && $branch['type'] !== $merged['type']) {
+                throw UnsupportedGeneration::forSchema('allOf branches have conflicting types');
+            }
+            foreach (array_keys($branch) as $key) {
+                if ($key === 'required' || $key === 'properties') {
+                    continue;
+                }
+                if (array_key_exists($key, $merged) && $merged[$key] !== $branch[$key]) {
+                    throw UnsupportedGeneration::forSchema(sprintf('allOf constraint "%s" cannot be merged safely', $key));
+                }
+                $merged = array_merge($merged, [$key => $branch[$key]]);
+            }
+            if (isset($branch['required'])) {
+                if (!is_array($branch['required']) || !array_is_list($branch['required'])) {
+                    throw UnsupportedGeneration::forSchema('allOf required must be a list');
+                }
+                foreach (array_keys($branch['required']) as $index) {
+                    /** @var mixed $name */
+                    $name = $branch['required'][$index];
+                    if (!is_string($name)) {
+                        throw UnsupportedGeneration::forSchema('allOf required must contain property names');
+                    }
+                    $required[$name] = true;
+                }
+            }
+            if (isset($branch['properties'])) {
+                if (!is_array($branch['properties']) || ($branch['properties'] !== [] && array_is_list($branch['properties']))) {
+                    throw UnsupportedGeneration::forSchema('allOf properties must be an object');
+                }
+                /** @var array<string, mixed> $propertyMap */
+                $propertyMap = $this->schemaObject($branch['properties'], 'allOf properties must be an object');
+                foreach (array_keys($propertyMap) as $name) {
+                    /** @var mixed $property */
+                    $property = $propertyMap[$name];
+                    if (!is_array($property) || ($property !== [] && array_is_list($property))) {
+                        throw UnsupportedGeneration::forSchema('allOf properties must contain schema objects');
+                    }
+                    if (isset($properties[$name])) {
+                        /** @var array<string, mixed> $existing */
+                        $existing = $properties[$name];
+                        /** @var array<string, mixed> $property */
+                        $properties[$name] = $this->mergeAllOf([$existing, $property]);
+                    } else {
+                        /** @var array<string, mixed> $property */
+                        $properties[$name] = $property;
+                    }
+                }
+            }
+        }
+        if ($properties !== []) {
+            $merged['properties'] = $properties;
+        }
+        if ($required !== []) {
+            $merged['required'] = array_keys($required);
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function schemaBranches(mixed $value, string $keyword): array
+    {
+        if (!is_array($value) || !array_is_list($value) || $value === []) {
+            throw UnsupportedGeneration::forSchema(sprintf('%s must be a non-empty list', $keyword));
+        }
+        $schemas = [];
+        foreach (array_keys($value) as $index) {
+            /** @var mixed $branchValue */
+            $branchValue = $value[$index];
+            if (!is_array($branchValue) || ($branchValue !== [] && array_is_list($branchValue))) {
+                throw UnsupportedGeneration::forSchema(sprintf('%s branches must be schema objects', $keyword));
+            }
+            /** @var array<string, mixed> $branch */
+            $branch = $branchValue;
+            $schemas[] = $branch;
+        }
+
+        return $schemas;
+    }
+
+    /** @param list<array<string, mixed>> $branches */
+    private function areDisjoint(array $branches): bool
+    {
+        $seen = [];
+        foreach ($branches as $branch) {
+            $types = $this->types($branch['type'] ?? null);
+            if ($types === null || count($types) !== 1 || $types[0] === 'null') {
+                return false;
+            }
+            $type = $types[0];
+            if (isset($seen[$type])) {
+                return false;
+            }
+            $seen[$type] = true;
+        }
+
+        return true;
     }
 
     /** @param array<string, mixed> $schema */
