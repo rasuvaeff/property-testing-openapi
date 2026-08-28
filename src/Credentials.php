@@ -28,11 +28,7 @@ final readonly class Credentials
         $this->assertMap($headers, 'headers');
         $this->assertMap($query, 'query');
         $this->assertMap($cookies, 'cookies');
-        foreach ($secretFields as $field) {
-            if ($field === '') {
-                throw new \InvalidArgumentException('Credential secret fields must be non-empty strings');
-            }
-        }
+        $this->assertSecretFields($secretFields);
     }
 
     public function apply(RequestInterface $request): RequestInterface
@@ -68,12 +64,31 @@ final readonly class Credentials
         return $request;
     }
 
-    /** @param array<string, list<string>> $map */
-    private function assertMap(array $map, string $label): void
+    private function assertMap(mixed $map, string $label): void
     {
+        if (!is_array($map)) {
+            throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
+        }
         foreach ($map as $name => $values) {
-            if ($name === '' || !array_is_list($values)) {
+            if (!is_string($name) || $name === '' || !is_array($values) || !array_is_list($values)) {
                 throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
+            }
+            foreach (array_keys($values) as $index) {
+                if (!is_string($values[$index])) {
+                    throw new \InvalidArgumentException(sprintf('Credential %s values must be strings', $label));
+                }
+            }
+        }
+    }
+
+    private function assertSecretFields(mixed $fields): void
+    {
+        if (!is_array($fields) || !array_is_list($fields)) {
+            throw new \InvalidArgumentException('Credential secret fields must be a list');
+        }
+        foreach ($fields as $field) {
+            if (!is_string($field) || $field === '') {
+                throw new \InvalidArgumentException('Credential secret fields must be non-empty strings');
             }
         }
     }

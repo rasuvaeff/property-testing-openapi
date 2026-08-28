@@ -100,4 +100,20 @@ final class SecurityTest
         Assert::same($request->getHeaderLine('Cookie'), 'locale=en; sid=s%3Bid');
         Assert::same($credentials->secretFields, ['Authorization']);
     }
+
+    public function rejectsNonStringCredentialValues(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var array<string, list<string>> $headers */
+        $headers = ['X-Api-Key' => [42]];
+        new Credentials(headers: $headers);
+    }
+
+    public function rejectsNonStringSecurityScopes(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var array<string, list<string>> $schemes */
+        $schemes = ['oauth' => [42]];
+        new SecurityRequirement($schemes);
+    }
 }
