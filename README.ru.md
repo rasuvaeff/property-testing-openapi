@@ -93,7 +93,14 @@ examples.
 `additionalPropertyForOperation()` добавляет одно необъявленное свойство в
 обязательное JSON object body со схемой `additionalProperties: false` и
 записывает `misuse.kind = 'additional-properties'` с именем добавленного
-свойства. Такие request
+свойства.
+`mediaTypeMismatchForOperation()` оставляет schema-валидное JSON body, но
+отправляет его с необъявленным Content-Type и записывает
+`misuse.kind = 'media-type'`; операции с wildcard media types отвергаются
+fail-closed.
+`malformedJsonForOperation()` заменяет обязательное JSON body сырым
+malformed-payload (`encoding: 'raw'`) под объявленным media type и записывает
+`misuse.kind = 'json-syntax'`. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.

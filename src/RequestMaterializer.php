@@ -30,8 +30,8 @@ final readonly class RequestMaterializer
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: null|array{kind: 'missing-required'|'type', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+     *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
      * } $case
      */
     public function materialize(Operation $operation, array $case, ?Credentials $credentials = null): RequestInterface
@@ -81,24 +81,41 @@ final readonly class RequestMaterializer
         if ($case['body'] === null) {
             return $credentials?->apply($request) ?? $request;
         }
-        $schema = $this->bodySchema($operation, $case['body']['mediaType']);
-        $json = json_encode($this->jsonValue($case['body']['value'], $schema), JSON_THROW_ON_ERROR);
+        if ($case['body']['encoding'] === 'raw') {
+            if (!is_string($case['body']['value'])) {
+                throw new UnsupportedGeneration('Raw request body value must be a string');
+            }
+            $payload = $case['body']['value'];
+        } else {
+            $schema = $this->bodySchema($operation, $case['body']['mediaType'], $case['misuse']);
+            $payload = json_encode($this->jsonValue($case['body']['value'], $schema), JSON_THROW_ON_ERROR);
+        }
 
         $request = $request
             ->withHeader('Content-Type', $case['body']['mediaType'])
-            ->withBody($this->streams->createStream($json));
+            ->withBody($this->streams->createStream($payload));
 
         return $credentials?->apply($request) ?? $request;
     }
 
-    /** @return array<string, mixed> */
-    private function bodySchema(Operation $operation, string $mediaType): array
+    /**
+     * A media-type misuse deliberately carries an undeclared Content-Type; the
+     * body is still encoded with the declared JSON schema so the media type is
+     * the only deviation.
+     *
+     * @param null|array{kind: non-empty-string, location: non-empty-string, name: string} $misuse
+     * @return array<string, mixed>
+     */
+    private function bodySchema(Operation $operation, string $mediaType, ?array $misuse): array
     {
         $content = $operation->requestBody['content'] ?? null;
         if (!is_array($content)) {
             throw new UnsupportedGeneration('Request body content must be an object');
         }
         $definition = $content[$mediaType] ?? null;
+        if (!is_array($definition) && $misuse !== null && $misuse['kind'] === 'media-type' && $misuse['location'] === 'body') {
+            $definition = $this->declaredJsonDefinition($content);
+        }
         if (!is_array($definition)) {
             throw new UnsupportedGeneration(sprintf('Request body media type "%s" is not declared', $mediaType));
         }
@@ -109,6 +126,25 @@ final readonly class RequestMaterializer
 
         /** @var array<string, mixed> $schema */
         return $schema;
+    }
+
+    /**
+     * @param array<array-key, mixed> $content
+     * @return array<array-key, mixed>|null
+     */
+    private function declaredJsonDefinition(array $content): ?array
+    {
+        foreach ($content as $mediaType => $definition) {
+            if (!is_string($mediaType) || !is_array($definition)) {
+                continue;
+            }
+            $name = strtolower(trim(explode(';', $mediaType, 2)[0]));
+            if ($name === 'application/json' || str_ends_with($name, '+json')) {
+                return $definition;
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $schema */

@@ -404,6 +404,68 @@ final class RequestCaseArbitraryTest
         ]);
     }
 
+    public function mediaTypeMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = $this->sealedBodyContract(additionalProperties: null);
+        $operation = $contract->operation('pets.create');
+        $case = (new NegativeRequestCaseArbitrary())->mediaTypeMismatchForOperation($operation)->generate(new Random(67))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'media-type', 'location' => 'body', 'name' => 'body']);
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/x-openapi-misuse');
+        Assert::json((string) $request->getBody())->isObject()->hasKeys('name');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsMediaTypeMismatchWhenAWildcardIsDeclared(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'wildcard',
+            operationId: 'wildcard',
+            method: 'POST',
+            path: '/wildcard',
+            requestBody: [
+                'required' => true,
+                'content' => [
+                    'application/json' => ['schema' => ['type' => 'object']],
+                    'application/*' => ['schema' => ['type' => 'object']],
+                ],
+            ],
+        );
+
+        (new NegativeRequestCaseArbitrary())->mediaTypeMismatchForOperation($operation);
+    }
+
+    public function malformedJsonBodyIsInvalidBeforeTransport(): void
+    {
+        $contract = $this->sealedBodyContract(additionalProperties: null);
+        $operation = $contract->operation('pets.create');
+        $case = (new NegativeRequestCaseArbitrary())->malformedJsonForOperation($operation)->generate(new Random(71))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'json-syntax', 'location' => 'body', 'name' => 'body']);
+        Assert::same($case['body'], ['mediaType' => 'application/json', 'encoding' => 'raw', 'value' => '{"malformed":']);
+        Assert::same((string) $request->getBody(), '{"malformed":');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/json');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsMalformedJsonWithoutARequiredJsonBody(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'no-body',
+            operationId: 'no-body',
+            method: 'GET',
+            path: '/no-body',
+        );
+
+        (new NegativeRequestCaseArbitrary())->malformedJsonForOperation($operation);
+    }
+
     public function rejectsOperationsWithoutAConstructibleBoundaryMismatch(): void
     {
         Expect::exception(UnsupportedGeneration::class);

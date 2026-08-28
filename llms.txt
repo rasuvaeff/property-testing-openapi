@@ -46,10 +46,17 @@ Public API:
   adds one undeclared property to a required JSON object body with
   `additionalProperties: false` and records
   `misuse.kind = 'additional-properties'`.
+- `NegativeRequestCaseArbitrary::mediaTypeMismatchForOperation(Operation)`
+  keeps the valid JSON body but sends it under an undeclared Content-Type and
+  records `misuse.kind = 'media-type'`; wildcard media types fail closed.
+- `NegativeRequestCaseArbitrary::malformedJsonForOperation(Operation)` replaces
+  the required JSON body with a raw malformed payload (`encoding: 'raw'`) and
+  records `misuse.kind = 'json-syntax'`.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
-an optional `{mediaType, encoding: 'json', value}` body, and `misuse: null`.
+an optional `{mediaType, encoding: 'json'|'raw', value}` body, and
+`misuse: null`; `encoding: 'raw'` appears only in malformed-JSON negative cases.
 It must contain only JSON-compatible values and never secrets or PSR-7 objects.
 Required parameters and request bodies are always generated. Optional parameters
 and JSON bodies are generated as both present and absent branches.

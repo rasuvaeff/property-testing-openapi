@@ -92,6 +92,12 @@ not assert it.
 `additionalPropertyForOperation()` adds one undeclared property to a required
 JSON object body whose schema sets `additionalProperties: false` and records
 `misuse.kind = 'additional-properties'` with the injected property name.
+`mediaTypeMismatchForOperation()` keeps the schema-valid JSON body but sends it
+under an undeclared Content-Type and records `misuse.kind = 'media-type'`;
+operations declaring wildcard media types fail closed.
+`malformedJsonForOperation()` replaces the required JSON body with a raw
+malformed payload (`encoding: 'raw'`) under the declared media type and records
+`misuse.kind = 'json-syntax'`.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.
