@@ -30,6 +30,10 @@ Public API:
 - `NegativeRequestCaseArbitrary::constMismatchForOperation(Operation)` replaces
   one required scalar `const` parameter with a different value and records
   `misuse.kind = 'const'`.
+- `NegativeRequestCaseArbitrary::boundaryMismatchForOperation(Operation)`
+  replaces one required integer/number parameter with a wire value just outside
+  its `minimum`/`maximum` bound (boolean exclusive bounds honoured) and records
+  `misuse.kind = 'boundary'`.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

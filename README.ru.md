@@ -76,7 +76,11 @@ examples.
 `misuse.kind = 'type'`. `enumMismatchForOperation()` аналогично выбирает
 значение вне scalar enum и записывает `misuse.kind = 'enum'`, а
 `constMismatchForOperation()` — значение, отличное от обязательного scalar
-`const`, с `misuse.kind = 'const'`. Такие request
+`const`, с `misuse.kind = 'const'`.
+`boundaryMismatchForOperation()` заменяет один обязательный
+`integer`/`number`-параметр wire-значением сразу за границей
+`minimum`/`maximum` (с учётом boolean exclusive границ) и записывает
+`misuse.kind = 'boundary'`. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.

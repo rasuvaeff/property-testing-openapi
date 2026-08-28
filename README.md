@@ -76,6 +76,9 @@ value and records `misuse.kind = 'type'`. `enumMismatchForOperation()` similarly
 uses a value outside a required scalar enum and records `misuse.kind = 'enum'`,
 and `constMismatchForOperation()` uses a value different from a required scalar
 `const` and records `misuse.kind = 'const'`.
+`boundaryMismatchForOperation()` replaces one required `integer`/`number`
+parameter with a wire value just outside its `minimum`/`maximum` bound
+(honouring boolean exclusive bounds) and records `misuse.kind = 'boundary'`.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.
