@@ -38,6 +38,10 @@ Public API:
   replaces one required string parameter with a value just outside its
   `minLength`/`maxLength` bound and records `misuse.kind = 'length'`;
   parameters with `enum`/`const`/`pattern`/`format` are skipped.
+- `NegativeRequestCaseArbitrary::formatMismatchForOperation(Operation)`
+  replaces one required string parameter with a fixed witness violating its
+  `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
+  `misuse.kind = 'format'`; `url` is not asserted by the backend and is skipped.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,

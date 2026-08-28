@@ -313,6 +313,51 @@ final class RequestCaseArbitraryTest
         (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation);
     }
 
+    public function formatMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/items' => ['get' => [
+                'operationId' => 'items.get',
+                'parameters' => [[
+                    'name' => 'id', 'in' => 'query', 'required' => true,
+                    'schema' => ['type' => 'string', 'format' => 'uuid'],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('items.get');
+        $case = (new NegativeRequestCaseArbitrary())->formatMismatchForOperation($operation)->generate(new Random(59))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'format', 'location' => 'query', 'name' => 'id']);
+        Assert::same($case['query']['id'], 'not-a-uuid');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function rejectsFormatMismatchForAFormatTheBackendDoesNotAssert(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'url-only',
+            operationId: 'url-only',
+            method: 'GET',
+            path: '/url-only',
+            parameters: [[
+                'name' => 'link',
+                'in' => 'query',
+                'required' => true,
+                'style' => 'form',
+                'explode' => true,
+                'allowReserved' => false,
+                'schema' => ['type' => 'string', 'format' => 'url'],
+            ]],
+        );
+
+        (new NegativeRequestCaseArbitrary())->formatMismatchForOperation($operation);
+    }
+
     public function rejectsOperationsWithoutAConstructibleBoundaryMismatch(): void
     {
         Expect::exception(UnsupportedGeneration::class);

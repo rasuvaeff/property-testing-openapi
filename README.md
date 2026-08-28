@@ -84,6 +84,11 @@ value whose length falls just outside its `minLength`/`maxLength` bound and
 records `misuse.kind = 'length'`; parameters carrying `enum`, `const`,
 `pattern`, or `format` are skipped because a pure length mismatch cannot be
 promised there.
+`formatMismatchForOperation()` replaces one required `string` parameter with a
+fixed witness that provably violates its `format` (`uuid`, `email`, `ipv4`,
+`uri`, `uri-reference`, `date`, `date-time`) and records
+`misuse.kind = 'format'`; `url` is excluded because the validation backend does
+not assert it.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.

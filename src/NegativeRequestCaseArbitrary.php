@@ -20,6 +20,21 @@ final readonly class NegativeRequestCaseArbitrary
 {
     private const int MAX_CONSTRUCTED_LENGTH = 4096;
 
+    /**
+     * Fixed wire values that provably violate their format under the core
+     * validator. `url` is absent deliberately: the backend accepts any string
+     * for it, so a format mismatch cannot be promised.
+     */
+    private const array FORMAT_WITNESSES = [
+        'uuid' => 'not-a-uuid',
+        'email' => 'not-an-email',
+        'ipv4' => 'not-an-ipv4',
+        'uri' => ':',
+        'uri-reference' => '%',
+        'date' => 'not-a-date',
+        'date-time' => 'not-a-date-time',
+    ];
+
     public function __construct(
         private RequestCaseArbitrary $valid = new RequestCaseArbitrary(),
     ) {}
@@ -32,7 +47,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
@@ -450,6 +465,59 @@ final readonly class NegativeRequestCaseArbitrary
         });
     }
 
+    /**
+     * Replaces one required string parameter with a wire value that provably
+     * violates its asserted `format`.
+     *
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: array{kind: 'format', location: 'path'|'query'|'header'|'cookie', name: string},
+     * }>
+     */
+    public function formatMismatchForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->formatTarget($operation);
+
+        return Gen::map($this->valid->forOperation($operation), /**
+         * @param array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: null,
+         * } $case
+         * @return array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: array{kind: 'format', location: 'path'|'query'|'header'|'cookie', name: string},
+         * }
+         */ static function (array $case) use ($target): array {
+            if ($target['location'] === 'path') {
+                $case['path'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'query') {
+                $case['query'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'header') {
+                $case['headers'][$target['name']] = $target['invalid'];
+            } else {
+                $case['cookies'][$target['name']] = $target['invalid'];
+            }
+            $case['misuse'] = ['kind' => 'format', 'location' => $target['location'], 'name' => $target['name']];
+
+            return $case;
+        });
+    }
+
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
     private function boundaryTarget(Operation $operation): array
     {
@@ -545,6 +613,45 @@ final readonly class NegativeRequestCaseArbitrary
         }
 
         return null;
+    }
+
+    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
+    private function formatTarget(Operation $operation): array
+    {
+        foreach ($operation->parameters as $parameter) {
+            if (!$parameter['required']) {
+                continue;
+            }
+            $invalid = $this->formatWitness($parameter['schema']);
+            if ($invalid !== null) {
+                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
+            }
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible format mismatch', $operation->key));
+    }
+
+    /**
+     * Other constraining keywords are excluded so the witness cannot trip an
+     * unrelated assertion instead of the format.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function formatWitness(array $schema): ?string
+    {
+        if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
+            return null;
+        }
+        foreach (['enum', 'const', 'pattern', 'minLength', 'maxLength'] as $keyword) {
+            if (array_key_exists($keyword, $schema)) {
+                return null;
+            }
+        }
+        if (!isset($schema['format']) || !is_string($schema['format'])) {
+            return null;
+        }
+
+        return self::FORMAT_WITNESSES[$schema['format']] ?? null;
     }
 
     /**

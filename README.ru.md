@@ -84,7 +84,12 @@ examples.
 `lengthMismatchForOperation()` заменяет один обязательный string-параметр
 значением с длиной сразу за границей `minLength`/`maxLength` и записывает
 `misuse.kind = 'length'`; параметры с `enum`, `const`, `pattern` или `format`
-пропускаются — чистое нарушение длины там не гарантируется. Такие request
+пропускаются — чистое нарушение длины там не гарантируется.
+`formatMismatchForOperation()` заменяет один обязательный string-параметр
+фиксированным значением, доказуемо нарушающим его `format` (`uuid`, `email`,
+`ipv4`, `uri`, `uri-reference`, `date`, `date-time`), и записывает
+`misuse.kind = 'format'`; `url` исключён — validation backend его не
+ассертит. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.
