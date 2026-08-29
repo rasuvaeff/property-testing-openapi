@@ -13,22 +13,35 @@ use Psr\Http\Message\RequestInterface;
  */
 final readonly class Credentials
 {
+    /** @var array<string, list<string>> */
+    public array $headers;
+
+    /** @var array<string, list<string>> */
+    public array $query;
+
+    /** @var array<string, list<string>> */
+    public array $cookies;
+
+    /** @var list<string> */
+    public array $secretFields;
+
     /**
-     * @param array<string, list<string>> $headers
-     * @param array<string, list<string>> $query
-     * @param array<string, list<string>> $cookies
+     * @param array<string, string|list<string>> $headers
+     * @param array<string, string|list<string>> $query
+     * @param array<string, string|list<string>> $cookies
      * @param list<string> $secretFields
      */
     public function __construct(
-        public array $headers = [],
-        public array $query = [],
-        public array $cookies = [],
-        public array $secretFields = [],
+        array $headers = [],
+        array $query = [],
+        array $cookies = [],
+        array $secretFields = [],
     ) {
-        $this->assertMap($headers, 'headers');
-        $this->assertMap($query, 'query');
-        $this->assertMap($cookies, 'cookies');
+        $this->headers = $this->normalizeMap($headers, 'headers');
+        $this->query = $this->normalizeMap($query, 'query');
+        $this->cookies = $this->normalizeMap($cookies, 'cookies');
         $this->assertSecretFields($secretFields);
+        $this->secretFields = $secretFields;
     }
 
     public function apply(RequestInterface $request): RequestInterface
@@ -64,13 +77,24 @@ final readonly class Credentials
         return $request;
     }
 
-    private function assertMap(mixed $map, string $label): void
+    /**
+     * @param array<array-key, mixed> $map
+     *
+     * @return array<string, list<string>>
+     */
+    private function normalizeMap(array $map, string $label): array
     {
-        if (!is_array($map)) {
-            throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
-        }
+        $normalized = [];
         foreach ($map as $name => $values) {
-            if (!is_string($name) || $name === '' || !is_array($values) || !array_is_list($values)) {
+            if (!is_string($name) || $name === '') {
+                throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
+            }
+            if (is_string($values)) {
+                $normalized[$name] = [$values];
+
+                continue;
+            }
+            if (!is_array($values) || !array_is_list($values)) {
                 throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
             }
             foreach (array_keys($values) as $index) {
@@ -78,7 +102,11 @@ final readonly class Credentials
                     throw new \InvalidArgumentException(sprintf('Credential %s values must be strings', $label));
                 }
             }
+            /** @var list<string> $values */
+            $normalized[$name] = $values;
         }
+
+        return $normalized;
     }
 
     private function assertSecretFields(mixed $fields): void

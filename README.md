@@ -61,8 +61,17 @@ $request = (new RequestMaterializer($requests, $streams))->materialize(
 );
 ```
 
-`Credentials` applies headers, query values, and cookies only at materialization
-time. Secrets never enter `RequestCaseData` or persisted property examples.
+`Credentials` accepts either a plain string or a list of strings for each
+header, query, and cookie value. Its public maps are normalized to lists. The
+credentials are applied only at materialization time, so secrets never enter
+`RequestCaseData` or persisted property examples:
+
+```php
+$credentials = new Credentials(
+    headers: ['Authorization' => 'Bearer token'],
+    query: ['tenant' => ['public', 'fallback']],
+);
+```
 
 `NegativeRequestCaseArbitrary` provides constructive negative categories. The
 `forOperation()` arbitrary removes one required path, query, header, cookie, or
@@ -110,12 +119,20 @@ Execution is explicit. Use `CallableTransport` for a closure or
 ```php
 use Rasuvaeff\PropertyTesting\OpenApi\Psr15Transport;
 
-$transport = new Psr15Transport($handler, $serverRequestFactory);
+$transport = new Psr15Transport(
+    $handler,
+    $serverRequestFactory,
+    afterRequest: static fn() => $stateResetter->reset(),
+);
 $response = $transport->send($request);
 ```
 
 Neither transport performs network I/O beyond the callable or PSR-15 boundary
-it was given. Transport exceptions propagate to the caller unchanged.
+it was given. Transport exceptions propagate to the caller unchanged. The
+optional `afterRequest` hook runs exactly once in `finally`, including when the
+handler throws. For Yii workers, pass `Yiisoft\Di\StateResetter::reset()`
+through this hook while reusing the booted runner and handler; do not construct
+a runner for every generated request.
 
 ## Suite
 
@@ -218,7 +235,9 @@ fixture passes unchanged on PHPUnit 11.5, 12, and 13.
 Environment parity with the property-testing adapters: `PROPERTY_RUNS`
 overrides the run count, `PROPERTY_SEED` fixes the seed unless an explicit
 `seed:` argument is given (a pinned seed also disables corpus replay), and
-`PROPERTY_DB` names a directory-backed regression corpus; a `redis://` DSN
-fails closed.
+`PROPERTY_DB` names either a directory-backed regression corpus or a shared
+Redis corpus. Redis DSNs use `redis://host[:port][/key-prefix]`; the prefix
+defaults to `property-testing:corpus:`. Install `ext-redis` or `predis/predis`.
+Connections are opened lazily, and unsupported schemes fail closed.
 
 See [examples](examples/README.md) for the runnable scripts.

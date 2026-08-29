@@ -17,6 +17,7 @@ use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Understudy;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 
 use function Rasuvaeff\Understudy\expect;
@@ -59,5 +60,46 @@ final class TransportTest
         $transport = new Psr15Transport($handler, $factory);
 
         Assert::same($transport->send($request), $expected);
+    }
+
+    public function psr15TransportResetsStateOnceAfterAResponse(): void
+    {
+        $factory = new Psr17Factory();
+        $handler = Understudy::for(RequestHandlerInterface::class);
+        expect(fn() => $handler->handle(Arg::any()))->returns(new Response(204));
+        $resets = 0;
+        $transport = new Psr15Transport(
+            $handler,
+            $factory,
+            afterRequest: static function () use (&$resets): void {
+                ++$resets;
+            },
+        );
+
+        $transport->send($factory->createRequest('GET', '/health'));
+
+        Assert::same($resets, 1);
+    }
+
+    public function psr15TransportResetsStateOnceWhenTheHandlerThrows(): void
+    {
+        Expect::exception(\RuntimeException::class);
+        $factory = new Psr17Factory();
+        $handler = Understudy::for(RequestHandlerInterface::class);
+        expect(fn() => $handler->handle(Arg::any()))->throws(new \RuntimeException('handler failed'));
+        $resets = 0;
+        $transport = new Psr15Transport(
+            $handler,
+            $factory,
+            afterRequest: static function () use (&$resets): void {
+                ++$resets;
+            },
+        );
+
+        try {
+            $transport->send($factory->createRequest('GET', '/health'));
+        } finally {
+            Assert::same($resets, 1);
+        }
     }
 }

@@ -119,6 +119,22 @@ final class SecurityTest
         Assert::same($credentials->secretFields, ['Authorization']);
     }
 
+    public function normalizesPlainCredentialValuesToLists(): void
+    {
+        $credentials = new Credentials(
+            headers: ['Authorization' => 'Bearer token', 'X-Scope' => ['read', 'write']],
+            query: ['tenant' => 'public'],
+            cookies: ['sid' => 'abc'],
+        );
+
+        Assert::same($credentials->headers, [
+            'Authorization' => ['Bearer token'],
+            'X-Scope' => ['read', 'write'],
+        ]);
+        Assert::same($credentials->query, ['tenant' => ['public']]);
+        Assert::same($credentials->cookies, ['sid' => ['abc']]);
+    }
+
     public function rejectsNonStringCredentialValues(): void
     {
         Expect::exception(\InvalidArgumentException::class);

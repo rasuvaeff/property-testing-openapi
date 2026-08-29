@@ -40,10 +40,17 @@ $handler = new class ($contract) implements RequestHandlerInterface {
         return $this->contract->validateRequest($request)->isValid() ? new Response(204) : new Response(400);
     }
 };
+$resets = 0;
 
 $suite = ContractSuite::fromContract($contract, $factory, $factory)
     ->operations(['pets.get'])
-    ->transport(new Psr15Transport($handler, $factory));
+    ->transport(new Psr15Transport(
+        $handler,
+        $factory,
+        afterRequest: static function () use (&$resets): void {
+            ++$resets;
+        },
+    ));
 
 foreach ([1, 2, 3] as $seed) {
     $suite->checkValid('pets.get', $suite->validCases('pets.get')->generate(new Random($seed))->value);
@@ -52,4 +59,4 @@ foreach ([1, 2, 3] as $seed) {
 $negative = $suite->negativeCases('pets.get')->generate(new Random(5))->value;
 $suite->checkNegative('pets.get', $negative);
 
-echo 'valid trials conformed; negative case (' . $negative['misuse']['kind'] . ') was rejected without a 5xx' . PHP_EOL;
+echo 'valid trials conformed; negative case (' . $negative['misuse']['kind'] . ') was rejected without a 5xx; state resets: ' . $resets . PHP_EOL;
