@@ -30,7 +30,7 @@ final readonly class RequestMaterializer
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+     *     body: null|array{mediaType: string, encoding: 'json'|'raw'|'form', value: mixed}|array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>},
      *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
      * } $case
      */
@@ -81,21 +81,181 @@ final readonly class RequestMaterializer
         if ($case['body'] === null) {
             return $credentials?->apply($request) ?? $request;
         }
-        if ($case['body']['encoding'] === 'raw') {
-            if (!is_string($case['body']['value'])) {
+        $body = $case['body'];
+        if ($body['encoding'] === 'raw') {
+            $rawValue = $body['value'] ?? null;
+            if (!is_string($rawValue)) {
                 throw new UnsupportedGeneration('Raw request body value must be a string');
             }
-            $payload = $case['body']['value'];
+            $payload = $rawValue;
+        } elseif ($body['encoding'] === 'form') {
+            $schema = $this->bodySchema($operation, $body['mediaType'], $case['misuse']);
+            $payload = $this->formBody($body['value'] ?? null, $schema, $this->bodyEncoding($operation, $body['mediaType']));
+        } elseif ($body['encoding'] === 'multipart') {
+            $parts = $body['parts'] ?? null;
+            $boundary = $body['boundary'] ?? null;
+            if (!is_array($parts) || !is_string($boundary)) {
+                throw new UnsupportedGeneration('Multipart request body has an invalid shape');
+            }
+            $payload = $this->multipartBody($parts, $boundary);
+            $body['mediaType'] .= '; boundary=' . $boundary;
         } else {
-            $schema = $this->bodySchema($operation, $case['body']['mediaType'], $case['misuse']);
-            $payload = json_encode($this->jsonValue($case['body']['value'], $schema), JSON_THROW_ON_ERROR);
+            $schema = $this->bodySchema($operation, $body['mediaType'], $case['misuse']);
+            $payload = json_encode($this->jsonValue($body['value'] ?? null, $schema), JSON_THROW_ON_ERROR);
         }
 
         $request = $request
-            ->withHeader('Content-Type', $case['body']['mediaType'])
+            ->withHeader('Content-Type', $body['mediaType'])
             ->withBody($this->streams->createStream($payload));
 
         return $credentials?->apply($request) ?? $request;
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<array-key, mixed> $encoding
+     */
+    private function formBody(mixed $value, array $schema, array $encoding): string
+    {
+        if (!is_array($value) || !$this->isObjectSchema($schema)) {
+            throw new UnsupportedGeneration('Form request body value must be an object');
+        }
+        if ($value !== [] && array_is_list($value)) {
+            throw new UnsupportedGeneration('Form request body value must be an object');
+        }
+        /** @var array<array-key, mixed> $value */
+        $properties = $this->schemaObject($schema['properties'] ?? [], 'Form object properties must be an object');
+        $parts = [];
+        foreach (array_keys($value) as $name) {
+            if (!is_string($name)) {
+                throw new UnsupportedGeneration('Form object keys must be strings');
+            }
+            $property = $this->schemaObject($properties[$name] ?? [], 'Form object property must be a schema object');
+            $configuration = $this->formConfiguration($encoding[$name] ?? null);
+            /** @var array<string, mixed> $configuration */
+            $style = $configuration['style'] ?? 'form';
+            $explode = $configuration['explode'] ?? true;
+            if ($style !== 'form' || !is_bool($explode)) {
+                throw new UnsupportedGeneration(sprintf('Unsupported form encoding for property "%s"', $name));
+            }
+            $wire = $this->formValue($value[$name], $property, $name, $explode);
+            if ($wire !== '') {
+                $parts[] = $wire;
+            }
+        }
+
+        return implode('&', $parts);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function formConfiguration(mixed $value): array
+    {
+        return is_array($value) ? $value : [];
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function formValue(mixed $value, array $schema, string $name, bool $explode): string
+    {
+        $wire = $this->formWireValue($value, $schema);
+
+        return $this->parameters->serialize(name: $name, value: $wire, style: 'form', explode: $explode);
+    }
+
+    /** @param array<string, mixed> $schema
+     * @return string|list<string>|array<string, string>
+     */
+    private function formWireValue(mixed $value, array $schema): string|array
+    {
+        if ($this->isArraySchema($schema)) {
+            if (!is_array($value) || !array_is_list($value)) {
+                throw new UnsupportedGeneration('Form array value must be a list');
+            }
+            $items = $this->schemaObject($schema['items'] ?? null, 'Form array items must be a schema object');
+
+            return array_map($this->scalarValue(...), $value);
+        }
+        if ($this->isObjectSchema($schema)) {
+            if (!is_array($value) || ($value !== [] && array_is_list($value))) {
+                throw new UnsupportedGeneration('Form object value must be an object');
+            }
+            /** @var array<array-key, mixed> $value */
+            $properties = $this->schemaObject($schema['properties'] ?? [], 'Form object properties must be an object');
+            $result = [];
+            foreach (array_keys($value) as $key) {
+                $name = (string) $key;
+                $property = $this->schemaObject($properties[$name] ?? [], 'Form object property must be a schema object');
+                $result = array_merge($result, [$name => $this->scalarValue($value[$key])]);
+            }
+
+            return $result;
+        }
+
+        return $this->scalarValue($value);
+    }
+
+    private function scalarValue(mixed $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+        if (is_int($value) || is_float($value)) {
+            return (string) $value;
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if ($value === null) {
+            return 'null';
+        }
+
+        throw new UnsupportedGeneration('Form scalar value has an unsupported type');
+    }
+
+    /** @return array<array-key, mixed> */
+    private function bodyEncoding(Operation $operation, string $mediaType): array
+    {
+        $content = $operation->requestBody['content'] ?? null;
+        if (!is_array($content) || !is_array($content[$mediaType] ?? null)) {
+            return [];
+        }
+        $definition = $content[$mediaType] ?? null;
+        if (!is_array($definition)) {
+            return [];
+        }
+
+        return (array) ($definition['encoding'] ?? []);
+    }
+
+    /** @param list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}> $parts */
+    private function multipartBody(array $parts, string $boundary): string
+    {
+        if ($boundary === '' || strlen($boundary) > 70 || preg_match("/^[0-9A-Za-z'()+_,.\/:=? -]+\\z/", $boundary) !== 1) {
+            throw new UnsupportedGeneration('Multipart boundary is invalid');
+        }
+        $payload = '';
+        foreach ($parts as $part) {
+            $name = $part['name'];
+            $headers = $part['headers'];
+            $contentType = $part['contentType'];
+            $value = $part['encoding'] === 'base64' ? base64_decode($part['value'], strict: true) : $part['value'];
+            if ($value === false) {
+                throw new UnsupportedGeneration('Multipart base64 value is invalid');
+            }
+            $payload .= '--' . $boundary . "\r\n";
+            $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . "\"\r\n";
+            $payload .= 'Content-Type: ' . $contentType . "\r\n";
+            foreach ($headers as $header => $headerValue) {
+                $payload .= $header . ': ' . $headerValue . "\r\n";
+            }
+            $payload .= "\r\n" . $value . "\r\n";
+        }
+
+        return $payload . '--' . $boundary . "--\r\n";
+    }
+
+    private function quoteHeader(string $value): string
+    {
+        return str_replace(['\\', '"', "\r", "\n"], ['\\\\', '\\"', '', ''], $value);
     }
 
     /**

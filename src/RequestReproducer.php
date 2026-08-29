@@ -35,7 +35,7 @@ final readonly class RequestReproducer
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
      * } $case
      */
@@ -68,7 +68,7 @@ final readonly class RequestReproducer
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
      * } $case
      * @return array{
@@ -77,7 +77,7 @@ final readonly class RequestReproducer
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
      * }
      */
@@ -94,7 +94,7 @@ final readonly class RequestReproducer
             }
         }
         $body = $case['body'];
-        if ($body !== null && $body['encoding'] === 'json' && is_array($body['value'])) {
+        if ($body !== null && $body['encoding'] === 'json' && array_key_exists('value', $body) && is_array($body['value'])) {
             $value = $body['value'];
             foreach ($policy->bodyPaths as $path) {
                 $this->redactBodyPath($value, explode('.', $path));

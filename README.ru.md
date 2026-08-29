@@ -5,7 +5,7 @@
 
 Текущий pre-release срез генерирует корректные scalar, array и object значения
 из поддерживаемого подмножества JSON Schema, materialize-ит OpenAPI 3 parameter
-styles и JSON request body, после чего request проверяется contract validator
+styles и JSON, form-urlencoded или multipart request body, после чего request проверяется contract validator
 до передачи transport.
 
 ## Установка
@@ -32,7 +32,9 @@ $contract->validateRequest($request)->assertValid();
 ```
 
 `RequestCaseData` - JSON-compatible associative array с раздельными `path`,
-`query`, `headers`, `cookies` и optional JSON `body`. Required parameters и
+`query`, `headers`, `cookies` и optional `body`. Form body хранит logical value,
+а multipart body - deterministic boundary и data-only parts; binary payload
+представлен как base64. Required parameters и
 request bodies присутствуют всегда; для optional parameters и JSON body
 генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
 case можно сохранять в property corpus.

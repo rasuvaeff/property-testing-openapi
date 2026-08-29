@@ -28,7 +28,7 @@ use Rasuvaeff\PropertyTesting\Gen;
  *     query: array<string, string|list<string>|array<string, string>>,
  *     headers: array<string, string|list<string>|array<string, string>>,
  *     cookies: array<string, string|list<string>|array<string, string>>,
- *     body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed},
+ *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
  *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
  * }
  *
@@ -167,7 +167,7 @@ final class ContractSuite
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: null,
      * }>
      */
