@@ -108,6 +108,55 @@ final class RequestReproducerTest
         new RedactionPolicy(headers: ['']);
     }
 
+    public function rejectsAListWithNonStringRedactionName(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        new RedactionPolicy(headers: [42]);
+    }
+
+    public function redactsDefaultSensitiveHeadersCaseInsensitively(): void
+    {
+        $operation = new Operation(
+            key: 'headers',
+            operationId: 'headers',
+            method: 'GET',
+            path: '/headers',
+            parameters: [
+                ['name' => 'Authorization', 'in' => 'header', 'required' => false, 'style' => 'simple', 'explode' => false, 'allowReserved' => false, 'schema' => ['type' => 'string']],
+            ],
+        );
+        $curl = $this->reproducer()->curl($operation, [
+            'operationKey' => 'headers', 'path' => [], 'query' => [],
+            'headers' => ['Authorization' => 'secret'], 'cookies' => [], 'body' => null, 'misuse' => null,
+        ]);
+
+        Assert::string($curl)->contains("-H 'Authorization: [redacted]'");
+        Assert::false(str_contains($curl, 'secret'));
+    }
+
+    public function ignoresMissingAndNonJsonBodyRedactionPaths(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['owner' => 'Milo']], 'misuse' => null,
+        ], new RedactionPolicy(bodyPaths: ['missing.child', 'owner.child']));
+
+        Assert::string($curl)->contains('"owner":"Milo"');
+    }
+
+    public function leavesBodyAtOrBelowThePreviewLimitUnchanged(): void
+    {
+        $body = str_repeat('x', 2048);
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'raw', 'value' => $body], 'misuse' => null,
+        ]);
+
+        Assert::false(str_contains($curl, '...[truncated]'));
+        Assert::string($curl)->contains($body);
+    }
+
     private function reproducer(): RequestReproducer
     {
         $factory = new Psr17Factory();

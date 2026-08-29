@@ -32,6 +32,8 @@ final class RejectionPolicyTest
         yield 'range accepts 422' => [$policy, 'pets.get', 422, true];
         yield 'range rejects 200' => [$policy, 'pets.get', 200, false];
         yield 'range rejects 500' => [$policy, 'pets.get', 500, false];
+        yield 'range rejects 399' => [$policy, 'pets.get', 399, false];
+        yield 'range rejects 499? no, accepts 499' => [$policy, 'pets.get', 499, true];
         yield 'exact accepts only itself' => [RejectionPolicy::rejectWith(400, 422), 'pets.get', 409, false];
         yield 'exact accepts listed code' => [RejectionPolicy::rejectWith(400, 422), 'pets.get', 422, true];
     }
@@ -57,6 +59,22 @@ final class RejectionPolicyTest
         Expect::exception(\InvalidArgumentException::class);
 
         RejectionPolicy::rejectWith(99);
+    }
+
+    public function acceptsTheInclusiveStatusBoundaries(): void
+    {
+        $policy = RejectionPolicy::rejectWith(100, 599, '5XX');
+
+        Assert::true($policy->accepts('any', 100));
+        Assert::true($policy->accepts('any', 599));
+        Assert::true($policy->accepts('any', 550));
+    }
+
+    public function rejectsRangeWithLeadingData(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        RejectionPolicy::rejectWith('x4XX');
     }
 
     public function rejectsAMalformedRangeSelector(): void

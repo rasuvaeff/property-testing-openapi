@@ -83,7 +83,7 @@ final class ContractSuite
     {
         $suite = clone $this;
         foreach ($this->contract->operations() as $operation) {
-            if (in_array(strtoupper($operation->method), self::SAFE_METHODS, strict: true)) {
+            if (in_array($operation->method, self::SAFE_METHODS, strict: true)) {
                 $suite->selected[] = $operation->key;
             }
         }
@@ -151,7 +151,7 @@ final class ContractSuite
                 continue;
             }
             $operation = $this->contract->operation($key);
-            if (!$this->unsafeAllowed && !in_array(strtoupper($operation->method), self::SAFE_METHODS, strict: true)) {
+            if (!$this->unsafeAllowed && !in_array($operation->method, self::SAFE_METHODS, strict: true)) {
                 throw new SuiteConfigurationError(sprintf('Operation "%s" uses unsafe method %s; call allowUnsafeOperations() to include it', $key, $operation->method));
             }
             $keys[] = $key;

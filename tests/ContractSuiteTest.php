@@ -10,6 +10,8 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\UnknownOperation;
+use Rasuvaeff\OpenApiContract\ValidationResult;
+use Rasuvaeff\OpenApiContract\Violation;
 use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
 use Rasuvaeff\PropertyTesting\OpenApi\CheckFailed;
 use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
@@ -60,6 +62,89 @@ final class ContractSuiteTest
         Assert::same($suite->operationKeys(), ['pets.get']);
     }
 
+    public function fluentConfigurationDoesNotMutateTheOriginalSuite(): void
+    {
+        $original = $this->suite();
+        $selected = $original->operations(['pets.get']);
+        Assert::same($selected->operationKeys(), ['pets.get']);
+        Assert::same($original->operationKeys(), []);
+
+        $safe = $original->allSafeOperations();
+        Assert::same($safe->operationKeys(), ['pets.list', 'pets.get', 'secure.get']);
+        Assert::same($original->operationKeys(), []);
+
+        $excluded = $selected->exclude(['pets.get']);
+        Assert::same($excluded->operationKeys(), []);
+        Assert::same($selected->operationKeys(), ['pets.get']);
+
+        $unsafeBase = $this->suite()->operations(['pets.create']);
+        $unsafe = $unsafeBase->allowUnsafeOperations();
+        Assert::same($unsafe->operationKeys(), ['pets.create']);
+        Expect::exception(SuiteConfigurationError::class);
+        $unsafeBase->operationKeys();
+    }
+
+    public function rejectionPolicyConfigurationDoesNotMutateTheOriginalSuite(): void
+    {
+        $original = $this->suite()->operations(['pets.get'])->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(200)));
+        $provider = Understudy::for(CredentialsProviderInterface::class);
+        $withCredentials = $original->credentials($provider);
+        $configured = $withCredentials->rejectionPolicy(RejectionPolicy::rejectWith('4XX'));
+        $case = $original->negativeCases('pets.get')->generate(new Random(73))->value;
+
+        $original->checkNegative('pets.get', $case);
+        $withCredentials->checkNegative('pets.get', $case);
+        Expect::exception(CheckFailed::class);
+        $configured->checkNegative('pets.get', $case);
+    }
+
+    public function transportConfigurationDoesNotMutateTheOriginalSuite(): void
+    {
+        $original = $this->suite()->operations(['pets.get']);
+        $configured = $original->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(204)));
+        $case = $configured->validCases('pets.get')->generate(new Random(79))->value;
+
+        $configured->checkValid('pets.get', $case);
+        Expect::exception(SuiteConfigurationError::class);
+        $original->checkValid('pets.get', $case);
+    }
+
+    public function credentialsConfigurationDoesNotMutateTheOriginalSuite(): void
+    {
+        $original = $this->suite()->operations(['secure.get']);
+        $provider = Understudy::for(CredentialsProviderInterface::class);
+        expect(fn() => $provider->provide(Arg::any()))->returns(new Credentials(headers: ['X-Api-Key' => ['token']]));
+        $configured = $original->credentials($provider)->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(204)));
+        $case = $configured->validCases('secure.get')->generate(new Random(83))->value;
+
+        try {
+            $original->checkValid('secure.get', $case);
+            Assert::true(false);
+        } catch (CredentialsUnavailable) {
+            Assert::true(true);
+        }
+
+        $configured->checkValid('secure.get', $case);
+    }
+
+    public function checkFailedSummarizesTheFirstViolation(): void
+    {
+        $result = new ValidationResult([new Violation(
+            code: 'request.invalid',
+            operation: 'pets.get',
+            location: 'query',
+            instancePath: 'q',
+            specPointer: '/paths/pets',
+            expected: 'string',
+            actual: 1,
+            message: 'bad query',
+        )]);
+
+        $exception = CheckFailed::exchangeViolations('pets.get', $result);
+
+        Assert::same($exception->getMessage(), 'Exchange for operation "pets.get" violates the contract: 1 violation(s), first [request.invalid] bad query');
+    }
+
     public function unsafeSelectionFailsClosedWithoutTheGate(): void
     {
         $suite = $this->suite()->operations(['pets.create']);
@@ -97,6 +182,20 @@ final class ContractSuiteTest
 
         Expect::exception(CheckFailed::class);
         $suite->checkValid('pets.get', $case);
+    }
+
+    public function checkValidRejectsExactlyStatus500(): void
+    {
+        $suite = $this->suite()->operations(['pets.get'])
+            ->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(500)));
+        $case = $suite->validCases('pets.get')->generate(new Random(71))->value;
+
+        try {
+            $suite->checkValid('pets.get', $case);
+            Assert::true(false);
+        } catch (CheckFailed $exception) {
+            Assert::same($exception->getMessage(), 'Operation "pets.get" responded with server error status 500');
+        }
     }
 
     public function checkValidRejectsANonConformingResponse(): void
@@ -247,6 +346,16 @@ final class ContractSuiteTest
         }
 
         Assert::true(count($kinds) > 1);
+
+        $missingRequired = false;
+        foreach (range(1, 40) as $seed) {
+            $case = $suite->negativeCases('pets.get')->generate(new Random($seed))->value;
+            if ($case['misuse']['kind'] === 'missing-required') {
+                $missingRequired = true;
+                break;
+            }
+        }
+        Assert::true($missingRequired);
     }
 
     public function credentialsAreAppliedToTheMaterializedRequest(): void

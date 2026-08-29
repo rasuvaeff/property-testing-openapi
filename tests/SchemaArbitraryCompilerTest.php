@@ -278,6 +278,41 @@ final class SchemaArbitraryCompilerTest
         (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'binary']);
     }
 
+    #[DataProvider('unsupportedKeywordCases')]
+    public function rejectsUnsupportedAssertionKeywords(string $keyword): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile([$keyword => []]);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function unsupportedKeywordCases(): iterable
+    {
+        foreach (['$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'contains', 'prefixItems', 'patternProperties', 'propertyNames', 'unevaluatedProperties'] as $keyword) {
+            yield $keyword => [$keyword];
+        }
+    }
+
+    public function rejectsMalformedSchemaCombinatorsAndObjects(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach ([
+            ['type' => ['string', 42]],
+            ['enum' => 'invalid'],
+            ['properties' => 'invalid'],
+            ['required' => 'invalid'],
+            ['items' => []],
+        ] as $schema) {
+            try {
+                $compiler->compile($schema);
+                Assert::true(false);
+            } catch (UnsupportedGeneration) {
+                Assert::true(true);
+            }
+        }
+    }
+
     public function honorsObjectCardinalityAndAdditionalPropertyPolicy(): void
     {
         $schema = [

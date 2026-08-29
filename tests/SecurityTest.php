@@ -179,4 +179,29 @@ final class SecurityTest
         Expect::exception(\InvalidArgumentException::class);
         new SecurityRequirement(['' => []]);
     }
+
+    public function rejectsCredentialMapsThatAreNotLists(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var array<string, list<string>> $headers */
+        $headers = ['X-Key' => ['a' => 'value']];
+        new Credentials(headers: $headers);
+    }
+
+    public function rejectsEmptyCredentialNamesAndSecretLists(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+        /** @var array<string, list<string>> $headers */
+        $headers = ['' => ['value']];
+        new Credentials(headers: $headers);
+    }
+
+    public function rejectsMalformedSecretFieldLists(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        /** @var list<string> $fields */
+        $fields = [''];
+        new Credentials(secretFields: $fields);
+    }
 }
