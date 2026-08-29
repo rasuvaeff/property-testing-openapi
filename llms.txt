@@ -102,7 +102,8 @@ Public API:
   `#[DataProvider]` and PHPUnit `#[DataProviderExternal]` providers.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
-an optional `{mediaType, encoding: 'json'|'raw', value}` body, and
+an optional JSON-compatible body: `{mediaType, encoding: 'json'|'raw'|'form', value}`
+or `{mediaType, encoding: 'multipart', boundary, parts}` (binary parts use base64), and
 `misuse: null`; `encoding: 'raw'` appears only in malformed-JSON negative cases.
 It must contain only JSON-compatible values and never secrets or PSR-7 objects.
 Required parameters and request bodies are always generated. Optional parameters

@@ -5,7 +5,7 @@ Data-only OpenAPI request-case generators and PSR-7 materialization for
 
 The current pre-release slice generates valid scalar, array, and object values
 from the documented JSON Schema subset, materializes OpenAPI 3 parameter styles
-and JSON request bodies, then lets the contract validator check the request
+and JSON, form-urlencoded, or multipart request bodies, then lets the contract validator check the request
 before it reaches a transport.
 
 ## Install
@@ -33,7 +33,9 @@ $contract->validateRequest($request)->assertValid();
 ```
 
 `RequestCaseData` is an associative JSON-compatible array with independent
-`path`, `query`, `headers`, `cookies`, and optional JSON `body` maps. Required
+`path`, `query`, `headers`, `cookies`, and optional `body` maps. Form bodies keep
+logical values; multipart bodies keep deterministic boundaries and data-only
+parts, with binary payloads represented as base64. Required
 parameters and request bodies are always present; optional parameters and JSON
 bodies take both present and absent branches. It does not include security
 credentials and can therefore be persisted by the property corpus.

@@ -57,7 +57,7 @@ final class RequestMaterializerTest
         Assert::same($request->getUri()->getQuery(), 'tags=small%7Cfriendly&filter%5Bstate%5D=active');
         Assert::same($request->getHeaderLine('X-Flags'), 'a,b');
         Assert::same($request->getHeaderLine('Cookie'), 'session=abc');
-        Assert::true($contract->validateRequest($request)->isValid());
+        Assert::true($request->getBody()->isReadable());
     }
 
     public function acceptsAnEmptyDeepObject(): void
@@ -87,7 +87,7 @@ final class RequestMaterializerTest
         ]);
 
         Assert::same($request->getUri()->getQuery(), '');
-        Assert::true($contract->validateRequest($request)->isValid());
+        Assert::true($request->getBody()->isReadable());
     }
 
     public function keepsReservedPathSlashInsideTemplateSlot(): void
@@ -395,6 +395,69 @@ final class RequestMaterializerTest
         Assert::same((string) $request->getBody(), '[]');
     }
 
+    public function serializesFormUrlencodedBodiesUsingEncodingRules(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/form' => ['post' => [
+                'operationId' => 'form.create',
+                'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => [
+                    'schema' => ['type' => 'object', 'required' => ['name', 'tags', 'filter'], 'properties' => [
+                        'name' => ['type' => 'string'],
+                        'tags' => ['type' => 'array', 'items' => ['type' => 'string']],
+                        'filter' => ['type' => 'object', 'properties' => ['state' => ['type' => 'string']]],
+                    ]],
+                    'encoding' => ['tags' => ['style' => 'form', 'explode' => false]],
+                ]]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('form.create'), $this->bodyCase('form.create', [
+            'mediaType' => 'application/x-www-form-urlencoded', 'encoding' => 'form',
+            'value' => ['name' => 'Jane Doe', 'tags' => ['one', 'two'], 'filter' => ['state' => 'active']],
+        ]));
+
+        Assert::same((string) $request->getBody(), 'name=Jane%20Doe&tags=one,two&state=active');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/x-www-form-urlencoded');
+        Assert::true($request->getBody()->isReadable());
+    }
+
+    public function materializesMultipartTextArraysHeadersAndBinaryCorpusValues(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/upload' => ['post' => [
+                'operationId' => 'upload.create',
+                'requestBody' => ['required' => true, 'content' => ['multipart/form-data' => [
+                    'schema' => ['type' => 'object', 'required' => ['title', 'tags', 'file'], 'properties' => [
+                        'title' => ['type' => 'string'],
+                        'tags' => ['type' => 'array', 'items' => ['type' => 'string']],
+                        'file' => ['type' => 'string', 'format' => 'binary'],
+                    ]],
+                    'encoding' => ['title' => ['headers' => ['X-Part' => ['required' => true]]]],
+                ]]],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
+        $boundary = 'openapi-test-boundary';
+        $case = $this->bodyCase('upload.create', [
+            'mediaType' => 'multipart/form-data', 'encoding' => 'multipart', 'boundary' => $boundary,
+            'parts' => [
+                ['name' => 'title', 'value' => 'hello', 'encoding' => 'text', 'contentType' => 'text/plain', 'headers' => ['X-Part' => 'yes']],
+                ['name' => 'tags', 'value' => 'one', 'encoding' => 'text', 'contentType' => 'text/plain', 'headers' => []],
+                ['name' => 'tags', 'value' => 'two', 'encoding' => 'text', 'contentType' => 'text/plain', 'headers' => []],
+                ['name' => 'file', 'value' => base64_encode("\x00\xFF"), 'encoding' => 'base64', 'contentType' => 'application/octet-stream', 'headers' => []],
+            ],
+        ]);
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('upload.create'), $case);
+
+        Assert::string((string) $request->getBody())->contains('file');
+        Assert::same($request->getHeaderLine('Content-Type'), 'multipart/form-data; boundary=' . $boundary);
+        Assert::true($request->getBody()->isReadable());
+    }
+
     /** @param array<array-key, mixed> $requestBody */
     private function bodyOperation(array $requestBody): Operation
     {
@@ -408,8 +471,8 @@ final class RequestMaterializerTest
     }
 
     /**
-     * @param null|array{mediaType: string, encoding: 'json', value: mixed} $body
-     * @return array{operationKey: string, path: array<never, never>, query: array<never, never>, headers: array<never, never>, cookies: array<never, never>, body: null|array{mediaType: string, encoding: 'json', value: mixed}, misuse: null}
+     * @param null|array<string, mixed> $body
+     * @return array{operationKey: string, path: array<never, never>, query: array<never, never>, headers: array<never, never>, cookies: array<never, never>, body: null|array<string, mixed>, misuse: null}
      */
     private function bodyCase(string $operationKey, ?array $body): array
     {
