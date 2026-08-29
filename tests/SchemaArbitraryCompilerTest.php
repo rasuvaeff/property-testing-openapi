@@ -6,6 +6,10 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\GenerationExhausted;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
@@ -16,6 +20,10 @@ use Testo\Test;
 
 #[Test]
 #[Covers(SchemaArbitraryCompiler::class)]
+#[Covers(CompositionArbitraries::class)]
+#[Covers(ContainerArbitraries::class)]
+#[Covers(ScalarArbitraries::class)]
+#[Covers(SchemaFacts::class)]
 #[Covers(UnsupportedGeneration::class)]
 final class SchemaArbitraryCompilerTest
 {

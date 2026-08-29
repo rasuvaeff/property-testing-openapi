@@ -7,6 +7,8 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 
 /**
  * Produces invalid request cases through constructive, corpus-safe mutations.
@@ -18,26 +20,16 @@ use Rasuvaeff\PropertyTesting\Gen;
  */
 final readonly class NegativeRequestCaseArbitrary
 {
-    private const int MAX_CONSTRUCTED_LENGTH = 4096;
+    private ParameterTargets $parameterTargets;
 
-    /**
-     * Fixed wire values that provably violate their format under the core
-     * validator. `url` is absent deliberately: the backend accepts any string
-     * for it, so a format mismatch cannot be promised.
-     */
-    private const array FORMAT_WITNESSES = [
-        'uuid' => 'not-a-uuid',
-        'email' => 'not-an-email',
-        'ipv4' => 'not-an-ipv4',
-        'uri' => ':',
-        'uri-reference' => '%',
-        'date' => 'not-a-date',
-        'date-time' => 'not-a-date-time',
-    ];
+    private BodyTargets $bodyTargets;
 
     public function __construct(
         private RequestCaseArbitrary $valid = new RequestCaseArbitrary(),
-    ) {}
+    ) {
+        $this->parameterTargets = new ParameterTargets();
+        $this->bodyTargets = new BodyTargets();
+    }
 
     /**
      * @return ArbitraryInterface<array{
@@ -52,7 +44,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->target($operation);
+        $target = $this->parameterTargets->missingRequired($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -111,7 +103,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function typeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->typeTarget($operation);
+        $target = $this->parameterTargets->typeMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -168,7 +160,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function enumMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->enumTarget($operation);
+        $target = $this->parameterTargets->enumMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -222,7 +214,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function constMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->constTarget($operation);
+        $target = $this->parameterTargets->constMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -275,7 +267,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function boundaryMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->boundaryTarget($operation);
+        $target = $this->parameterTargets->boundaryMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -312,105 +304,10 @@ final readonly class NegativeRequestCaseArbitrary
         });
     }
 
-    /**
-     * @return array{location: 'path'|'query'|'header'|'cookie'|'body', name: string}
-     */
-    private function target(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if ($parameter['required']) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name']];
-            }
-        }
-        if (($operation->requestBody['required'] ?? false) === true) {
-            return ['location' => 'body', 'name' => 'body'];
-        }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required request component to invalidate', $operation->key));
-    }
 
-    /**
-     * @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}
-     */
-    private function typeTarget(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
-            $types = $this->declaredTypes($parameter['schema']);
-            if (in_array('integer', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-an-integer'];
-            }
-            if (in_array('number', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-a-number'];
-            }
-            if (in_array('boolean', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-a-boolean'];
-            }
-            if (in_array('null', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-null'];
-            }
-        }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible type mismatch', $operation->key));
-    }
 
-    /**
-     * @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}
-     */
-    private function enumTarget(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required'] || !array_key_exists('enum', $parameter['schema'])) {
-                continue;
-            }
-            $enum = $parameter['schema']['enum'];
-            if (!is_array($enum) || $enum === [] || !$this->isScalarEnum($enum)) {
-                continue;
-            }
-            $invalid = '__openapi_invalid_enum__';
-            while (in_array($invalid, $enum, strict: true)) {
-                $invalid .= '_';
-            }
-
-            return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
-        }
-
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible enum mismatch', $operation->key));
-    }
-
-    /** @param array<array-key, mixed> $enum */
-    private function isScalarEnum(array $enum): bool
-    {
-        foreach ($enum as $value) {
-            if ($value !== null && !is_scalar($value)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
-    private function constTarget(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required'] || !array_key_exists('const', $parameter['schema']) || !is_scalar($parameter['schema']['const'])) {
-                continue;
-            }
-            $invalid = '__openapi_invalid_const__';
-            if (is_int($parameter['schema']['const']) || is_float($parameter['schema']['const'])) {
-                $invalid = 'not-a-const-number';
-            } elseif (is_bool($parameter['schema']['const'])) {
-                $invalid = 'not-a-const-boolean';
-            }
-
-            return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
-        }
-
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible const mismatch', $operation->key));
-    }
 
     /**
      * Replaces one required string parameter with a wire value whose length
@@ -428,7 +325,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function lengthMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->lengthTarget($operation);
+        $target = $this->parameterTargets->lengthMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -481,7 +378,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function formatMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->formatTarget($operation);
+        $target = $this->parameterTargets->formatMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -518,102 +415,9 @@ final readonly class NegativeRequestCaseArbitrary
         });
     }
 
-    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
-    private function boundaryTarget(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
-            $invalid = $this->outOfRangeValue($parameter['schema']);
-            if ($invalid !== null) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
-            }
-        }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required numeric parameter with a constructible boundary mismatch', $operation->key));
-    }
 
-    /** @param array<string, mixed> $schema */
-    private function outOfRangeValue(array $schema): ?string
-    {
-        $types = $this->declaredTypes($schema);
-        $integer = in_array('integer', $types, strict: true);
-        if (!$integer && !in_array('number', $types, strict: true)) {
-            return null;
-        }
 
-        $minimum = $this->numericBound($schema['minimum'] ?? null);
-        if ($minimum !== null) {
-            if (($schema['exclusiveMinimum'] ?? false) === true) {
-                return $this->numericWire($minimum, $integer);
-            }
-            $below = is_int($minimum) ? ($minimum > PHP_INT_MIN ? $minimum - 1 : null) : $minimum - 1.0;
-            if ($below !== null && $below < $minimum) {
-                return $this->numericWire($below, $integer);
-            }
-        }
-
-        $maximum = $this->numericBound($schema['maximum'] ?? null);
-        if ($maximum !== null) {
-            if (($schema['exclusiveMaximum'] ?? false) === true) {
-                return $this->numericWire($maximum, $integer);
-            }
-            $above = is_int($maximum) ? ($maximum < PHP_INT_MAX ? $maximum + 1 : null) : $maximum + 1.0;
-            if ($above !== null && $above > $maximum) {
-                return $this->numericWire($above, $integer);
-            }
-        }
-
-        return null;
-    }
-
-    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
-    private function lengthTarget(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
-            $invalid = $this->outOfLengthValue($parameter['schema']);
-            if ($invalid !== null) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
-            }
-        }
-
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible length mismatch', $operation->key));
-    }
-
-    /**
-     * A schema with enum, const, pattern, or format cannot promise a pure
-     * length mismatch, and a string below `minLength: 1` would materialize as
-     * an empty component, so those parameters are skipped.
-     *
-     * @param array<string, mixed> $schema
-     */
-    private function outOfLengthValue(array $schema): ?string
-    {
-        if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
-            return null;
-        }
-        foreach (['enum', 'const', 'pattern', 'format'] as $keyword) {
-            if (array_key_exists($keyword, $schema)) {
-                return null;
-            }
-        }
-
-        $minLength = $this->intBound($schema['minLength'] ?? null);
-        if ($minLength !== null && $minLength >= 2 && $minLength <= self::MAX_CONSTRUCTED_LENGTH) {
-            return str_repeat('a', $minLength - 1);
-        }
-
-        $maxLength = $this->intBound($schema['maxLength'] ?? null);
-        if ($maxLength !== null && $maxLength >= 0 && $maxLength < self::MAX_CONSTRUCTED_LENGTH) {
-            return str_repeat('a', $maxLength + 1);
-        }
-
-        return null;
-    }
 
     /**
      * Adds one undeclared property to a required JSON object body whose schema
@@ -631,7 +435,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function additionalPropertyForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->additionalPropertyTarget($operation);
+        $target = $this->bodyTargets->additionalProperty($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -681,7 +485,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function mediaTypeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->mediaTypeTarget($operation);
+        $target = $this->bodyTargets->mediaTypeMismatch($operation);
 
         return Gen::map($this->valid->forOperation($operation), /**
          * @param array{
@@ -731,7 +535,7 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function malformedJsonForOperation(Operation $operation): ArbitraryInterface
     {
-        $body = $this->jsonBody($operation);
+        $body = $this->bodyTargets->jsonBody($operation);
         if ($body === null) {
             throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body for a malformed JSON case', $operation->key));
         }
@@ -764,170 +568,13 @@ final readonly class NegativeRequestCaseArbitrary
         });
     }
 
-    /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
-    private function formatTarget(Operation $operation): array
-    {
-        foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
-            $invalid = $this->formatWitness($parameter['schema']);
-            if ($invalid !== null) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
-            }
-        }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible format mismatch', $operation->key));
-    }
 
-    /** @return array{name: non-empty-string} */
-    private function additionalPropertyTarget(Operation $operation): array
-    {
-        $body = $this->jsonBody($operation);
-        if ($body !== null
-            && in_array('object', $this->declaredTypes($body['schema']), strict: true)
-            && ($body['schema']['additionalProperties'] ?? null) === false
-        ) {
-            return ['name' => $this->unusedPropertyName($body['schema']['properties'] ?? null)];
-        }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON object body rejecting additional properties', $operation->key));
-    }
 
-    /**
-     * A declared wildcard media type could match the substitute Content-Type,
-     * so such operations fail closed.
-     *
-     * @return array{invalid: non-empty-string}
-     */
-    private function mediaTypeTarget(Operation $operation): array
-    {
-        if ($this->jsonBody($operation) === null) {
-            throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body for a media type mismatch', $operation->key));
-        }
-        $content = $operation->requestBody['content'] ?? null;
-        if (!is_array($content)) {
-            throw new UnsupportedGeneration('Request body content must be an object');
-        }
-        foreach (array_keys($content) as $declared) {
-            if (is_string($declared) && str_contains($declared, '*')) {
-                throw new UnsupportedGeneration(sprintf('Operation "%s" declares wildcard media type "%s"; an undeclared media type cannot be promised', $operation->key, $declared));
-            }
-        }
-        $invalid = 'application/x-openapi-misuse';
-        while (array_key_exists($invalid, $content)) {
-            $invalid .= '-x';
-        }
 
-        return ['invalid' => $invalid];
-    }
 
-    /** @return non-empty-string */
-    private function unusedPropertyName(mixed $properties): string
-    {
-        $name = '__openapi_extra_property__';
-        if (is_array($properties)) {
-            while (array_key_exists($name, $properties)) {
-                $name .= '_';
-            }
-        }
 
-        return $name;
-    }
 
-    /** @return array{mediaType: non-empty-string, schema: array<string, mixed>}|null */
-    private function jsonBody(Operation $operation): ?array
-    {
-        if (($operation->requestBody['required'] ?? false) !== true) {
-            return null;
-        }
-        $content = $operation->requestBody['content'] ?? null;
-        if (!is_array($content)) {
-            return null;
-        }
-        foreach ($content as $mediaType => $definition) {
-            if (!is_string($mediaType) || $mediaType === '' || !is_array($definition)) {
-                continue;
-            }
-            $name = strtolower(trim(explode(';', $mediaType, 2)[0]));
-            if ($name !== 'application/json' && !str_ends_with($name, '+json')) {
-                continue;
-            }
-            $schema = $definition['schema'] ?? [];
-            if (!is_array($schema) || array_is_list($schema)) {
-                return null;
-            }
-            /** @var array<string, mixed> $schema */
 
-            return ['mediaType' => $mediaType, 'schema' => $schema];
-        }
-
-        return null;
-    }
-
-    /**
-     * Other constraining keywords are excluded so the witness cannot trip an
-     * unrelated assertion instead of the format.
-     *
-     * @param array<string, mixed> $schema
-     */
-    private function formatWitness(array $schema): ?string
-    {
-        if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
-            return null;
-        }
-        foreach (['enum', 'const', 'pattern', 'minLength', 'maxLength'] as $keyword) {
-            if (array_key_exists($keyword, $schema)) {
-                return null;
-            }
-        }
-        if (!isset($schema['format']) || !is_string($schema['format'])) {
-            return null;
-        }
-
-        return self::FORMAT_WITNESSES[$schema['format']] ?? null;
-    }
-
-    /**
-     * @param array<string, mixed> $schema
-     * @return array<array-key, mixed>
-     */
-    private function declaredTypes(array $schema): array
-    {
-        if (!array_key_exists('type', $schema)) {
-            return [];
-        }
-        if (is_array($schema['type'])) {
-            return $schema['type'];
-        }
-
-        return [$schema['type']];
-    }
-
-    private function intBound(mixed $value): ?int
-    {
-        return is_int($value) ? $value : null;
-    }
-
-    private function numericBound(mixed $value): int|float|null
-    {
-        if (is_int($value) || is_float($value)) {
-            return $value;
-        }
-
-        return null;
-    }
-
-    /**
-     * An integer-typed parameter must stay an integer on the wire, so a float
-     * bound cannot produce a pure boundary mismatch for it.
-     */
-    private function numericWire(int|float $value, bool $integer): ?string
-    {
-        if ($integer && !is_int($value)) {
-            return null;
-        }
-
-        return (string) $value;
-    }
 }

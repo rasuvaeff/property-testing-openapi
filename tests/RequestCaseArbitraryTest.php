@@ -11,6 +11,9 @@ use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -26,6 +29,9 @@ use Testo\Test;
 #[Test]
 #[Covers(RequestCaseArbitrary::class)]
 #[Covers(NegativeRequestCaseArbitrary::class)]
+#[Covers(ParameterTargets::class)]
+#[Covers(BodyTargets::class)]
+#[Covers(SchemaProbe::class)]
 #[Covers(RequestMaterializer::class)]
 final class RequestCaseArbitraryTest
 {
