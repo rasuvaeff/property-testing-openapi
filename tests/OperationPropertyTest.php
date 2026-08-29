@@ -186,14 +186,22 @@ final class OperationPropertyTest
             }
         } finally {
             putenv('PROPERTY_DB');
-            $entries = glob($directory . '/*.json');
-            foreach (is_array($entries) ? $entries : [] as $file) {
-                unlink($file);
-            }
-            if (is_dir($directory)) {
-                rmdir($directory);
+            self::removeDirectory($directory);
+        }
+    }
+
+    private static function removeDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+        $entries = scandir($directory);
+        foreach (is_array($entries) ? $entries : [] as $entry) {
+            if ($entry !== '.' && $entry !== '..') {
+                unlink($directory . '/' . $entry);
             }
         }
+        rmdir($directory);
     }
 
     public function storesFalsificationsInTheDirectoryCorpus(): void
@@ -211,13 +219,7 @@ final class OperationPropertyTest
             Assert::true(is_array($stored) && $stored !== []);
         } finally {
             putenv('PROPERTY_DB');
-            $entries = glob($directory . '/*.json');
-            foreach (is_array($entries) ? $entries : [] as $file) {
-                unlink($file);
-            }
-            if (is_dir($directory)) {
-                rmdir($directory);
-            }
+            self::removeDirectory($directory);
         }
     }
 
