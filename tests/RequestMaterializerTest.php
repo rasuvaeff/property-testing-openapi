@@ -13,6 +13,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -453,9 +454,135 @@ final class RequestMaterializerTest
         $factory = new Psr17Factory();
         $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('upload.create'), $case);
 
-        Assert::string((string) $request->getBody())->contains('file');
+        Assert::same(
+            (string) $request->getBody(),
+            '--openapi-test-boundary' . "\r\n"
+            . 'Content-Disposition: form-data; name="title"' . "\r\n"
+            . 'Content-Type: text/plain' . "\r\n"
+            . 'X-Part: yes' . "\r\n\r\n"
+            . 'hello' . "\r\n"
+            . '--openapi-test-boundary' . "\r\n"
+            . 'Content-Disposition: form-data; name="tags"' . "\r\n"
+            . 'Content-Type: text/plain' . "\r\n\r\n"
+            . 'one' . "\r\n"
+            . '--openapi-test-boundary' . "\r\n"
+            . 'Content-Disposition: form-data; name="tags"' . "\r\n"
+            . 'Content-Type: text/plain' . "\r\n\r\n"
+            . 'two' . "\r\n"
+            . '--openapi-test-boundary' . "\r\n"
+            . 'Content-Disposition: form-data; name="file"' . "\r\n"
+            . 'Content-Type: application/octet-stream' . "\r\n\r\n"
+            . "\x00\xFF\r\n"
+            . '--openapi-test-boundary--' . "\r\n",
+        );
         Assert::same($request->getHeaderLine('Content-Type'), 'multipart/form-data; boundary=' . $boundary);
         Assert::true($request->getBody()->isReadable());
+    }
+
+    public function escapesMultipartPartNamesWithoutAllowingHeaderInjection(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', [
+                'mediaType' => 'multipart/form-data',
+                'encoding' => 'multipart',
+                'boundary' => 'boundary',
+                'parts' => [[
+                    'name' => "field\\\"\r\nInjected",
+                    'value' => 'value',
+                    'encoding' => 'text',
+                    'contentType' => 'text/plain',
+                    'headers' => [],
+                ]],
+            ]),
+        );
+
+        Assert::same(
+            (string) $request->getBody(),
+            '--boundary' . "\r\n"
+            . 'Content-Disposition: form-data; name="field\\\\\"Injected"' . "\r\n"
+            . 'Content-Type: text/plain' . "\r\n\r\n"
+            . 'value' . "\r\n"
+            . '--boundary--' . "\r\n",
+        );
+    }
+
+    public function rejectsMultipartWithoutParts(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart request body has an invalid shape');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', [
+                'mediaType' => 'multipart/form-data',
+                'encoding' => 'multipart',
+                'boundary' => 'boundary',
+            ]),
+        );
+    }
+
+    public function rejectsMultipartWithoutBoundary(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart request body has an invalid shape');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', [
+                'mediaType' => 'multipart/form-data',
+                'encoding' => 'multipart',
+                'parts' => [],
+            ]),
+        );
+    }
+
+    #[DataProvider('invalidMultipartBoundaryProvider')]
+    public function rejectsInvalidMultipartBoundary(string $boundary): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart boundary is invalid');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', [
+                'mediaType' => 'multipart/form-data',
+                'encoding' => 'multipart',
+                'boundary' => $boundary,
+                'parts' => [],
+            ]),
+        );
+    }
+
+    public static function invalidMultipartBoundaryProvider(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'over 70 characters' => [str_repeat('a', 71)];
+        yield 'invalid prefix' => ["\nboundary"];
+        yield 'invalid suffix' => ["boundary\n"];
+    }
+
+    public function rejectsInvalidMultipartBase64Value(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart base64 value is invalid');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', [
+                'mediaType' => 'multipart/form-data',
+                'encoding' => 'multipart',
+                'boundary' => 'boundary',
+                'parts' => [[
+                    'name' => 'file',
+                    'value' => 'not-base64!',
+                    'encoding' => 'base64',
+                    'contentType' => 'application/octet-stream',
+                    'headers' => [],
+                ]],
+            ]),
+        );
     }
 
     /** @param array<array-key, mixed> $requestBody */

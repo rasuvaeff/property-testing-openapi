@@ -229,7 +229,7 @@ final readonly class RequestMaterializer
     /** @param list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}> $parts */
     private function multipartBody(array $parts, string $boundary): string
     {
-        if ($boundary === '' || strlen($boundary) > 70 || preg_match("/^[0-9A-Za-z'()+_,.\/:=? -]+$/", $boundary) !== 1) {
+        if ($boundary === '' || strlen($boundary) > 70 || preg_match("/^[0-9A-Za-z'()+_,.\/:=? -]+\\z/", $boundary) !== 1) {
             throw new UnsupportedGeneration('Multipart boundary is invalid');
         }
         $payload = '';
@@ -242,7 +242,7 @@ final readonly class RequestMaterializer
                 throw new UnsupportedGeneration('Multipart base64 value is invalid');
             }
             $payload .= '--' . $boundary . "\r\n";
-            $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . "\r\n";
+            $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . "\"\r\n";
             $payload .= 'Content-Type: ' . $contentType . "\r\n";
             foreach ($headers as $header => $headerValue) {
                 $payload .= $header . ': ' . $headerValue . "\r\n";
