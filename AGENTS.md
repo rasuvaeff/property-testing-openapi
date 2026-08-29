@@ -19,3 +19,14 @@ OpenAPI contract plan.
 
 Run `make build`, `make rector`, and `git diff --check` before handoff. Run
 `make mutation` when source behavior changes.
+
+## Mutation gate: known equivalent classes
+
+`composer mutation` (minMsi 93) leaves a stable set of escaped mutants that
+are equivalent by analysis — do not chase them, and re-classify anything new:
+`Gen::frequency` weight bumps that scale every pair uniformly, values in
+lookup maps read only through `isset()` (a `true`→`false` flip changes
+nothing), redundant numeric casts on already-cast operands, mutually
+compensating normalizations (a trim whose result is re-trimmed downstream),
+float-precision boundaries where `min - 1.0 == min`, and `explode()` limit
+bumps where only `[0]` is read.

@@ -25,6 +25,8 @@ use Rasuvaeff\PropertyTesting\Runner\PropertyRunner;
  * seed is given, and `PROPERTY_DB` names a directory-backed regression corpus.
  *
  * @api
+ *
+ * @psalm-import-type CaseData from ContractSuite
  */
 final readonly class OperationProperty
 {
@@ -69,7 +71,7 @@ final readonly class OperationProperty
             if (!is_array($case)) {
                 throw new \LogicException('Generated request case has an invalid shape');
             }
-            /** @var array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed}, misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string}} $case */
+            /** @var CaseData $case */
             $phase === 'valid' ? $suite->checkValid($operationKey, $case) : $suite->checkNegative($operationKey, $case);
         });
 
@@ -100,7 +102,7 @@ final readonly class OperationProperty
         }
 
         try {
-            /** @var array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{mediaType: string, encoding: 'json'|'raw', value: mixed}, misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string}} $case */
+            /** @var CaseData $case */
             return $suite->reproduce($operationKey, $case);
         } catch (\Throwable $failure) {
             return sprintf('(no reproducer: %s)', $failure->getMessage());
