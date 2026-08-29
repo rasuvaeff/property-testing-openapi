@@ -10,13 +10,16 @@ Public API:
 - `RequestCaseArbitrary::forOperation(Operation): ArbitraryInterface`
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
 - `TransportInterface::send(RequestInterface): ResponseInterface`
-- `CallableTransport` and `Psr15Transport` execute an explicit transport boundary.
+- `CallableTransport` and `Psr15Transport` execute an explicit transport boundary;
+  `Psr15Transport(..., afterRequest: callable)` runs the optional reset hook once
+  in `finally`, including when the handler throws.
 - `SecurityRequirement`, `CredentialsProviderInterface`, `CredentialsUnavailable`,
   and `SecuritySelector` model OR alternatives and AND schemes without putting
   secrets in generated cases; an empty requirement object selects anonymous
   credentials without calling the provider.
-- `Credentials` applies secret headers/query/cookies at materialization time;
-  pass the selected credentials as the optional third argument to
+- `Credentials` accepts string or list<string> values, normalizes its public
+  headers/query/cookies maps to list<string>, and applies them at materialization
+  time; pass the selected credentials as the optional third argument to
   `RequestMaterializer::materialize`.
 - `NegativeRequestCaseArbitrary::forOperation(Operation)` removes one required
   request component and records `misuse.kind = 'missing-required'`.
@@ -92,7 +95,8 @@ Public API:
   `OperationPropertyFailed` (operation key, phase, `CounterExample`, redacted
   curl reproducer). `PROPERTY_RUNS` overrides runs, `PROPERTY_SEED` fixes the
   seed (an explicit `seed:` wins and disables corpus replay), `PROPERTY_DB`
-  names a directory corpus (`redis://` fails closed).
+  names a directory corpus or `redis://host[:port][/key-prefix]` shared corpus;
+  Redis uses ext-redis or predis and connects lazily.
 - `OpenApiOperations::keys(ContractSuite): iterable<string, array{string}>`
   yields the resolved selection as named single-argument tuples for Testo
   `#[DataProvider]` and PHPUnit `#[DataProviderExternal]` providers.

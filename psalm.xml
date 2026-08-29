@@ -10,4 +10,7 @@
             <directory name="vendor"/>
         </ignoreFiles>
     </projectFiles>
+    <enableExtensions>
+        <extension name="redis"/>
+    </enableExtensions>
 </psalm>

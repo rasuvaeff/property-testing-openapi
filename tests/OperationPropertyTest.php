@@ -124,7 +124,7 @@ final class OperationPropertyTest
             'PROPERTY_RUNS=zero' => 'PROPERTY_RUNS must be a positive integer, got "zero"',
             'PROPERTY_RUNS=x5' => 'PROPERTY_RUNS must be a positive integer, got "x5"',
             'PROPERTY_SEED=x5' => 'PROPERTY_SEED must be an integer, got "x5"',
-            'PROPERTY_DB=redis://127.0.0.1' => 'PROPERTY_DB "redis://127.0.0.1" names a remote corpus; the OpenAPI operation property supports only directory corpora',
+            'PROPERTY_DB=rediss://127.0.0.1' => 'PROPERTY_DB uses an unsupported scheme "rediss://"; use redis:// for a shared corpus or a plain directory path for a local one',
         ] as $env => $message) {
             putenv($env);
 
@@ -146,6 +146,22 @@ final class OperationPropertyTest
             => $contract->validateRequest($request)->isValid() ? new Response(204) : new Response(400));
 
         putenv('PROPERTY_DB=' . $directory);
+
+        try {
+            OperationProperty::check($suite, 'pets.get', runs: 2, seed: 3);
+        } finally {
+            putenv('PROPERTY_DB');
+        }
+
+        Assert::true(actual: true);
+    }
+
+    public function acceptsARedisCorpusWithoutConnectingWhenTheSeedIsPinned(): void
+    {
+        $suite = $this->suite(static fn(Contract $contract, RequestInterface $request): Response
+            => $contract->validateRequest($request)->isValid() ? new Response(204) : new Response(400));
+
+        putenv('PROPERTY_DB=redis://127.0.0.1:6399/openapi-tests:');
 
         try {
             OperationProperty::check($suite, 'pets.get', runs: 2, seed: 3);

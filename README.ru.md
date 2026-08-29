@@ -61,9 +61,17 @@ $request = (new RequestMaterializer($requests, $streams))->materialize(
 );
 ```
 
-`Credentials` применяет headers, query и cookies только во время
-materialization. Секреты не попадают в `RequestCaseData` и сохранённые property
-examples.
+`Credentials` принимает обычную строку или список строк для каждого значения
+header, query и cookie. Публичные maps нормализуются в списки. Credentials
+применяются только во время materialization, поэтому секреты не попадают в
+`RequestCaseData` и сохранённые property examples:
+
+```php
+$credentials = new Credentials(
+    headers: ['Authorization' => 'Bearer token'],
+    query: ['tenant' => ['public', 'fallback']],
+);
+```
 
 `NegativeRequestCaseArbitrary` предоставляет конструктивные negative-категории.
 `forOperation()` удаляет один обязательный path, query, header, cookie или body
@@ -113,13 +121,20 @@ malformed-payload (`encoding: 'raw'`) под объявленным media type �
 ```php
 use Rasuvaeff\PropertyTesting\OpenApi\Psr15Transport;
 
-$transport = new Psr15Transport($handler, $serverRequestFactory);
+$transport = new Psr15Transport(
+    $handler,
+    $serverRequestFactory,
+    afterRequest: static fn() => $stateResetter->reset(),
+);
 $response = $transport->send($request);
 ```
 
 Transport не выполняет сетевой I/O за пределами переданного callable или
 PSR-15 boundary. Исключение transport пробрасывается вызывающему коду без
-преобразования.
+преобразования. Необязательный hook `afterRequest` вызывается ровно один раз в
+`finally`, в том числе когда handler бросает исключение. Для Yii worker передайте
+через hook вызов `Yiisoft\Di\StateResetter::reset()`, переиспользуя загруженные
+runner и handler; не создавайте runner для каждого сгенерированного request.
 
 ## Suite
 
@@ -222,7 +237,9 @@ final class ApiContractTest
 Environment-паритет с адаптерами property-testing: `PROPERTY_RUNS`
 переопределяет число прогонов, `PROPERTY_SEED` фиксирует seed, если явный
 аргумент `seed:` не передан (закреплённый seed также отключает corpus
-replay), а `PROPERTY_DB` задаёт directory-backed regression corpus;
-`redis://` DSN завершается fail-closed.
+replay), а `PROPERTY_DB` задаёт directory-backed regression corpus или общий
+Redis corpus. Формат DSN: `redis://host[:port][/key-prefix]`, prefix по умолчанию
+`property-testing:corpus:`. Нужен `ext-redis` или `predis/predis`; соединение
+открывается лениво, а неизвестные схемы завершаются fail-closed.
 
 Runnable scripts находятся в [examples](examples/README.md).

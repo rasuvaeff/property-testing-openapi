@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
 use Rasuvaeff\PropertyTesting\Runner\CallableTrialExecutor;
 use Rasuvaeff\PropertyTesting\Runner\Corpus;
 use Rasuvaeff\PropertyTesting\Runner\Falsified;
-use Rasuvaeff\PropertyTesting\Runner\FilesystemCorpus;
 use Rasuvaeff\PropertyTesting\Runner\PropertyConfig;
 use Rasuvaeff\PropertyTesting\Runner\PropertyDefinition;
 use Rasuvaeff\PropertyTesting\Runner\PropertyRunner;
@@ -22,7 +22,8 @@ use Rasuvaeff\PropertyTesting\Runner\PropertyRunner;
  *
  * Environment parity with the property-testing adapters: `PROPERTY_RUNS`
  * overrides the run count, `PROPERTY_SEED` fixes the seed unless an explicit
- * seed is given, and `PROPERTY_DB` names a directory-backed regression corpus.
+ * seed is given, and `PROPERTY_DB` names a directory-backed or Redis regression
+ * corpus.
  *
  * @api
  *
@@ -140,14 +141,6 @@ final readonly class OperationProperty
 
     private static function resolveCorpus(): ?Corpus
     {
-        $dsn = getenv('PROPERTY_DB');
-        if ($dsn === false || $dsn === '') {
-            return null;
-        }
-        if (preg_match('#^[a-zA-Z][a-zA-Z0-9+.\-]*://#', $dsn) === 1) {
-            throw new SuiteConfigurationError(sprintf('PROPERTY_DB "%s" names a remote corpus; the OpenAPI operation property supports only directory corpora', $dsn));
-        }
-
-        return new FilesystemCorpus($dsn);
+        return CorpusFromEnv::resolve();
     }
 }

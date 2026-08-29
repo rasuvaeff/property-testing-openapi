@@ -9,4 +9,5 @@ before any transport would run.
 
 `suite-check.php` runs `ContractSuite` against an in-process PSR-15 handler:
 valid trials must conform without a 5xx, and a constructive negative case must
-be rejected without a 5xx.
+be rejected without a 5xx. Its `afterRequest` hook also counts one state reset
+after every in-process request.
