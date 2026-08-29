@@ -804,6 +804,18 @@ final class SchemaArbitraryCompilerTest
         (new SchemaArbitraryCompiler())->compile(['oneOf' => [['const' => 'x'], ['type' => 'integer']]]);
     }
 
+    public function treatsPasswordAsAPlainStringAnnotation(): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'format' => 'password',
+            'minLength' => 2,
+            'maxLength' => 4,
+        ]), count: 20, seed: 131) as $value) {
+            Assert::true(is_string($value) && mb_strlen($value) >= 2 && mb_strlen($value) <= 4);
+        }
+    }
+
     public function generatesEmptyStringsForZeroLengthBudgets(): void
     {
         $compiler = new SchemaArbitraryCompiler();

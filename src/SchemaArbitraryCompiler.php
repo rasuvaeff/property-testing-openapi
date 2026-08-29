@@ -370,7 +370,8 @@ final readonly class SchemaArbitraryCompiler
         }
         /** @var ArbitraryInterface<string> $arbitrary */
         $arbitrary = match ($format) {
-            null => Gen::stringOf($min, $max),
+            // `password` is a UI-obscuring annotation in OAS, not an assertion.
+            null, 'password' => Gen::stringOf($min, $max),
             'uuid' => Gen::uuid(),
             'email' => Gen::email(),
             'ipv4' => Gen::ipv4(),
