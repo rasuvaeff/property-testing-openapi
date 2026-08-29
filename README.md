@@ -214,6 +214,10 @@ operation supports at least one constructible misuse category. A falsified
 phase throws `OperationPropertyFailed` carrying the operation key, the phase,
 the seed, the shrunk minimal case, and a redacted curl reproducer.
 
+The parity is CI-verified: `composer build` runs the PHPUnit fixture suite
+(`tests/PhpUnit/`, `composer test:phpunit`) alongside the Testo suite, and the
+fixture passes unchanged on PHPUnit 11.5, 12, and 13.
+
 Environment parity with the property-testing adapters: `PROPERTY_RUNS`
 overrides the run count, `PROPERTY_SEED` fixes the seed unless an explicit
 `seed:` argument is given (a pinned seed also disables corpus replay), and

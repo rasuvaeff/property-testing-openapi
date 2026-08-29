@@ -218,6 +218,10 @@ final class ApiContractTest
 `OperationPropertyFailed` с ключом операции, фазой, seed, shrunk minimal case
 и redacted curl-репродьюсером.
 
+Паритет проверяется в CI: `composer build` гоняет PHPUnit-фикстуру
+(`tests/PhpUnit/`, `composer test:phpunit`) рядом с Testo-сьютом; фикстура
+проходит без изменений на PHPUnit 11.5, 12 и 13.
+
 Environment-паритет с адаптерами property-testing: `PROPERTY_RUNS`
 переопределяет число прогонов, `PROPERTY_SEED` фиксирует seed, если явный
 аргумент `seed:` не передан (закреплённый seed также отключает corpus
