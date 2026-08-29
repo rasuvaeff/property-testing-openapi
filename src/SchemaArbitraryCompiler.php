@@ -568,10 +568,6 @@ final readonly class SchemaArbitraryCompiler
             return Gen::filter($base, static fn(array $values): bool => count($values) >= $minProperties);
         }
 
-        if ($shape === [] && $minProperties === 0 && $maxProperties === 0) {
-            return Gen::constant([]);
-        }
-
         $keyAlphabet = 'abcdefghijklmnopqrstuvwxyz';
         /** @var ArbitraryInterface<array-key> $key */
         $key = Gen::map(
