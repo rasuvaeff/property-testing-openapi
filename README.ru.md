@@ -184,4 +184,44 @@ use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
 ```
 
+## Интеграция с test runner'ами
+
+`OperationProperty` — framework-neutral runner-поверхность: операция — это
+отдельный test case, а каждый сгенерированный request — property trial. Она
+работает без изменений под Testo и PHPUnit, потому что ни одной стороне не
+нужны framework-хуки: data provider — обычный статический метод, а проверка —
+обычный вызов:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\OpenApiOperations;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationProperty;
+
+#[Test]
+final class ApiContractTest
+{
+    #[DataProvider('operations')]
+    public function operationConforms(string $operationKey): void
+    {
+        OperationProperty::check(self::suite(), $operationKey, runs: 100);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function operations(): iterable
+    {
+        return OpenApiOperations::keys(self::suite());
+    }
+}
+```
+
+`check()` всегда выполняет valid-фазу, а negative-фазу — когда у операции
+есть хотя бы одна конструктивная misuse-категория. Falsified-фаза бросает
+`OperationPropertyFailed` с ключом операции, фазой, seed, shrunk minimal case
+и redacted curl-репродьюсером.
+
+Environment-паритет с адаптерами property-testing: `PROPERTY_RUNS`
+переопределяет число прогонов, `PROPERTY_SEED` фиксирует seed, если явный
+аргумент `seed:` не передан (закреплённый seed также отключает corpus
+replay), а `PROPERTY_DB` задаёт directory-backed regression corpus;
+`redis://` DSN завершается fail-closed.
+
 Runnable scripts находятся в [examples](examples/README.md).

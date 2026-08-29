@@ -181,4 +181,43 @@ use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
 ```
 
+## Test Runner Integration
+
+`OperationProperty` is the framework-neutral runner surface: each operation is
+one test case, and each generated request is one property trial. It works
+unchanged under Testo and PHPUnit because neither side needs framework hooks —
+the data provider is a plain static method and the check is a plain call:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\OpenApiOperations;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationProperty;
+
+#[Test]
+final class ApiContractTest
+{
+    #[DataProvider('operations')]
+    public function operationConforms(string $operationKey): void
+    {
+        OperationProperty::check(self::suite(), $operationKey, runs: 100);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function operations(): iterable
+    {
+        return OpenApiOperations::keys(self::suite());
+    }
+}
+```
+
+`check()` runs the valid phase always and the negative phase when the
+operation supports at least one constructible misuse category. A falsified
+phase throws `OperationPropertyFailed` carrying the operation key, the phase,
+the seed, the shrunk minimal case, and a redacted curl reproducer.
+
+Environment parity with the property-testing adapters: `PROPERTY_RUNS`
+overrides the run count, `PROPERTY_SEED` fixes the seed unless an explicit
+`seed:` argument is given (a pinned seed also disables corpus replay), and
+`PROPERTY_DB` names a directory-backed regression corpus; a `redis://` DSN
+fails closed.
+
 See [examples](examples/README.md) for the runnable scripts.

@@ -86,6 +86,16 @@ Public API:
   byte-bounded and UTF-8 safe.
 - `SuiteConfigurationError` for selection/transport misconfiguration;
   `CheckFailed` for built-in check failures.
+- `OperationProperty::check(ContractSuite, string $operationKey, int $runs = 100, ?int $seed = null)`
+  runs the valid phase always and the negative phase when the operation has a
+  constructible misuse category; a falsified phase throws
+  `OperationPropertyFailed` (operation key, phase, `CounterExample`, redacted
+  curl reproducer). `PROPERTY_RUNS` overrides runs, `PROPERTY_SEED` fixes the
+  seed (an explicit `seed:` wins and disables corpus replay), `PROPERTY_DB`
+  names a directory corpus (`redis://` fails closed).
+- `OpenApiOperations::keys(ContractSuite): iterable<string, array{string}>`
+  yields the resolved selection as named single-argument tuples for Testo
+  `#[DataProvider]` and PHPUnit `#[DataProviderExternal]` providers.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
 an optional `{mediaType, encoding: 'json'|'raw', value}` body, and
