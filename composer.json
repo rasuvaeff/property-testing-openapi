@@ -26,7 +26,7 @@
         "psr/http-factory": "^1.1",
         "psr/http-message": "^1.1 || ^2.0",
         "psr/http-server-handler": "^1.0",
-        "rasuvaeff/openapi-contract": "dev-master",
+        "rasuvaeff/openapi-contract": "^0.1",
         "rasuvaeff/property-testing-core": "^0.4"
     },
     "require-dev": {
@@ -45,15 +45,6 @@
         "testo/testo": "^0.10.25",
         "vimeo/psalm": "^6.16"
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../openapi-contract",
-            "options": {
-                "symlink": false
-            }
-        }
-    ],
     "minimum-stability": "dev",
     "prefer-stable": true,
     "autoload": {

@@ -14,9 +14,6 @@ styles и JSON request body, после чего request проверяется 
 composer require --dev rasuvaeff/property-testing-openapi
 ```
 
-Пока идёт pre-release разработка, `openapi-contract` резолвится через локальный
-path repository из `composer.json`.
-
 ## Генерация и materialization
 
 ```php

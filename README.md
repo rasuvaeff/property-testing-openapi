@@ -14,9 +14,6 @@ before it reaches a transport.
 composer require --dev rasuvaeff/property-testing-openapi
 ```
 
-During this pre-release repository work, `openapi-contract` is resolved through
-the local path repository declared in `composer.json`.
-
 ## Generate And Materialize
 
 ```php
