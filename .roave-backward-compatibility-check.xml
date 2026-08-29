@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<roave-bc-check
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="vendor/roave/backward-compatibility-check/Resources/schema.xsd">
+    <baseline>
+        <!-- Explicit readonly properties are initialized to [] by the constructor, as before. -->
+        <ignored-regex>#^\[BC\] CHANGED: Property Rasuvaeff\\PropertyTesting\\OpenApi\\Credentials\#\$(?:headers|query|cookies|secretFields) changed default value from array \(\s*\) to NULL$#</ignored-regex>
+    </baseline>
+</roave-bc-check>
