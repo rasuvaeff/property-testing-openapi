@@ -186,11 +186,11 @@ final class OperationPropertyTest
             }
         } finally {
             putenv('PROPERTY_DB');
-            self::removeDirectory($directory);
+            $this->removeDirectory($directory);
         }
     }
 
-    private static function removeDirectory(string $directory): void
+    private function removeDirectory(string $directory): void
     {
         if (!is_dir($directory)) {
             return;
@@ -219,7 +219,7 @@ final class OperationPropertyTest
             Assert::true(is_array($stored) && $stored !== []);
         } finally {
             putenv('PROPERTY_DB');
-            self::removeDirectory($directory);
+            $this->removeDirectory($directory);
         }
     }
 
