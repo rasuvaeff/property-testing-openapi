@@ -120,6 +120,13 @@ final class ParameterSerializerTest
         Assert::same($serializer->serialize('value', [], 'simple', explode: false), '');
     }
 
+    public function rejectsADeepObjectListWithTheDeepObjectMessage(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('deepObject parameters require an object value');
+
+        (new ParameterSerializer())->serialize('value', ['item'], 'deepObject', explode: true);
+    }
+
     /** @return iterable<string, array{string|list<string>|array<string, string>, string}> */
     public static function invalidShapeCases(): iterable
     {

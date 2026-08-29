@@ -644,6 +644,409 @@ final class RequestCaseArbitraryTest
         ]);
     }
 
+    /** @param array<string, mixed> $schema */
+    private function queryParamOperation(array $schema, bool $required = true): Operation
+    {
+        return new Operation(
+            key: 'q.get',
+            operationId: 'q.get',
+            method: 'GET',
+            path: '/q',
+            parameters: [[
+                'name' => 'q',
+                'in' => 'query',
+                'required' => $required,
+                'style' => 'form',
+                'explode' => true,
+                'allowReserved' => false,
+                'schema' => $schema,
+            ]],
+        );
+    }
+
+    /** @param array<array-key, mixed> $content */
+    private function bodyOperation(array $content, bool $required = true): Operation
+    {
+        return new Operation(
+            key: 'b.post',
+            operationId: 'b.post',
+            method: 'POST',
+            path: '/b',
+            requestBody: ['required' => $required, 'content' => $content],
+        );
+    }
+
+    public function enumMismatchTargetsOnlyRequiredScalarEnums(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            $this->queryParamOperation(['type' => 'string', 'enum' => ['a']], required: false),
+            $this->queryParamOperation(['type' => 'string', 'enum' => []]),
+            $this->queryParamOperation(['type' => 'string', 'enum' => [['a']]]),
+        ] as $operation) {
+            try {
+                $negative->enumMismatchForOperation($operation);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+
+        $nullable = $this->queryParamOperation(['type' => 'string', 'enum' => [null, 'x']]);
+        $case = $negative->enumMismatchForOperation($nullable)->generate(new Random(29))->value;
+        Assert::same($case['query']['q'], '__openapi_invalid_enum__');
+
+        $colliding = $this->queryParamOperation(['type' => 'string', 'enum' => ['__openapi_invalid_enum__']]);
+        $case = $negative->enumMismatchForOperation($colliding)->generate(new Random(29))->value;
+        Assert::same($case['query']['q'], '__openapi_invalid_enum___');
+    }
+
+    public function constMismatchTargetsOnlyRequiredScalarConsts(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            $this->queryParamOperation(['type' => 'string', 'const' => 'v1'], required: false),
+            $this->queryParamOperation(['type' => 'object', 'const' => ['a']]),
+        ] as $operation) {
+            try {
+                $negative->constMismatchForOperation($operation);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+
+        $numeric = $this->queryParamOperation(['type' => 'integer', 'const' => 5]);
+        $case = $negative->constMismatchForOperation($numeric)->generate(new Random(31))->value;
+        Assert::same($case['query']['q'], 'not-a-const-number');
+    }
+
+    public function boundaryMismatchHandlesNumberSchemasAndFloatBounds(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+
+        $below = $negative->boundaryMismatchForOperation($this->queryParamOperation(['type' => 'number', 'minimum' => 1.5]))->generate(new Random(37))->value;
+        Assert::same($below['query']['q'], '0.5');
+
+        $above = $negative->boundaryMismatchForOperation($this->queryParamOperation(['type' => 'number', 'maximum' => 2.5]))->generate(new Random(37))->value;
+        Assert::same($above['query']['q'], '3.5');
+
+        $exclusive = $negative->boundaryMismatchForOperation($this->queryParamOperation(['type' => 'integer', 'maximum' => 10, 'exclusiveMaximum' => true]))->generate(new Random(37))->value;
+        Assert::same($exclusive['query']['q'], '10');
+
+        $intBoundForNumber = $negative->boundaryMismatchForOperation($this->queryParamOperation(['type' => 'number', 'minimum' => 2]))->generate(new Random(37))->value;
+        Assert::same($intBoundForNumber['query']['q'], '1');
+
+        $union = $negative->boundaryMismatchForOperation($this->queryParamOperation(['type' => ['integer', 'number'], 'minimum' => 5]))->generate(new Random(37))->value;
+        Assert::same($union['query']['q'], '4');
+    }
+
+    public function boundaryMismatchFailsClosedAtTheNumericLimits(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            ['type' => 'integer', 'minimum' => PHP_INT_MIN],
+            ['type' => 'integer', 'maximum' => PHP_INT_MAX],
+            ['type' => 'number', 'minimum' => 1.0E308],
+            ['type' => 'number', 'maximum' => 1.0E308],
+            ['type' => 'string', 'minimum' => 5],
+            ['type' => 'integer', 'minimum' => '5'],
+        ] as $schema) {
+            try {
+                $negative->boundaryMismatchForOperation($this->queryParamOperation($schema));
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function lengthMismatchHonorsTheConstructedLengthBudget(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+
+        $atMinimum = $negative->lengthMismatchForOperation($this->queryParamOperation(['type' => 'string', 'minLength' => 2]))->generate(new Random(47))->value;
+        Assert::same($atMinimum['query']['q'], 'a');
+
+        $zeroMax = $negative->lengthMismatchForOperation($this->queryParamOperation(['type' => 'string', 'maxLength' => 0]))->generate(new Random(47))->value;
+        Assert::same($zeroMax['query']['q'], 'a');
+
+        foreach ([
+            ['type' => 'integer', 'minLength' => 3],
+            ['type' => 'string', 'minLength' => 3, 'enum' => ['abc']],
+            ['type' => 'string'],
+            ['type' => 'string', 'maxLength' => 4096],
+        ] as $schema) {
+            try {
+                $negative->lengthMismatchForOperation($this->queryParamOperation($schema));
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function formatMismatchGuardsEveryConflictingKeyword(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            ['type' => 'string', 'format' => 'uuid', 'enum' => ['x']],
+            ['type' => 'string', 'format' => 'uuid', 'minLength' => 3],
+        ] as $schema) {
+            try {
+                $negative->formatMismatchForOperation($this->queryParamOperation($schema));
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function additionalPropertyInjectionAvoidsDeclaredNames(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        $operation = $this->bodyOperation(['application/json' => ['schema' => [
+            'type' => 'object',
+            'properties' => ['__openapi_extra_property__' => ['type' => 'boolean']],
+            'additionalProperties' => false,
+        ]]]);
+
+        $case = $negative->additionalPropertyForOperation($operation)->generate(new Random(61))->value;
+
+        Assert::same($case['misuse']['name'] ?? null, '__openapi_extra_property___');
+        Assert::true(is_array($case['body']) && ($case['body']['value']['__openapi_extra_property___'] ?? null) === true);
+
+        Expect::exception(UnsupportedGeneration::class);
+        $negative->additionalPropertyForOperation(new Operation(key: 'no-body', operationId: 'no-body', method: 'GET', path: '/x'));
+    }
+
+    public function mediaTypeMismatchAvoidsDeclaredMisuseTypes(): void
+    {
+        $operation = $this->bodyOperation([
+            'application/json' => ['schema' => ['type' => 'object']],
+            'application/x-openapi-misuse' => ['schema' => ['type' => 'object']],
+        ]);
+
+        $case = (new NegativeRequestCaseArbitrary())->mediaTypeMismatchForOperation($operation)->generate(new Random(67))->value;
+
+        Assert::true(is_array($case['body']) && $case['body']['mediaType'] === 'application/x-openapi-misuse-x');
+    }
+
+    public function jsonBodyDetectionNormalizesDeclaredMediaTypes(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+
+        $upper = $this->bodyOperation([0 => ['schema' => ['type' => 'object']], 'Application/JSON ; charset=utf-8' => ['schema' => ['type' => 'object']]]);
+        $case = $negative->malformedJsonForOperation($upper)->generate(new Random(71))->value;
+        Assert::same($case['misuse']['kind'] ?? null, 'json-syntax');
+
+        $suffixed = $this->bodyOperation(['application/hal+json' => ['schema' => ['type' => 'object']]]);
+        $case = $negative->malformedJsonForOperation($suffixed)->generate(new Random(71))->value;
+        Assert::same($case['misuse']['kind'] ?? null, 'json-syntax');
+
+        foreach ([
+            $this->bodyOperation(['application/json' => ['schema' => ['type' => 'object']]], required: false),
+            $this->bodyOperation(['text/plain' => ['schema' => ['type' => 'object']]]),
+            $this->bodyOperation(['application/json' => ['schema' => [['type' => 'object']]]]),
+        ] as $operation) {
+            try {
+                $negative->malformedJsonForOperation($operation);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function targetSearchScansEveryParameter(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        $plain = ['name' => 'first', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string']];
+        $operation = static fn(array $schema): Operation => new Operation(
+            key: 'multi',
+            operationId: 'multi',
+            method: 'GET',
+            path: '/multi',
+            parameters: [$plain, ['name' => 'second', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => $schema]],
+        );
+
+        $case = $negative->enumMismatchForOperation($operation(['type' => 'string', 'enum' => ['a']]))->generate(new Random(29))->value;
+        Assert::same($case['misuse']['name'] ?? null, 'second');
+
+        $case = $negative->constMismatchForOperation($operation(['type' => 'string', 'const' => 'v1']))->generate(new Random(31))->value;
+        Assert::same($case['misuse']['name'] ?? null, 'second');
+    }
+
+    public function enumTargetSkipsMalformedEnumsBeforeAValidOne(): void
+    {
+        $operation = new Operation(
+            key: 'mixed',
+            operationId: 'mixed',
+            method: 'GET',
+            path: '/mixed',
+            parameters: [
+                ['name' => 'broken', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'enum' => ['skip']]],
+                ['name' => 'ok', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'enum' => ['a']]],
+            ],
+        );
+
+        $case = (new NegativeRequestCaseArbitrary())->enumMismatchForOperation($operation)->generate(new Random(29))->value;
+
+        Assert::same($case['misuse']['name'] ?? null, 'ok');
+    }
+
+    public function enumTargetRejectsScalarEnumDeclarations(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new NegativeRequestCaseArbitrary())->enumMismatchForOperation($this->queryParamOperation(['type' => 'string', 'enum' => 'x']));
+    }
+
+    public function boundaryMismatchSkipsBoundsThatCollapseUnderFloatPrecision(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            ['type' => 'number', 'minimum' => 1.0E308, 'maximum' => 1.0E308],
+            ['type' => 'number', 'minimum' => -1.0E308, 'maximum' => -1.0E308],
+        ] as $schema) {
+            try {
+                $negative->boundaryMismatchForOperation($this->queryParamOperation($schema));
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function jsonBodyRequiresAnExplicitRequiredFlag(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new NegativeRequestCaseArbitrary())->malformedJsonForOperation(new Operation(
+            key: 'implicit',
+            operationId: 'implicit',
+            method: 'POST',
+            path: '/implicit',
+            requestBody: ['content' => ['application/json' => ['schema' => ['type' => 'object']]]],
+        ));
+    }
+
+    public function jsonBodyDetectionScansPastNonJsonMediaTypes(): void
+    {
+        $operation = $this->bodyOperation([
+            'text/plain' => ['schema' => ['type' => 'string']],
+            'application/json' => ['schema' => ['type' => 'object']],
+        ]);
+
+        $case = (new NegativeRequestCaseArbitrary())->malformedJsonForOperation($operation)->generate(new Random(71))->value;
+
+        Assert::same($case['misuse']['kind'] ?? null, 'json-syntax');
+    }
+
+    public function jsonBodyRejectsScalarSchemas(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new NegativeRequestCaseArbitrary())->malformedJsonForOperation($this->bodyOperation(['application/json' => ['schema' => 'invalid']]));
+    }
+
+    public function placesParametersInTheirDeclaredLocations(): void
+    {
+        $param = static fn(string $name, string $in, array $schema, bool $required = true): array => [
+            'name' => $name, 'in' => $in, 'required' => $required,
+            'style' => $in === 'query' || $in === 'cookie' ? 'form' : 'simple',
+            'explode' => $in === 'query', 'allowReserved' => false, 'schema' => $schema,
+        ];
+        $operation = new Operation(
+            key: 'multi',
+            operationId: 'multi',
+            method: 'GET',
+            path: '/multi/{p}',
+            parameters: [
+                $param('h', 'header', ['const' => 'hv']),
+                $param('p', 'path', ['const' => 'pv']),
+                $param('c', 'cookie', ['const' => 'cv']),
+                $param('int', 'query', ['const' => 5]),
+                $param('bool', 'query', ['const' => true]),
+                $param('null', 'query', ['enum' => [null]]),
+            ],
+        );
+
+        $case = (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(3))->value;
+
+        Assert::same($case['path'], ['p' => 'pv']);
+        Assert::same($case['headers'], ['h' => 'hv']);
+        Assert::same($case['cookies'], ['c' => 'cv']);
+        Assert::same($case['query'], ['int' => '5', 'bool' => 'true', 'null' => 'null']);
+    }
+
+    public function convertsListAndObjectValuesToWireShapes(): void
+    {
+        $arbitrary = new RequestCaseArbitrary();
+
+        $list = $arbitrary->forOperation($this->queryParamOperation(['items' => ['const' => 1], 'minItems' => 1, 'maxItems' => 1]))->generate(new Random(3))->value;
+        Assert::same($list['query'], ['q' => ['1']]);
+
+        $object = $arbitrary->forOperation($this->queryParamOperation(['properties' => ['a' => ['const' => 1]], 'required' => ['a'], 'additionalProperties' => false]))->generate(new Random(3))->value;
+        Assert::same($object['query'], ['q' => ['a' => '1']]);
+    }
+
+    public function requiredParametersAppearInEverySample(): void
+    {
+        $operation = new Operation(
+            key: 'pair',
+            operationId: 'pair',
+            method: 'GET',
+            path: '/pair',
+            parameters: [
+                ['name' => 'opt', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['const' => 'o']],
+                ['name' => 'req', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['const' => 'r']],
+            ],
+        );
+
+        $sawAbsentOptional = false;
+        foreach (Gen::sample((new RequestCaseArbitrary())->forOperation($operation), count: 30, seed: 7) as $case) {
+            Assert::same($case['query']['req'] ?? null, 'r');
+            $sawAbsentOptional = $sawAbsentOptional || !array_key_exists('opt', $case['query']);
+        }
+        Assert::true($sawAbsentOptional);
+    }
+
+    public function bodyPresenceFollowsTheRequiredFlag(): void
+    {
+        $arbitrary = new RequestCaseArbitrary();
+        $content = ['application/json' => ['schema' => ['type' => 'object']]];
+
+        $required = Gen::sample($arbitrary->forOperation($this->bodyOperation($content)), count: 20, seed: 11);
+        foreach ($required as $case) {
+            Assert::true(is_array($case['body']));
+        }
+
+        $implicit = new Operation(key: 'i', operationId: 'i', method: 'POST', path: '/i', requestBody: ['content' => $content]);
+        $optional = Gen::sample($arbitrary->forOperation($implicit), count: 20, seed: 11);
+        Assert::true(in_array(null, array_column($optional, 'body'), strict: true));
+    }
+
+    public function bodyContentScanningFailsClosed(): void
+    {
+        $arbitrary = new RequestCaseArbitrary();
+
+        $case = $arbitrary->forOperation($this->bodyOperation([0 => 'junk', 'application/json' => ['schema' => ['type' => 'object']]]))->generate(new Random(13))->value;
+        Assert::true(is_array($case['body']) && $case['body']['mediaType'] === 'application/json');
+
+        foreach ([
+            ['application/json' => ['schema' => 'invalid']],
+            ['text/plain' => ['schema' => ['type' => 'object']]],
+        ] as $content) {
+            try {
+                $arbitrary->forOperation($this->bodyOperation($content));
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
     private function formatContract(): Contract
     {
         return Contract::fromArray([

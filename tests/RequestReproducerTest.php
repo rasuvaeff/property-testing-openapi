@@ -157,6 +157,97 @@ final class RequestReproducerTest
         Assert::string($curl)->contains($body);
     }
 
+    public function truncatesAtTheExactByteBudgetBeforeAMultibyteLead(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'raw', 'value' => str_repeat('a', 2047) . '😀'], 'misuse' => null,
+        ]);
+
+        Assert::string($curl)->contains("--data '" . str_repeat('a', 2047) . "...[truncated]'");
+    }
+
+    public function dropsTrailingContinuationBytesBeforeTheLeadByte(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'raw', 'value' => str_repeat('a', 2045) . '😀'], 'misuse' => null,
+        ]);
+
+        Assert::string($curl)->contains("--data '" . str_repeat('a', 2045) . "...[truncated]'");
+    }
+
+    public function keepsACompleteTrailingAsciiByteWhenTruncating(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'raw', 'value' => str_repeat('a', 2049)], 'misuse' => null,
+        ]);
+
+        Assert::string($curl)->contains("--data '" . str_repeat('a', 2048) . "...[truncated]'");
+    }
+
+    public function stripsOnlyTheDanglingContinuationByteFromAnInvalidBody(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'raw', 'value' => str_repeat('a', 2047) . "\x80a"], 'misuse' => null,
+        ]);
+
+        Assert::string($curl)->contains("--data '" . str_repeat('a', 2047) . "...[truncated]'");
+    }
+
+    public function addsNothingWhenARedactionPathIsAbsent(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a' => 'x']], 'misuse' => null,
+        ], new RedactionPolicy(bodyPaths: ['missing']));
+
+        Assert::string($curl)->contains('--data \'{"a":"x"}\'');
+        Assert::false(str_contains($curl, 'missing'));
+    }
+
+    public function skipsBodyRedactionForANonArrayJsonValue(): void
+    {
+        $curl = $this->reproducer()->curl($this->operation(), [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'hello'], 'misuse' => null,
+        ], new RedactionPolicy(bodyPaths: ['a']));
+
+        Assert::string($curl)->contains('--data \'"hello"\'');
+    }
+
+    public function rejectsAnInvalidQueryParameterRedactionList(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        new RedactionPolicy(queryParameters: ['']);
+    }
+
+    public function rejectsAnInvalidCookieRedactionList(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        new RedactionPolicy(cookies: ['']);
+    }
+
+    public function rejectsAnInvalidBodyPathRedactionList(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        new RedactionPolicy(bodyPaths: ['']);
+    }
+
+    public function rejectsARedactionMapInsteadOfAList(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        /** @var list<non-empty-string> $headers */
+        $headers = ['name' => 'value'];
+        new RedactionPolicy(headers: $headers);
+    }
+
     private function reproducer(): RequestReproducer
     {
         $factory = new Psr17Factory();

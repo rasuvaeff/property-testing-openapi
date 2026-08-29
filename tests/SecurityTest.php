@@ -204,4 +204,44 @@ final class SecurityTest
         $fields = [''];
         new Credentials(secretFields: $fields);
     }
+
+    public function keepsTheExistingQueryWhenCredentialQueryIsEmpty(): void
+    {
+        $factory = new Psr17Factory();
+        $request = $factory->createRequest('GET', '/pets?existing=1');
+        $credentials = new Credentials(query: ['tenant' => []]);
+
+        $request = $credentials->apply($request);
+
+        Assert::same($request->getUri()->getQuery(), 'existing=1');
+    }
+
+    public function keepsTheExistingCookiesWhenCredentialCookiesAreEmpty(): void
+    {
+        $factory = new Psr17Factory();
+        $request = $factory->createRequest('GET', '/pets')->withHeader('Cookie', 'locale=en');
+        $credentials = new Credentials(cookies: ['sid' => []]);
+
+        $request = $credentials->apply($request);
+
+        Assert::same($request->getHeaderLine('Cookie'), 'locale=en');
+    }
+
+    public function rejectsASecretFieldMapInsteadOfAList(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        /** @var list<string> $fields */
+        $fields = ['token' => 'value'];
+        new Credentials(secretFields: $fields);
+    }
+
+    public function rejectsAScopeMapInsteadOfAList(): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        /** @var array<string, list<string>> $schemes */
+        $schemes = ['oauth' => ['scope' => 'value']];
+        new SecurityRequirement($schemes);
+    }
 }

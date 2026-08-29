@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -223,6 +224,177 @@ final class RequestMaterializerTest
         );
     }
 
+    public function appliesCredentialsToABodylessRequest(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', null),
+            new Credentials(headers: ['X-Api-Key' => ['token']]),
+        );
+
+        Assert::same($request->getHeaderLine('X-Api-Key'), 'token');
+    }
+
+    public function appliesCredentialsToARequestWithABody(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['type' => 'object']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+            new Credentials(headers: ['X-Api-Key' => ['token']]),
+        );
+
+        Assert::same($request->getHeaderLine('X-Api-Key'), 'token');
+        Assert::same((string) $request->getBody(), '{"a":"x"}');
+    }
+
+    public function keepsReservedCharactersForAnAllowReservedQueryParameter(): void
+    {
+        $operation = new Operation(
+            key: 'query.reserved',
+            operationId: 'query.reserved',
+            method: 'GET',
+            path: '/items',
+            parameters: [[
+                'name' => 'q', 'in' => 'query', 'required' => false, 'style' => 'form',
+                'explode' => true, 'allowReserved' => true, 'schema' => ['type' => 'string'],
+            ]],
+        );
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, [
+            'operationKey' => 'query.reserved', 'path' => [], 'query' => ['q' => 'a/b:c'],
+            'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null,
+        ]);
+
+        Assert::same($request->getUri()->getQuery(), 'q=a/b:c');
+    }
+
+    public function reportsMissingBodyContentWithAnExactMessage(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body content must be an object');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => 'invalid']),
+            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'value']),
+        );
+    }
+
+    public function reportsUndeclaredMediaTypeWithAnExactMessage(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body media type "application/problem+json" is not declared');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['type' => 'string']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/problem+json', 'encoding' => 'json', 'value' => 'value']),
+        );
+    }
+
+    public function prefersTheDeclaredDefinitionOverTheJsonFallbackForAMediaTypeMisuse(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => [
+                'text/plain' => ['schema' => ['type' => 'object']],
+                'application/json' => ['schema' => ['poison']],
+            ]]),
+            $this->misuseBodyCase('media-type', ['mediaType' => 'text/plain', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+        );
+
+        Assert::same((string) $request->getBody(), '{"a":"x"}');
+        Assert::same($request->getHeaderLine('Content-Type'), 'text/plain');
+    }
+
+    public function usesTheJsonFallbackOnlyForAMediaTypeMisuseKind(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => [
+                'text/plain' => ['schema' => ['type' => 'object']],
+                'application/json' => ['schema' => ['poison']],
+            ]]),
+            $this->misuseBodyCase('type', ['mediaType' => 'text/plain', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+        );
+
+        Assert::same((string) $request->getBody(), '{"a":"x"}');
+    }
+
+    public function fallbackMatchesAJsonMediaTypeCaseInsensitivelyWithParameters(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['Application/JSON ; charset=utf-8' => ['schema' => ['type' => 'object']]]]),
+            $this->misuseBodyCase('media-type', ['mediaType' => 'application/xml', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+        );
+
+        Assert::same((string) $request->getBody(), '{"a":"x"}');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/xml');
+    }
+
+    public function fallbackSkipsANonJsonDefinitionBeforeTheJsonOne(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => [
+                'text/plain' => ['schema' => ['poison']],
+                'application/json' => ['schema' => ['type' => 'object']],
+            ]]),
+            $this->misuseBodyCase('media-type', ['mediaType' => 'application/xml', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+        );
+
+        Assert::same((string) $request->getBody(), '{"a":"x"}');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/xml');
+    }
+
+    public function fallbackSkipsANonArrayJsonDefinition(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body media type "application/xml" is not declared');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => 'garbage']]),
+            $this->misuseBodyCase('media-type', ['mediaType' => 'application/xml', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+        );
+    }
+
+    public function fallbackContinuesPastANonArrayDefinitionToTheJsonOne(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => [
+                'text/csv' => 'garbage',
+                'application/json' => ['schema' => ['type' => 'object']],
+            ]]),
+            $this->misuseBodyCase('media-type', ['mediaType' => 'application/xml', 'encoding' => 'json', 'value' => ['a' => 'x']]),
+        );
+
+        Assert::same((string) $request->getBody(), '{"a":"x"}');
+    }
+
+    public function encodesAListValueUnderAnObjectSchemaAsAJsonArray(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['type' => 'object']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a', 'b']]),
+        );
+
+        Assert::same((string) $request->getBody(), '["a","b"]');
+    }
+
+    public function keepsAnEmptyArrayUnderANonObjectSchemaAsAJsonArray(): void
+    {
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['type' => 'string']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => []]),
+        );
+
+        Assert::same((string) $request->getBody(), '[]');
+    }
+
     /** @param array<array-key, mixed> $requestBody */
     private function bodyOperation(array $requestBody): Operation
     {
@@ -249,6 +421,24 @@ final class RequestMaterializerTest
             'cookies' => [],
             'body' => $body,
             'misuse' => null,
+        ];
+    }
+
+    /**
+     * @param non-empty-string $kind
+     * @param array{mediaType: string, encoding: 'json', value: mixed} $body
+     * @return array{operationKey: string, path: array<never, never>, query: array<never, never>, headers: array<never, never>, cookies: array<never, never>, body: array{mediaType: string, encoding: 'json', value: mixed}, misuse: array{kind: non-empty-string, location: non-empty-string, name: string}}
+     */
+    private function misuseBodyCase(string $kind, array $body): array
+    {
+        return [
+            'operationKey' => 'body.test',
+            'path' => [],
+            'query' => [],
+            'headers' => [],
+            'cookies' => [],
+            'body' => $body,
+            'misuse' => ['kind' => $kind, 'location' => 'body', 'name' => 'body'],
         ];
     }
 }

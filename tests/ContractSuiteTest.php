@@ -119,9 +119,9 @@ final class ContractSuiteTest
 
         try {
             $original->checkValid('secure.get', $case);
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (CredentialsUnavailable) {
-            Assert::true(true);
+            Assert::true(actual: true);
         }
 
         $configured->checkValid('secure.get', $case);
@@ -192,7 +192,7 @@ final class ContractSuiteTest
 
         try {
             $suite->checkValid('pets.get', $case);
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (CheckFailed $exception) {
             Assert::same($exception->getMessage(), 'Operation "pets.get" responded with server error status 500');
         }
