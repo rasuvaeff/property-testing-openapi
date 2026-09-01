@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Require `rasuvaeff/openapi-contract` `^0.2`.
+- Materialize requests against the operation's first effective server
+  (`Operation::$servers`): a relative server yields a path-only, host-agnostic
+  URI, an absolute server yields an absolute URI with substituted variable
+  defaults, so documents with base paths or multiple hosts generate requests
+  the same contract matches. `RequestMaterializer::withBaseUri()` /
+  `ContractSuite::baseUri()` replace the declared server with an explicit
+  base URI for in-process or consumer environments; an absolute override that
+  contradicts every declared server fails closed with
+  `request.server.mismatch` before transport. Hand-built `Operation`s without
+  `servers` keep using `serverBases[0]`.
 - Constructive `pattern` negative category:
   `NegativeRequestCaseArbitrary::patternMismatchForOperation()` searches a
   counter-witness among bounded alphabet samples and mutations of an accepted

@@ -278,4 +278,25 @@ final class RequestReproducerTest
             ],
         ])->operation('pets.update');
     }
+
+
+    public function rendersTheEffectiveServerUri(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'servers' => [['url' => 'https://api.example.com/v1']],
+            'paths' => ['/pets/{id}' => ['get' => [
+                'operationId' => 'pets.get',
+                'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                'responses' => ['200' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $curl = (new RequestReproducer(new RequestMaterializer($factory, $factory)))->curl(
+            $contract->operation('pets.get'),
+            ['operationKey' => 'pets.get', 'path' => ['id' => '42'], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null],
+        );
+
+        Assert::string($curl)->contains('https://api.example.com/v1/pets/42');
+    }
 }

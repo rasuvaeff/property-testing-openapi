@@ -9,6 +9,13 @@ Public API:
 - `SchemaArbitraryCompiler::compile(array $schema): ArbitraryInterface`
 - `RequestCaseArbitrary::forOperation(Operation): ArbitraryInterface`
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
+  builds the request target against the operation's first effective server
+  (relative server -> path-only URI, absolute server -> absolute URI);
+  `withBaseUri(string)` replaces the declared server with
+  `scheme://host[:port][/base]` or a root-relative `/base` (no trailing slash,
+  userinfo, query, or fragment; `InvalidArgumentException` otherwise). An
+  absolute override that contradicts every declared server fails contract
+  validation with `request.server.mismatch`.
 - `TransportInterface::send(RequestInterface): ResponseInterface`
 - `CallableTransport` and `Psr15Transport` execute an explicit transport boundary;
   `Psr15Transport(..., afterRequest: callable)` runs the optional reset hook once
@@ -69,7 +76,8 @@ Public API:
   `allowUnsafeOperations()` (required for unsafe methods; without it
   `operationKeys()` throws `SuiteConfigurationError`),
   `transport(TransportInterface)`, `credentials(CredentialsProviderInterface)`,
-  `rejectionPolicy(RejectionPolicy)`.
+  `rejectionPolicy(RejectionPolicy)`, `baseUri(string)` (materialize against
+  an explicit base URI instead of the declared server).
 - `ContractSuite::operationKeys(): list<string>` resolves the selection.
 - `ContractSuite::validCases(string $operationKey)` /
   `negativeCases(string $operationKey)` return case arbitraries for a selected

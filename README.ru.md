@@ -42,6 +42,21 @@ case можно сохранять в property corpus.
 Для object schemas поддерживаются `minProperties`, `maxProperties` и boolean-
 или schema-valued `additionalProperties` в пределах generation budget.
 
+Request target строится по первому effective server операции (приоритет
+operation > path > root, server variables подставлены значениями по умолчанию
+на стороне `openapi-contract`): относительный server вроде `/api/v1` даёт
+path-only URI, который остаётся host-agnostic, абсолютный — абсолютный URI
+(`https://api.example.com:8443/v2/pets/42`). `withBaseUri()` подменяет
+объявленный server явным `scheme://host[:port][/base]` или root-relative
+`/base` для окружения потребителя; последнее слово остаётся за контрактом:
+абсолютный override, противоречащий всем объявленным servers, не матчится
+молча, а даёт `request.server.mismatch` при валидации. Credentials
+применяются после выбора URI и не могут изменить scheme или host.
+
+```php
+$local = (new RequestMaterializer($factory, $factory))->withBaseUri('/v1');
+```
+
 Конструктивное подмножество `not` поддерживает исключения через `const`, `enum`
 и `type`; остальные negative assertions остаются fail-closed с
 `UnsupportedGeneration`.
@@ -167,6 +182,12 @@ Selection по умолчанию пуст. `operations()` добавляет я
 ключи. Операция с unsafe HTTP-методом должна быть указана явно **и** включена
 через `allowUnsafeOperations()`; selection с unsafe операцией без этого gate
 бросает `SuiteConfigurationError`, а не фильтрует её молча.
+
+`baseUri()` materialize-ит каждый request против явного base URI вместо
+объявленного server операции — root-relative `/v1` оставляет in-process
+запросы host-agnostic, когда документ объявляет production host, а абсолютный
+override обязан совпадать с объявленным server, иначе `checkValid()` падает
+с `request.server.mismatch` ещё до transport.
 
 `checkValid()` materialize-ит case (применяя credentials, выбранные через
 настроенный `CredentialsProviderInterface`), требует валидности request до
