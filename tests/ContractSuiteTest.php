@@ -127,22 +127,42 @@ final class ContractSuiteTest
         $configured->checkValid('secure.get', $case);
     }
 
-    public function checkFailedSummarizesTheFirstViolation(): void
+    public function checkFailedRendersEveryViolationAndKeepsTheStructuredResult(): void
     {
-        $result = new ValidationResult([new Violation(
-            code: 'request.invalid',
-            operation: 'pets.get',
-            location: 'query',
-            instancePath: 'q',
-            specPointer: '/paths/pets',
-            expected: 'string',
-            actual: 1,
-            message: 'bad query',
-        )]);
+        $result = new ValidationResult([
+            new Violation(code: 'request.invalid', operation: 'pets.get', location: 'query', instancePath: 'q', specPointer: '/paths/pets', expected: 'string', actual: 1, message: 'bad query'),
+            new Violation(code: 'response.body.schema', operation: 'pets.get', location: 'body', instancePath: '/name', specPointer: '/components/schemas/Pet', expected: ['type' => 'string'], actual: null, message: 'bad body'),
+        ]);
 
-        $exception = CheckFailed::exchangeViolations('pets.get', $result);
+        $exchange = CheckFailed::exchangeViolations('pets.get', $result);
+        $request = CheckFailed::invalidGeneratedRequest('pets.get', $result);
 
-        Assert::same($exception->getMessage(), 'Exchange for operation "pets.get" violates the contract: 1 violation(s), first [request.invalid] bad query');
+        Assert::same($exchange->result, $result);
+        Assert::same($request->result, $result);
+        Assert::same($exchange->getMessage(), implode("\n", [
+            'Exchange for operation "pets.get" violates the contract',
+            'OpenAPI contract validation failed with 2 violation(s)',
+            '1. code: "request.invalid"',
+            '   operation: "pets.get"',
+            '   location: "query"',
+            '   instancePath: "q"',
+            '   specPointer: "/paths/pets"',
+            '   expected: "string"',
+            '   actual: "[redacted]"',
+            '   message: "bad query"',
+            '2. code: "response.body.schema"',
+            '   operation: "pets.get"',
+            '   location: "body"',
+            '   instancePath: "/name"',
+            '   specPointer: "/components/schemas/Pet"',
+            '   expected: {"type":"string"}',
+            '   actual: null',
+            '   message: "bad body"',
+        ]));
+        Assert::same(strtok($request->getMessage(), "\n"), 'Generated request for operation "pets.get" is invalid before transport');
+        Assert::string($request->getMessage())->contains('2. code: "response.body.schema"');
+        Assert::same(CheckFailed::serverError('pets.get', 503)->result, null);
+        Assert::same(CheckFailed::exchangeViolations('pets.get', new ValidationResult())->getMessage(), 'Exchange for operation "pets.get" violates the contract');
     }
 
     public function unsafeSelectionFailsClosedWithoutTheGate(): void

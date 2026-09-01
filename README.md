@@ -206,6 +206,27 @@ or a non-conforming exchange. `checkNegative()` requires the case to carry
 invalid input does not produce a 5xx. A stricter oracle is the opt-in
 `RejectionPolicy` — OpenAPI itself does not promise `invalid -> 4xx`:
 
+A `CheckFailed` raised for a validation result keeps it in `$result` and
+renders every violation in its message through `openapi-contract`'s
+`ValidationResultFormatter` — operation, code, location, instance path, spec
+pointer, bounded expected/actual — deterministically, with header, cookie,
+query and secret-like actual values redacted. `OperationPropertyFailed`
+carries that text as the cause, so a falsified phase shows the complete
+diagnostics without inspecting objects:
+
+```text
+Exchange for operation "pets.get" violates the contract
+OpenAPI contract validation failed with 1 violation(s)
+1. code: "response.body.schema"
+   operation: "pets.get"
+   location: "body"
+   instancePath: "/name"
+   specPointer: "/components/schemas/Pet"
+   expected: {"type":"string"}
+   actual: null
+   message: "..."
+```
+
 ```php
 use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 

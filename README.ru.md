@@ -205,6 +205,27 @@ invalid-статус case до transport, после чего проверяет
 приводит к 5xx. Более строгий oracle — opt-in `RejectionPolicy`: из OpenAPI
 `invalid -> 4xx` не следует:
 
+`CheckFailed`, брошенный из-за validation result, хранит его в `$result` и
+рендерит в сообщении каждое нарушение через `ValidationResultFormatter` из
+`openapi-contract` — operation, code, location, instance path, spec pointer,
+ограниченные expected/actual — детерминированно, с редактированием actual
+для header, cookie, query и secret-подобных путей. `OperationPropertyFailed`
+несёт этот текст как причину, так что упавшая фаза показывает полную
+диагностику без разбора объектов:
+
+```text
+Exchange for operation "pets.get" violates the contract
+OpenAPI contract validation failed with 1 violation(s)
+1. code: "response.body.schema"
+   operation: "pets.get"
+   location: "body"
+   instancePath: "/name"
+   specPointer: "/components/schemas/Pet"
+   expected: {"type":"string"}
+   actual: null
+   message: "..."
+```
+
 ```php
 use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 

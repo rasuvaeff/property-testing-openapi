@@ -93,6 +93,10 @@ Public API:
   `negativeCases(string $operationKey)` return case arbitraries for a selected
   operation; `negativeCases` weights every constructively supported negative
   category and throws `UnsupportedGeneration` when none applies.
+- `CheckFailed` (thrown by the checks below) exposes `?ValidationResult $result`
+  for validation failures; its message renders every violation through
+  `ValidationResultFormatter` (operation, code, location, instancePath,
+  specPointer, bounded expected/actual, sensitive actual values redacted).
 - `ContractSuite::checkValid(string $operationKey, array $case)` validates the
   materialized request before transport, sends it, and throws `CheckFailed` on
   a 5xx status or a non-conforming exchange.

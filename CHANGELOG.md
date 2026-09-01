@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Render complete contract diagnostics: `CheckFailed::invalidGeneratedRequest()`
+  and `exchangeViolations()` keep the structured `ValidationResult` in the new
+  `$result` property and format every violation through `openapi-contract`'s
+  `ValidationResultFormatter` (operation, code, location, instance path, spec
+  pointer, bounded expected/actual, sensitive actual values redacted) instead
+  of a one-line summary of the first violation; `OperationPropertyFailed`
+  carries the full text as its cause.
 - Run the document's `example`/`examples` as the deterministic example phase:
   `DocumentExamples` / `ContractSuite::exampleCases()` derive one named valid
   case per example name across parameters and the request body (plus an
