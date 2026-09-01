@@ -89,6 +89,104 @@ final class OperationPropertyTest
         }
     }
 
+    public function runsDocumentExamplesBeforeTheRandomPhaseUnderEverySeed(): void
+    {
+        foreach ([1, 2, 3] as $seed) {
+            $seen = [];
+            $suite = $this->pointFaultSuite(withExample: true, seen: $seen);
+
+            try {
+                OperationProperty::check($suite, 'pets.get', runs: 3, seed: $seed);
+                Assert::true(actual: false, message: 'Expected the document example to find the point fault');
+            } catch (OperationPropertyFailed $failure) {
+                Assert::same($failure->example, 'example');
+                Assert::same($failure->phase, 'valid');
+                Assert::same($failure->counterExample->runsBeforeFailure, 0);
+                Assert::same($failure->counterExample->seed, 0);
+                Assert::same($failure->counterExample->shrunkArguments['case']['path'] ?? null, ['id' => '7']);
+                Assert::same($failure->counterExample->originalArguments, $failure->counterExample->shrunkArguments);
+                Assert::string($failure->getMessage())->contains('Case: {"operationKey":"pets.get","path":{"id":"7"},"query":[],"headers":{"X-Trace":"t/1"}');
+                Assert::same(strtok($failure->getMessage(), "\n"), 'Operation "pets.get" failed the valid phase on document example "example": Operation "pets.get" responded with server error status 500');
+                Assert::string($failure->getMessage())->contains('Reproduce: curl');
+                Assert::string($failure->reproducer)->contains('/pets/7');
+                Assert::instanceOf($failure->getPrevious(), \Rasuvaeff\PropertyTesting\ExampleViolationException::class);
+            }
+
+            Assert::same($seen, ['/pets/7']);
+        }
+    }
+
+    public function theRandomPhaseAloneMissesThePointFaultWithinASmallBudget(): void
+    {
+        $seen = [];
+        $suite = $this->pointFaultSuite(withExample: false, seen: $seen);
+
+        OperationProperty::check($suite, 'pets.get', runs: 3, seed: 17);
+
+        Assert::false(in_array('/pets/7', $seen, strict: true));
+    }
+
+    public function reportsAnExampleThatViolatesItsOwnSchemaAsADocumentDefect(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets' => ['post' => [
+                'operationId' => 'pets.create',
+                'requestBody' => ['required' => true, 'content' => ['application/json' => [
+                    'schema' => ['type' => 'object', 'required' => ['name'], 'properties' => ['name' => ['type' => 'string']]],
+                    'examples' => ['404' => ['value' => ['name' => 404]]],
+                ]]],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $sent = false;
+        $suite = ContractSuite::fromContract($contract, $factory, $factory)
+            ->operations(['pets.create'])
+            ->allowUnsafeOperations()
+            ->transport(new CallableTransport(static function () use (&$sent): Response {
+                $sent = true;
+
+                return new Response(204);
+            }));
+
+        try {
+            OperationProperty::check($suite, 'pets.create', runs: 2, seed: 5);
+            Assert::true(actual: false, message: 'Expected the invalid example to be reported');
+        } catch (OperationPropertyFailed $failure) {
+            Assert::same($failure->example, '404');
+            Assert::string($failure->getMessage())->contains('on document example "404": Generated request for operation "pets.create" is invalid before transport');
+        }
+
+        Assert::false($sent);
+    }
+
+    /** @param list<string> $seen */
+    private function pointFaultSuite(bool $withExample, array &$seen): ContractSuite
+    {
+        $id = ['type' => 'integer', 'minimum' => 1, 'maximum' => 1000];
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets/{id}' => ['get' => [
+                'operationId' => 'pets.get',
+                'parameters' => [
+                    ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => $id] + ($withExample ? ['example' => 7] : []),
+                    ['name' => 'X-Trace', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string'], 'example' => 't/1'],
+                ],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+
+        return ContractSuite::fromContract($contract, $factory, $factory)
+            ->operations(['pets.get'])
+            ->transport(new CallableTransport(static function (RequestInterface $request) use (&$seen): Response {
+                $seen[] = $request->getUri()->getPath();
+
+                return $request->getUri()->getPath() === '/pets/7' ? new Response(500) : new Response(204);
+            }));
+    }
+
     public function honorsTheRunsAndSeedEnvironment(): void
     {
         $calls = 0;

@@ -37,3 +37,22 @@ search-budget constants, duplicate-skip bookkeeping, UTF-8 defense checks) —
 every returned witness is still verified by the `preg_match()` oracle before
 use — and fail-closed fast paths whose removal is masked because the
 fail-closed valid base rejects the same schema at the public surface.
+
+`DocumentExamples` adds: `(string)` casts on array *keys* (PHP normalizes a
+numeric-string key to `int` either way, so the cast only matters where the
+value is passed on as a `string` argument), `isset()` guarding an
+`is_array()` on the same offset (the `isset` exists for psalm narrowing, not
+behavior), and `true` values in a name-lookup map read only through
+`array_keys()`.
+
+`RequestCaseArbitrary` (form/multipart generation) adds: redundant `(array)` /
+`(string)` / `(int)` casts on operands already narrowed by `is_array()` /
+`is_string()` / `is_int()`; `LogicException` guards on shapes the generator
+itself produced (unreachable typing guards); the default lower bound of a
+part-list or byte-string budget where an empty list of parts is
+indistinguishable from an absent property on the wire; the `16`-item and
+`64`-byte generation budgets; the composition and offset of the boundary
+hash (any deterministic 16-hex boundary is equivalent); the `max(1, …)`
+floor in `nonEmptyContainer()` which makes the default of a missing
+`minItems`/`minProperties` irrelevant; and guards masked by `??` on scalar
+offsets (`'x'['k'] ?? null` is `null`, not an error).

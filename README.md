@@ -35,10 +35,18 @@ $contract->validateRequest($request)->assertValid();
 `RequestCaseData` is an associative JSON-compatible array with independent
 `path`, `query`, `headers`, `cookies`, and optional `body` maps. Form bodies keep
 logical values; multipart bodies keep deterministic boundaries and data-only
-parts, with binary payloads represented as base64. Required
+parts, with binary payloads represented as base64. Multipart parts are scalar
+or binary only — nested objects and arrays fail closed as
+`UnsupportedGeneration` — and travel with the OAS default content type of the
+item schema unless the Encoding Object names one. Required
 parameters and request bodies are always present; optional parameters and JSON
 bodies take both present and absent branches. It does not include security
 credentials and can therefore be persisted by the property corpus.
+
+An empty array or object has no form-style wire form (RFC 6570 treats it as
+undefined), so the materializer omits such a parameter or form property and
+the generator produces required array/object parameters and required form
+properties non-empty.
 
 Object schemas honor `minProperties`, `maxProperties`, and boolean or
 schema-valued `additionalProperties` within the generation budget.
@@ -214,6 +222,22 @@ override (exact codes or `NXX` ranges).
 operation supports constructively; an operation with no constructible category
 throws `UnsupportedGeneration`.
 
+`exampleCases()` derives named valid cases from the document's own
+`example`/`examples` declarations (`DocumentExamples`): every parameter and
+the request body contribute their named examples (`examples` map of Example
+Objects with a `value`) and one unnamed example (`example`, then the Schema
+Object's `example`, then the first entry of its `examples` list). One case is
+produced per distinct example name across all parts, plus a case named
+`example` when any part declares an unnamed one; a part without an example
+under a given name falls back to its unnamed example, then to a deterministic
+base case drawn with a fixed seed. The result is identical under every
+`PROPERTY_SEED`, JSON-compatible, and free of credentials. Example Objects with
+only `externalValue` and multipart bodies contribute nothing; an example that
+cannot be represented as a wire value (a nested object in a parameter) throws
+`UnsupportedGeneration`. The cases are not validated here — an example that
+violates its own schema fails `checkValid()` before transport like any other
+case, as a diagnosable document defect rather than a silently skipped example.
+
 `reproduce()` renders one case as a redacted curl command. Credentials are
 never applied there, so provider secrets cannot leak by construction;
 `RedactionPolicy` additionally redacts named headers, query parameters,
@@ -259,6 +283,19 @@ final class ApiContractTest
 operation supports at least one constructible misuse category. A falsified
 phase throws `OperationPropertyFailed` carrying the operation key, the phase,
 the seed, the shrunk minimal case, and a redacted curl reproducer.
+
+The valid phase starts with the document's examples (`exampleCases()`): they
+run before corpus replay and the random phase under every seed and run count,
+so a point fault the document itself describes — one specific id the server
+chokes on — is found on the first run instead of by chance. A failing example
+throws `OperationPropertyFailed` with its name in `$example`, the case
+unshrunk, `runsBeforeFailure` of zero, and the same curl reproducer:
+
+```text
+Operation "pets.get" failed the valid phase on document example "legacy": Operation "pets.get" responded with server error status 500
+Case: {"operationKey":"pets.get","path":{"id":"7"},...}
+Reproduce: curl -X GET '/pets/7?verbose=true'
+```
 
 The parity is CI-verified: `composer build` runs the PHPUnit fixture suite
 (`tests/PhpUnit/`, `composer test:phpunit`) alongside the Testo suite, and the

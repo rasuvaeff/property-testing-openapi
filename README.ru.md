@@ -34,10 +34,18 @@ $contract->validateRequest($request)->assertValid();
 `RequestCaseData` - JSON-compatible associative array с раздельными `path`,
 `query`, `headers`, `cookies` и optional `body`. Form body хранит logical value,
 а multipart body - deterministic boundary и data-only parts; binary payload
-представлен как base64. Required parameters и
+представлен как base64. Части multipart — только скаляры и binary: вложенные
+объекты и массивы падают как `UnsupportedGeneration`; content type части —
+умолчание OAS для схемы элемента, если Encoding Object не задал свой.
+Required parameters и
 request bodies присутствуют всегда; для optional parameters и JSON body
 генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
 case можно сохранять в property corpus.
+
+У пустого массива или объекта нет form-style представления на проводе
+(RFC 6570 считает его неопределённым), поэтому materializer опускает такой
+parameter или form-свойство, а генератор строит required array/object
+parameters и required form-свойства непустыми.
 
 Для object schemas поддерживаются `minProperties`, `maxProperties` и boolean-
 или schema-valued `additionalProperties` в пределах generation budget.
@@ -213,6 +221,22 @@ $suite = $suite->rejectionPolicy(
 конструктивно поддержанных операцией; операция без единой constructible
 категории бросает `UnsupportedGeneration`.
 
+`exampleCases()` строит именованные валидные cases из собственных
+`example`/`examples` документа (`DocumentExamples`): каждый parameter и
+request body отдают свои именованные примеры (map `examples` из Example
+Objects с `value`) и один безымянный (`example`, затем `example` Schema
+Object, затем первый элемент его списка `examples`). На каждое уникальное
+имя примера по всем частям строится один case, плюс case с именем `example`,
+если хоть одна часть объявляет безымянный пример; часть без примера под
+данным именем берёт свой безымянный, а без него — значение детерминированного
+базового case с фиксированным seed. Результат одинаков при любом
+`PROPERTY_SEED`, JSON-compatible и не содержит credentials. Example Objects
+только с `externalValue` и multipart body ничего не дают; пример, который
+нельзя представить как wire value (вложенный объект в parameter), бросает
+`UnsupportedGeneration`. Cases здесь не валидируются — пример, нарушающий
+собственную схему, падает в `checkValid()` до transport как любой другой
+case: диагностируемый дефект документа, а не молча пропущенный пример.
+
 `reproduce()` рендерит один case как redacted curl-команду. Credentials там
 не применяются никогда, поэтому секреты provider-а не могут утечь по
 построению; `RedactionPolicy` дополнительно редактирует названные headers,
@@ -260,6 +284,19 @@ final class ApiContractTest
 есть хотя бы одна конструктивная misuse-категория. Falsified-фаза бросает
 `OperationPropertyFailed` с ключом операции, фазой, seed, shrunk minimal case
 и redacted curl-репродьюсером.
+
+Валидная фаза начинается с примеров документа (`exampleCases()`): они
+выполняются до replay корпуса и random-фазы при любом seed и числе прогонов,
+поэтому point fault, описанный самим документом — один конкретный id, на
+котором сервер падает, — находится на первом прогоне, а не по везению.
+Упавший пример бросает `OperationPropertyFailed` с его именем в `$example`,
+case без shrinking, `runsBeforeFailure` равным нулю и тем же curl reproducer:
+
+```text
+Operation "pets.get" failed the valid phase on document example "legacy": Operation "pets.get" responded with server error status 500
+Case: {"operationKey":"pets.get","path":{"id":"7"},...}
+Reproduce: curl -X GET '/pets/7?verbose=true'
+```
 
 Паритет проверяется в CI: `composer build` гоняет PHPUnit-фикстуру
 (`tests/PhpUnit/`, `composer test:phpunit`) рядом с Testo-сьютом; фикстура

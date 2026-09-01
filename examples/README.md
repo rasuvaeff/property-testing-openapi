@@ -7,6 +7,10 @@ PSR-17 factory, and validates the result with `openapi-contract`.
 operation and shows that every misuse case is rejected by contract validation
 before any transport would run.
 
+`document-examples.php` shows the document's `example`/`examples` running as
+the deterministic example phase of `OperationProperty`: a point fault the
+document describes is found by name on the first run, before any random trial.
+
 `suite-check.php` runs `ContractSuite` against an in-process PSR-15 handler:
 valid trials must conform without a 5xx, and a constructive negative case must
 be rejected without a 5xx. Its `afterRequest` hook also counts one state reset
