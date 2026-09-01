@@ -5,8 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.2.0 — 2026-09-01
 
+- Generate `application/x-www-form-urlencoded` and `multipart/form-data`
+  request bodies: form cases keep the logical object value and serialize with
+  the form-style Encoding Object semantics; multipart cases carry
+  deterministic boundaries and data-only scalar/binary parts (binary as
+  base64), with per-part content types and required Encoding Object headers.
+  Nested multipart objects and arrays fail closed.
+- `Credentials` accepts plain strings alongside `list<string>` in its header,
+  query, and cookie maps and normalizes the public properties to lists.
+- `Psr15Transport` gained an optional `afterRequest` reset hook, executed
+  exactly once in `finally` — including when the handler throws — with the
+  Yii `StateResetter::reset()` recipe documented and a runnable example.
+- `PROPERTY_DB` regression corpora resolve directories and `redis://` DSNs
+  with the same semantics as the property-testing adapters (prefix, lazy
+  ext-redis/predis clients, fail-closed unsupported schemes).
+- Internal: dead generator code removed and the negative-category and
+  schema-compiler god classes decomposed into `Internal\Negative\*` and
+  `Internal\Compile\*`; no public API change from these.
 - Stop generating `null` for `nullable: true` schemas whose `enum` does not
   list `null` (and for a non-null `const`): the validator rejects such a
   null, so the valid phase produced provably invalid values. Found by the
