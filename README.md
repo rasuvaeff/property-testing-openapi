@@ -97,6 +97,14 @@ fixed witness that provably violates its `format` (`uuid`, `email`, `ipv4`,
 `uri`, `uri-reference`, `date`, `date-time`) and records
 `misuse.kind = 'format'`; `url` is excluded because the validation backend does
 not assert it.
+`patternMismatchForOperation()` replaces one required `string` parameter with a
+searched wire value that provably fails its `pattern` and records
+`misuse.kind = 'pattern'`. The pattern itself is the oracle: bounded candidates
+(alphabet samples and mutations of an accepted value) are checked with
+`preg_match()` against the exact regex the validation backend compiles.
+Parameters carrying `enum`, `const`, or `format` are skipped, the witness stays
+inside the `minLength`/`maxLength` window, and a PCRE error or an exhausted
+candidate/time budget fails closed instead of guessing.
 `additionalPropertyForOperation()` adds one undeclared property to a required
 JSON object body whose schema sets `additionalProperties: false` and records
 `misuse.kind = 'additional-properties'` with the injected property name.

@@ -39,7 +39,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
      *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'additional-properties'|'media-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
@@ -410,6 +410,60 @@ final readonly class NegativeRequestCaseArbitrary
                 $case['cookies'][$target['name']] = $target['invalid'];
             }
             $case['misuse'] = ['kind' => 'format', 'location' => $target['location'], 'name' => $target['name']];
+
+            return $case;
+        });
+    }
+
+    /**
+     * Replaces one required string parameter with a searched wire value that
+     * provably fails its `pattern`; the pattern itself is the oracle, and an
+     * exhausted search budget fails closed.
+     *
+     * @return ArbitraryInterface<array{
+     *     operationKey: string,
+     *     path: array<string, string|list<string>|array<string, string>>,
+     *     query: array<string, string|list<string>|array<string, string>>,
+     *     headers: array<string, string|list<string>|array<string, string>>,
+     *     cookies: array<string, string|list<string>|array<string, string>>,
+     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     misuse: array{kind: 'pattern', location: 'path'|'query'|'header'|'cookie', name: string},
+     * }>
+     */
+    public function patternMismatchForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->parameterTargets->patternMismatch($operation);
+
+        return Gen::map($this->valid->forOperation($operation), /**
+         * @param array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: null,
+         * } $case
+         * @return array{
+         *     operationKey: string,
+         *     path: array<string, string|list<string>|array<string, string>>,
+         *     query: array<string, string|list<string>|array<string, string>>,
+         *     headers: array<string, string|list<string>|array<string, string>>,
+         *     cookies: array<string, string|list<string>|array<string, string>>,
+         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     misuse: array{kind: 'pattern', location: 'path'|'query'|'header'|'cookie', name: string},
+         * }
+         */ static function (array $case) use ($target): array {
+            if ($target['location'] === 'path') {
+                $case['path'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'query') {
+                $case['query'][$target['name']] = $target['invalid'];
+            } elseif ($target['location'] === 'header') {
+                $case['headers'][$target['name']] = $target['invalid'];
+            } else {
+                $case['cookies'][$target['name']] = $target['invalid'];
+            }
+            $case['misuse'] = ['kind' => 'pattern', 'location' => $target['location'], 'name' => $target['name']];
 
             return $case;
         });

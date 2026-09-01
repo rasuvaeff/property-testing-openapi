@@ -16,6 +16,7 @@ final readonly class ParameterTargets
 {
     public function __construct(
         private SchemaProbe $probe = new SchemaProbe(),
+        private PatternWitness $witness = new PatternWitness(),
     ) {}
 
     /**
@@ -136,6 +137,33 @@ final readonly class ParameterTargets
         }
 
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible length mismatch', $operation->key));
+    }
+
+    /**
+     * An empty witness is excluded for a path parameter: it would materialize
+     * as an empty template segment and change route matching instead of
+     * failing the pattern.
+     *
+     * @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}
+     */
+    public function patternMismatch(Operation $operation): array
+    {
+        foreach ($operation->parameters as $parameter) {
+            if (!$parameter['required']) {
+                continue;
+            }
+            $constraints = $this->probe->patternConstraints($parameter['schema']);
+            if ($constraints === null) {
+                continue;
+            }
+            $minLength = $parameter['in'] === 'path' ? max($constraints['minLength'], 1) : $constraints['minLength'];
+            $invalid = $this->witness->search($constraints['pattern'], $minLength, $constraints['maxLength']);
+            if ($invalid !== null) {
+                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
+            }
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a provable pattern counter-witness', $operation->key));
     }
 
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */

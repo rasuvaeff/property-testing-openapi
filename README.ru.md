@@ -97,6 +97,14 @@ $credentials = new Credentials(
 `ipv4`, `uri`, `uri-reference`, `date`, `date-time`), и записывает
 `misuse.kind = 'format'`; `url` исключён — validation backend его не
 ассертит.
+`patternMismatchForOperation()` заменяет один обязательный string-параметр
+найденным поиском значением, доказуемо нарушающим его `pattern`, и записывает
+`misuse.kind = 'pattern'`. Оракул — сам pattern: ограниченные кандидаты
+(образцы из алфавита и мутации принятого значения) проверяются `preg_match()`
+с тем же regex, который компилирует validation backend. Параметры с `enum`,
+`const` или `format` пропускаются, witness остаётся внутри окна
+`minLength`/`maxLength`, а ошибка PCRE или исчерпанный бюджет
+кандидатов/времени отвергаются fail-closed, без угадывания.
 `additionalPropertyForOperation()` добавляет одно необъявленное свойство в
 обязательное JSON object body со схемой `additionalProperties: false` и
 записывает `misuse.kind = 'additional-properties'` с именем добавленного

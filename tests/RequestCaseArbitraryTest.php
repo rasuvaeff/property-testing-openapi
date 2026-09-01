@@ -13,6 +13,7 @@ use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
@@ -30,6 +31,7 @@ use Testo\Test;
 #[Covers(RequestCaseArbitrary::class)]
 #[Covers(NegativeRequestCaseArbitrary::class)]
 #[Covers(ParameterTargets::class)]
+#[Covers(PatternWitness::class)]
 #[Covers(BodyTargets::class)]
 #[Covers(SchemaProbe::class)]
 #[Covers(RequestMaterializer::class)]
@@ -335,6 +337,136 @@ final class RequestCaseArbitraryTest
         (new NegativeRequestCaseArbitrary())->formatMismatchForOperation($operation);
     }
 
+    public function patternMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = $this->patternContract();
+        $operation = $contract->operation('codes.get');
+        $case = (new NegativeRequestCaseArbitrary())->patternMismatchForOperation($operation)->generate(new Random(67))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'pattern', 'location' => 'query', 'name' => 'code']);
+        Assert::same($case['query']['code'], '');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    public function patternMismatchSkipsParametersWithoutAProvableWitness(): void
+    {
+        $operation = new Operation(
+            key: 'q.get',
+            operationId: 'q.get',
+            method: 'GET',
+            path: '/q',
+            parameters: [
+                [
+                    'name' => 'plain',
+                    'in' => 'query',
+                    'required' => true,
+                    'style' => 'form',
+                    'explode' => true,
+                    'allowReserved' => false,
+                    'schema' => ['type' => 'string'],
+                ],
+                [
+                    'name' => 'code',
+                    'in' => 'query',
+                    'required' => true,
+                    'style' => 'form',
+                    'explode' => true,
+                    'allowReserved' => false,
+                    'schema' => ['type' => 'string', 'pattern' => '^[a-z]{3}$'],
+                ],
+            ],
+        );
+        $case = (new NegativeRequestCaseArbitrary())->patternMismatchForOperation($operation)->generate(new Random(67))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'pattern', 'location' => 'query', 'name' => 'code']);
+    }
+
+    public function patternMismatchUsesASingleCharacterPathWitness(): void
+    {
+        $operation = new Operation(
+            key: 'codes.show',
+            operationId: 'codes.show',
+            method: 'GET',
+            path: '/codes/{code}',
+            parameters: [[
+                'name' => 'code',
+                'in' => 'path',
+                'required' => true,
+                'style' => 'simple',
+                'explode' => false,
+                'allowReserved' => false,
+                'schema' => ['type' => 'string', 'pattern' => '^[a-z]+$'],
+            ]],
+        );
+        $case = (new NegativeRequestCaseArbitrary())->patternMismatchForOperation($operation)->generate(new Random(67))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'pattern', 'location' => 'path', 'name' => 'code']);
+        Assert::same($case['path']['code'], 'A');
+    }
+
+    public function patternWitnessStaysInsideTheLengthWindow(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        $case = $negative->patternMismatchForOperation(
+            $this->queryParamOperation(['type' => 'string', 'pattern' => '^a+$', 'minLength' => 2, 'maxLength' => 3]),
+        )->generate(new Random(67))->value;
+        $witness = (string) $case['query']['q'];
+
+        Assert::same($case['misuse'], ['kind' => 'pattern', 'location' => 'query', 'name' => 'q']);
+        Assert::same(preg_match("\x07^a+\$\x07uD", $witness), 0);
+        Assert::true(mb_strlen($witness) >= 2 && mb_strlen($witness) <= 3);
+    }
+
+    public function patternMismatchExcludesAnEmptyPathWitness(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        $operation = new Operation(
+            key: 'codes.show',
+            operationId: 'codes.show',
+            method: 'GET',
+            path: '/codes/{code}',
+            parameters: [[
+                'name' => 'code',
+                'in' => 'path',
+                'required' => true,
+                'style' => 'simple',
+                'explode' => false,
+                'allowReserved' => false,
+                'schema' => ['type' => 'string', 'pattern' => '^.+$'],
+            ]],
+        );
+
+        Expect::exception(UnsupportedGeneration::class);
+        $negative->patternMismatchForOperation($operation);
+    }
+
+    public function patternMismatchGuardsPurityAndSearchBudget(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            ['type' => 'string', 'pattern' => '^[a-z]+$', 'enum' => ['abc']],
+            ['type' => 'string', 'pattern' => '^[a-z]+$', 'const' => 'abc'],
+            ['type' => 'string', 'pattern' => '^[a-z]+$', 'format' => 'uuid'],
+            ['type' => 'integer', 'pattern' => '^[0-9]+$'],
+            ['type' => 'string'],
+            ['type' => 'string', 'pattern' => ''],
+            ['type' => 'string', 'pattern' => '('],
+            ['type' => 'string', 'pattern' => 'a\Z'],
+            ['type' => 'string', 'pattern' => 'a*'],
+            ['type' => 'string', 'pattern' => '^a{5}$', 'minLength' => 5, 'maxLength' => 4],
+            ['type' => 'string', 'pattern' => '^[a-z]{3}$', 'minLength' => -1],
+        ] as $schema) {
+            try {
+                $negative->patternMismatchForOperation($this->queryParamOperation($schema));
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
     public function additionalPropertyIsInvalidBeforeTransport(): void
     {
         $contract = $this->sealedBodyContract(additionalProperties: false);
@@ -569,6 +701,12 @@ final class RequestCaseArbitraryTest
             'items.get',
             static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->formatMismatchForOperation($operation),
             ['kind' => 'format', 'location' => 'query', 'name' => 'id'],
+        ];
+        yield 'pattern' => [
+            $this->patternContract(),
+            'codes.get',
+            static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->patternMismatchForOperation($operation),
+            ['kind' => 'pattern', 'location' => 'query', 'name' => 'code'],
         ];
         yield 'additional-properties' => [
             $this->sealedBodyContract(additionalProperties: false),
@@ -1051,6 +1189,21 @@ final class RequestCaseArbitraryTest
                 Assert::true(actual: true);
             }
         }
+    }
+
+    private function patternContract(): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/codes' => ['get' => [
+                'operationId' => 'codes.get',
+                'parameters' => [[
+                    'name' => 'code', 'in' => 'query', 'required' => true,
+                    'schema' => ['type' => 'string', 'pattern' => '^[a-z]{3}$'],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
     }
 
     private function formatContract(): Contract

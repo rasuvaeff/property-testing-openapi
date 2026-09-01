@@ -30,3 +30,10 @@ nothing), redundant numeric casts on already-cast operands, mutually
 compensating normalizations (a trim whose result is re-trimmed downstream),
 float-precision boundaries where `min - 1.0 == min`, and `explode()` limit
 bumps where only `[0]` is read.
+
+`PatternWitness` adds two more equivalent classes: candidate-pool variations
+(alphabet order, mixed-sample composition, accepted-draw / mutated-position /
+search-budget constants, duplicate-skip bookkeeping, UTF-8 defense checks) —
+every returned witness is still verified by the `preg_match()` oracle before
+use — and fail-closed fast paths whose removal is masked because the
+fail-closed valid base rejects the same schema at the public surface.
