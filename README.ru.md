@@ -34,10 +34,18 @@ $contract->validateRequest($request)->assertValid();
 `RequestCaseData` - JSON-compatible associative array с раздельными `path`,
 `query`, `headers`, `cookies` и optional `body`. Form body хранит logical value,
 а multipart body - deterministic boundary и data-only parts; binary payload
-представлен как base64. Required parameters и
+представлен как base64. Части multipart — только скаляры и binary: вложенные
+объекты и массивы падают как `UnsupportedGeneration`; content type части —
+умолчание OAS для схемы элемента, если Encoding Object не задал свой.
+Required parameters и
 request bodies присутствуют всегда; для optional parameters и JSON body
 генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
 case можно сохранять в property corpus.
+
+У пустого массива или объекта нет form-style представления на проводе
+(RFC 6570 считает его неопределённым), поэтому materializer опускает такой
+parameter или form-свойство, а генератор строит required array/object
+parameters и required form-свойства непустыми.
 
 Для object schemas поддерживаются `minProperties`, `maxProperties` и boolean-
 или schema-valued `additionalProperties` в пределах generation budget.

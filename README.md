@@ -35,10 +35,18 @@ $contract->validateRequest($request)->assertValid();
 `RequestCaseData` is an associative JSON-compatible array with independent
 `path`, `query`, `headers`, `cookies`, and optional `body` maps. Form bodies keep
 logical values; multipart bodies keep deterministic boundaries and data-only
-parts, with binary payloads represented as base64. Required
+parts, with binary payloads represented as base64. Multipart parts are scalar
+or binary only — nested objects and arrays fail closed as
+`UnsupportedGeneration` — and travel with the OAS default content type of the
+item schema unless the Encoding Object names one. Required
 parameters and request bodies are always present; optional parameters and JSON
 bodies take both present and absent branches. It does not include security
 credentials and can therefore be persisted by the property corpus.
+
+An empty array or object has no form-style wire form (RFC 6570 treats it as
+undefined), so the materializer omits such a parameter or form property and
+the generator produces required array/object parameters and required form
+properties non-empty.
 
 Object schemas honor `minProperties`, `maxProperties`, and boolean or
 schema-valued `additionalProperties` within the generation budget.

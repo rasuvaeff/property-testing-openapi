@@ -71,8 +71,9 @@ final readonly class RequestCaseArbitrary
             if ($parameter['in'] !== $location) {
                 continue;
             }
+            $schema = $parameter['required'] ? $this->nonEmptyContainer($parameter['schema']) : $parameter['schema'];
             $value = Gen::map(
-                $this->schemas->compile($parameter['schema']),
+                $this->schemas->compile($schema),
                 fn(mixed $value): string|array => $this->wireValue($value, $parameter['schema']),
             );
             $shape[$parameter['name']] = $parameter['required']
@@ -114,7 +115,7 @@ final readonly class RequestCaseArbitrary
             } elseif ($normalized === 'application/x-www-form-urlencoded') {
                 $this->assertObjectSchema($schema, 'Form request body schema must be an object');
                 $this->assertFormEncoding($definition['encoding'] ?? []);
-                $body = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
+                $body = Gen::map($this->schemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,
                     'encoding' => 'form',
                     'value' => $value,
@@ -294,6 +295,9 @@ final readonly class RequestCaseArbitrary
                 throw new UnsupportedGeneration('Multipart array items must be a schema object');
             }
             /** @var array<string, mixed> $items */
+            if ($this->isArraySchema($items) || $this->isObjectSchema($items)) {
+                throw new UnsupportedGeneration('Nested multipart array items are not supported');
+            }
             $item = $this->multipartProperty($items);
             $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
             $max = min(is_int($schema['maxItems'] ?? null) ? (int) $schema['maxItems'] : 16, 16);
@@ -321,20 +325,22 @@ final readonly class RequestCaseArbitrary
         foreach (array_keys($value) as $name) {
             $property = is_array($properties[$name] ?? null) ? (array) $properties[$name] : [];
             /** @var array<string, mixed> $property */
+            $partSchema = $this->isArraySchema($property) && is_array($property['items'] ?? null) ? (array) $property['items'] : $property;
+            /** @var array<string, mixed> $partSchema */
             $configuration = is_array($encoding[$name] ?? null) ? (array) $encoding[$name] : [];
             /** @var array<string, mixed> $configuration */
             $configuredType = is_string($configuration['contentType'] ?? null) ? (string) $configuration['contentType'] : null;
             $contentType = is_string($configuredType) && $configuredType !== ''
                 ? $configuredType
-                : $this->multipartContentType($property, $value[$name]);
+                : $this->multipartContentType($partSchema);
             $headers = $this->multipartHeaders($configuration['headers'] ?? []);
             $items = $this->isArraySchema($property) && is_array($value[$name]) && array_is_list($value[$name]) ? $value[$name] : [$value[$name]];
-            $parts = array_merge($parts, array_map(function (mixed $partValue) use ($name, $property, $contentType, $headers): array {
+            $parts = array_merge($parts, array_map(function (mixed $partValue) use ($name, $contentType, $headers): array {
                 $binary = is_array($partValue) && ($partValue['__openapi_encoding'] ?? null) === 'base64';
 
                 return [
                     'name' => $name,
-                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->multipartText($partValue, $property),
+                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->scalar($partValue),
                     'encoding' => $binary ? 'base64' : 'text',
                     'contentType' => $contentType,
                     'headers' => $headers,
@@ -345,27 +351,62 @@ final readonly class RequestCaseArbitrary
         return ['mediaType' => $mediaType, 'encoding' => 'multipart', 'boundary' => $boundary, 'parts' => $parts];
     }
 
-    /** @param array<string, mixed> $schema */
-    private function multipartText(mixed $value, array $schema): string
+    /**
+     * Parts are scalar or binary only — nested objects and arrays fail closed
+     * at generation — so a part travels as text with the OAS default content
+     * type of its item schema.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function multipartContentType(array $schema): string
     {
-        if ($this->isObjectSchema($schema) || ($this->isArraySchema($schema) && is_array($value) && $value !== [] && is_array($value[0] ?? null))) {
-            return json_encode($value, JSON_THROW_ON_ERROR);
-        }
-
-        return $this->scalar($value);
+        return ($schema['format'] ?? null) === 'binary' ? 'application/octet-stream' : 'text/plain';
     }
 
-    /** @param array<string, mixed> $schema */
-    private function multipartContentType(array $schema, mixed $value): string
+    /**
+     * RFC 6570 treats an empty list or map as undefined, so the materializer
+     * omits it; a required container therefore has to be generated non-empty.
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function nonEmptyContainer(array $schema): array
     {
-        if ($this->isObjectSchema($schema) || ($this->isArraySchema($schema) && is_array($value) && $value !== [] && is_array($value[0] ?? null))) {
-            return 'application/json';
+        if ($this->isArraySchema($schema)) {
+            $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
+
+            return array_merge($schema, ['minItems' => max(1, $min)]);
         }
-        if (($schema['format'] ?? null) === 'binary') {
-            return 'application/octet-stream';
+        if ($this->isObjectSchema($schema)) {
+            $min = is_int($schema['minProperties'] ?? null) ? (int) $schema['minProperties'] : 0;
+
+            return array_merge($schema, ['minProperties' => max(1, $min)]);
         }
 
-        return 'text/plain';
+        return $schema;
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function nonEmptyRequiredProperties(array $schema): array
+    {
+        $required = is_array($schema['required'] ?? null) ? (array) $schema['required'] : [];
+        $properties = is_array($schema['properties'] ?? null) ? (array) $schema['properties'] : [];
+        foreach ($required as $name) {
+            if (!is_string($name)) {
+                continue;
+            }
+            $property = $properties[$name] ?? null;
+            if (!is_array($property) || array_is_list($property)) {
+                continue;
+            }
+            /** @var array<string, mixed> $property */
+            $properties[$name] = $this->nonEmptyContainer($property);
+        }
+
+        return array_merge($schema, ['properties' => $properties]);
     }
 
     /** @return array<string, string> */

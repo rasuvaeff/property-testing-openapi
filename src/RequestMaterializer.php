@@ -72,7 +72,7 @@ final readonly class RequestMaterializer
                 'header' => $case['headers'],
                 'cookie' => $case['cookies'],
             };
-            if (!array_key_exists($parameter['name'], $values)) {
+            if (!array_key_exists($parameter['name'], $values) || $values[$parameter['name']] === []) {
                 continue;
             }
             $wire = $this->parameters->serialize(
@@ -199,6 +199,10 @@ final readonly class RequestMaterializer
             $explode = $configuration['explode'] ?? true;
             if ($style !== 'form' || !is_bool($explode)) {
                 throw new UnsupportedGeneration(sprintf('Unsupported form encoding for property "%s"', $name));
+            }
+            if ($value[$name] === []) {
+                // RFC 6570: an empty list or map is undefined and expands to nothing.
+                continue;
             }
             $wire = $this->formValue($value[$name], $property, $name, $explode);
             if ($wire !== '') {

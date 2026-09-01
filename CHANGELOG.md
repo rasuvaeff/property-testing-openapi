@@ -18,7 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported as a document defect instead of being skipped.
 - Fix form and multipart request bodies without an Encoding Object failing
   closed: an absent `encoding` arrived as an empty array and was rejected as
-  a list.
+  a list. Form and multipart generation is now checked against the core
+  oracle by property tests, which also pinned: an empty array/object has no
+  form-style wire form (RFC 6570), so the materializer omits such a
+  parameter or form property and required array/object parameters and form
+  properties are generated non-empty; multipart part content types follow
+  the item schema's OAS default, and nested multipart arrays fail closed as
+  `UnsupportedGeneration` like nested objects.
 - Require `rasuvaeff/openapi-contract` `^0.2`.
 - Materialize requests against the operation's first effective server
   (`Operation::$servers`): a relative server yields a path-only, host-agnostic

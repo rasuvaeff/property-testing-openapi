@@ -18,6 +18,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\BodyContracts;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\PropertyTesting\Random;
@@ -1270,5 +1271,128 @@ final class RequestCaseArbitraryTest
     {
         yield 'form' => ['application/x-www-form-urlencoded', 'Form encoding supports only form style and boolean explode'];
         yield 'multipart' => ['multipart/form-data', 'Multipart encoding supports only form style'];
+    }
+
+    #[Property(runs: 120, generators: [BodyContracts::class, 'multipartCase'])]
+    public function generatedMultipartCasesMaterializeIntoContractValidRequests(array $case): void
+    {
+        $contract = BodyContracts::multipart();
+        $operation = $contract->operation('upload.create');
+        $factory = new Psr17Factory();
+        /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}, misuse: null} $case */
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+        $result = $contract->validateRequest($request);
+
+        Assert::true($result->isValid(), (new \Rasuvaeff\OpenApiContract\ValidationResultFormatter())->format($result));
+
+        $body = $case['body'];
+        Assert::same($body['mediaType'], 'multipart/form-data');
+        Assert::same(preg_match('/^openapi-[0-9a-f]{16}\z/', $body['boundary']), 1);
+        $names = [];
+        foreach ($body['parts'] as $part) {
+            $names[$part['name']] = ($names[$part['name']] ?? 0) + 1;
+            $decoded = $part['encoding'] === 'base64' ? base64_decode($part['value'], strict: true) : $part['value'];
+            Assert::true(is_string($decoded) && !str_contains($decoded, $body['boundary']));
+            match ($part['name']) {
+                'title' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['text', 'text/markdown', ['X-Example' => 'yes', 'X-Default' => 'd', 'X-Bare' => 'x-openapi']]),
+                'file' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['base64', 'application/octet-stream', []]),
+                'tags' => Assert::same([$part['encoding'], $part['contentType']], ['text', 'text/plain']),
+                'ids', 'many', 'count', 'flag' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['text', 'text/plain', []]),
+            };
+        }
+        Assert::same($names['title'] ?? 0, 1);
+        Assert::same($names['file'] ?? 0, 1);
+        Assert::true(($names['tags'] ?? 0) <= 4);
+        Assert::true(($names['many'] ?? 0) <= 16);
+        Assert::true(!isset($names['ids']) || ($names['ids'] >= 2 && $names['ids'] <= 3));
+
+        Classify::cover(isset($names['tags']), 'tags present', 10.0);
+        Classify::cover(!isset($names['tags']), 'tags absent', 10.0);
+        Classify::cover(isset($names['count']) && isset($names['flag']), 'count and flag present', 10.0);
+        Classify::cover(isset($names['ids']), 'ids present', 10.0);
+        Classify::cover(($names['many'] ?? 0) > 1, 'repeated boolean parts', 10.0);
+    }
+
+    public function multipartBoundaryIsDeterministicForTheSameValue(): void
+    {
+        $arbitrary = (new RequestCaseArbitrary())->forOperation(BodyContracts::multipart()->operation('upload.create'));
+
+        $first = $arbitrary->generate(new Random(11))->value;
+        $second = $arbitrary->generate(new Random(11))->value;
+        $other = $arbitrary->generate(new Random(12))->value;
+
+        Assert::same($first, $second);
+        Assert::true(($first['body']['boundary'] ?? null) !== ($other['body']['boundary'] ?? null));
+    }
+
+    #[Property(runs: 120, generators: [BodyContracts::class, 'formCase'])]
+    public function generatedFormCasesMaterializeIntoContractValidRequests(array $case): void
+    {
+        $contract = BodyContracts::form();
+        $operation = $contract->operation('login');
+        $factory = new Psr17Factory();
+        /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'form', value: array<string, mixed>}, misuse: null} $case */
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+        $result = $contract->validateRequest($request);
+
+        Assert::true($result->isValid(), (new \Rasuvaeff\OpenApiContract\ValidationResultFormatter())->format($result));
+        Assert::same($case['body']['encoding'], 'form');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/x-www-form-urlencoded');
+        $value = $case['body']['value'];
+        Assert::true(array_key_exists('user', $value));
+        Assert::same(array_diff(array_keys($value), ['user', 'age', 'ratio', 'active', 'tags', 'meta']), []);
+        $wire = (string) $request->getBody();
+        Assert::true(!str_contains($wire, 'meta='));
+
+        Classify::cover(array_key_exists('tags', $value) && count((array) $value['tags']) > 1, 'tags with several items', 10.0);
+        Classify::cover(array_key_exists('meta', $value), 'meta present', 10.0);
+        Classify::cover(!array_key_exists('meta', $value), 'meta absent', 10.0);
+        Classify::cover(array_key_exists('active', $value), 'boolean present', 10.0);
+    }
+
+    #[DataProvider('failClosedBodyProvider')]
+    public function bodyGenerationFailsClosedOnUnsupportedShapes(array $requestBody, string $message): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: $requestBody);
+
+        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+
+        (new RequestCaseArbitrary())->forOperation($operation);
+    }
+
+    public static function failClosedBodyProvider(): iterable
+    {
+        $form = 'application/x-www-form-urlencoded';
+        $multipart = 'multipart/form-data';
+        $object = ['type' => 'object', 'properties' => ['a' => ['type' => 'string']]];
+        yield 'form schema not an object' => [['content' => [$form => ['schema' => ['type' => 'string']]]], 'Form request body schema must be an object'];
+        yield 'form encoding is a list' => [['content' => [$form => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Form encoding must be an object'];
+        yield 'form encoding entry is a list' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['form']]]]], 'Form encoding entries must be objects'];
+        yield 'form encoding style' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['style' => 'deepObject']]]]], 'Form encoding supports only form style and boolean explode'];
+        yield 'form encoding explode' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['explode' => 'yes']]]]], 'Form encoding supports only form style and boolean explode'];
+        yield 'multipart schema not an object' => [['content' => [$multipart => ['schema' => ['type' => 'array']]]], 'Multipart request body schema must be an object'];
+        yield 'multipart encoding is a list' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Multipart encoding must be an object'];
+        yield 'multipart encoding style' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => ['style' => 'spaceDelimited']]]]], 'Multipart encoding supports only form style'];
+        yield 'multipart properties is a list' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => [['type' => 'string']]]]]], 'Multipart properties must be an object'];
+        yield 'multipart required not a list' => [['content' => [$multipart => ['schema' => $object + ['required' => 'a']]]], 'Multipart required must be a list'];
+        yield 'multipart required with non-names' => [['content' => [$multipart => ['schema' => $object + ['required' => [1]]]]], 'Multipart required must contain property names'];
+        yield 'multipart property not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => 'string']]]]], 'Multipart properties must contain named schema objects'];
+        yield 'multipart nested object' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'object', 'properties' => []]]]]]], 'Nested multipart object properties are not supported'];
+        yield 'multipart nested array items' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ['type' => 'integer']]]]]]]], 'Nested multipart array items are not supported'];
+        yield 'multipart array of objects' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => []]]]]]]], 'Nested multipart array items are not supported'];
+        yield 'multipart array items not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['x']]]]]]], 'Multipart array items must be a schema object'];
+        yield 'request body content not an object' => [['content' => 'oops'], 'Request body content must be an object'];
+        yield 'no supported media type' => [['content' => ['text/csv' => ['schema' => ['type' => 'string']]]], 'Request body has no supported media type'];
+        yield 'json schema is a list' => [['content' => ['application/json' => ['schema' => ['a']]]], 'JSON request body schema must be an object'];
+    }
+
+    public function multipartWithoutPropertiesProducesAnEmptyPartList(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['required' => true, 'content' => ['multipart/form-data' => ['schema' => ['type' => 'object']]]]);
+
+        $case = (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(3))->value;
+
+        Assert::same($case['body']['parts'] ?? null, []);
+        Assert::same($case['body']['encoding'] ?? null, 'multipart');
     }
 }
