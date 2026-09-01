@@ -1,5 +1,13 @@
 # property-testing-openapi
 
+[![Latest Stable Version](https://poser.pugx.org/rasuvaeff/property-testing-openapi/v)](https://packagist.org/packages/rasuvaeff/property-testing-openapi)
+[![Total Downloads](https://poser.pugx.org/rasuvaeff/property-testing-openapi/downloads)](https://packagist.org/packages/rasuvaeff/property-testing-openapi)
+[![Build](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/build.yml/badge.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/build.yml)
+[![Static analysis](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE.md)
+
+[Русская версия](README.ru.md)
+
 Data-only OpenAPI request-case generators and PSR-7 materialization for
 `rasuvaeff/property-testing-core` and `rasuvaeff/openapi-contract`.
 
