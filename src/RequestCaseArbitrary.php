@@ -392,7 +392,7 @@ final readonly class RequestCaseArbitrary
 
     private function assertFormEncoding(mixed $encoding): void
     {
-        if ($encoding === null) {
+        if ($encoding === null || $encoding === []) {
             return;
         }
         if (!is_array($encoding) || array_is_list($encoding)) {
@@ -410,7 +410,7 @@ final readonly class RequestCaseArbitrary
 
     private function assertMultipartEncoding(mixed $encoding): void
     {
-        if ($encoding === null) {
+        if ($encoding === null || $encoding === []) {
             return;
         }
         if (!is_array($encoding) || array_is_list($encoding)) {

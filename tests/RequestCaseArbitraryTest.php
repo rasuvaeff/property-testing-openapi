@@ -24,6 +24,7 @@ use Rasuvaeff\PropertyTesting\Random;
 use Rasuvaeff\PropertyTesting\Shrinkable;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -1219,5 +1220,29 @@ final class RequestCaseArbitraryTest
                 'responses' => ['204' => []],
             ]]],
         ]);
+    }
+
+    #[DataProvider('bodyWithoutEncodingObjectProvider')]
+    public function generatesFormAndMultipartBodiesWithoutAnEncodingObject(string $mediaType, string $encoding): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/login' => ['post' => [
+                'operationId' => 'login',
+                'requestBody' => ['required' => true, 'content' => [$mediaType => ['schema' => ['type' => 'object', 'required' => ['user'], 'properties' => ['user' => ['type' => 'string']]]]]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+
+        $case = (new RequestCaseArbitrary())->forOperation($contract->operation('login'))->generate(new Random(1))->value;
+
+        Assert::same($case['body']['mediaType'] ?? null, $mediaType);
+        Assert::same($case['body']['encoding'] ?? null, $encoding);
+    }
+
+    public static function bodyWithoutEncodingObjectProvider(): iterable
+    {
+        yield 'form' => ['application/x-www-form-urlencoded', 'form'];
+        yield 'multipart' => ['multipart/form-data', 'multipart'];
     }
 }
