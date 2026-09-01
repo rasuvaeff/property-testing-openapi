@@ -325,7 +325,7 @@ final readonly class RequestCaseArbitrary
         foreach (array_keys($value) as $name) {
             $property = is_array($properties[$name] ?? null) ? (array) $properties[$name] : [];
             /** @var array<string, mixed> $property */
-            $partSchema = $this->isArraySchema($property) && is_array($property['items'] ?? null) ? (array) $property['items'] : $property;
+            $partSchema = is_array($property['items'] ?? null) ? (array) $property['items'] : $property;
             /** @var array<string, mixed> $partSchema */
             $configuration = is_array($encoding[$name] ?? null) ? (array) $encoding[$name] : [];
             /** @var array<string, mixed> $configuration */
@@ -334,7 +334,7 @@ final readonly class RequestCaseArbitrary
                 ? $configuredType
                 : $this->multipartContentType($partSchema);
             $headers = $this->multipartHeaders($configuration['headers'] ?? []);
-            $items = $this->isArraySchema($property) && is_array($value[$name]) && array_is_list($value[$name]) ? $value[$name] : [$value[$name]];
+            $items = is_array($value[$name]) && array_is_list($value[$name]) ? $value[$name] : [$value[$name]];
             $parts = array_merge($parts, array_map(function (mixed $partValue) use ($name, $contentType, $headers): array {
                 $binary = is_array($partValue) && ($partValue['__openapi_encoding'] ?? null) === 'base64';
 

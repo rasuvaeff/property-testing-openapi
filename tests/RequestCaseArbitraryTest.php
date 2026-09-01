@@ -1276,10 +1276,55 @@ final class RequestCaseArbitraryTest
     #[Property(runs: 120, generators: [BodyContracts::class, 'multipartCase'])]
     public function generatedMultipartCasesMaterializeIntoContractValidRequests(array $case): void
     {
+        /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}, misuse: null} $case */
+        $names = $this->assertMultipartCaseConforms($case);
+
+        Classify::cover(isset($names['tags']), 'tags present', 10.0);
+        Classify::cover(!isset($names['tags']), 'tags absent', 10.0);
+        Classify::cover(isset($names['ids']), 'ids present', 10.0);
+        Classify::cover(($names['many'] ?? 0) > 1, 'repeated boolean parts', 10.0);
+        Classify::cover(isset($names['count']) && isset($names['flag']), 'count and flag present', 10.0);
+    }
+
+    /**
+     * The generator is compiled inside the test body here, so mutants in the
+     * compile-time path (`forOperation` and its helpers) are attributed to
+     * this test — the property above compiles it in its provider.
+     */
+    public function multipartGenerationConformsAcrossSeeds(): void
+    {
+        $arbitrary = (new RequestCaseArbitrary())->forOperation(BodyContracts::multipart()->operation('upload.create'));
+        $seen = ['tags' => 0, 'no tags' => 0, 'ids' => 0, 'repeated many' => 0, 'many with duplicates' => 0, 'short file' => 0, 'non-empty file' => 0, 'count and flag' => 0];
+        foreach (range(1, 80) as $seed) {
+            /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}, misuse: null} $case */
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $names = $this->assertMultipartCaseConforms($case);
+            $seen['tags'] += isset($names['tags']) ? 1 : 0;
+            $seen['no tags'] += isset($names['tags']) ? 0 : 1;
+            $seen['ids'] += isset($names['ids']) ? 1 : 0;
+            $seen['repeated many'] += ($names['many'] ?? 0) > 1 ? 1 : 0;
+            $seen['many with duplicates'] += ($names['many'] ?? 0) > 2 ? 1 : 0;
+            $seen['count and flag'] += isset($names['count'], $names['flag']) ? 1 : 0;
+            foreach ($case['body']['parts'] as $part) {
+                $seen['short file'] += $part['name'] === 'file' && strlen($part['value']) < 12 ? 1 : 0;
+                $seen['non-empty file'] += $part['name'] === 'file' && $part['value'] !== '' ? 1 : 0;
+            }
+        }
+
+        foreach ($seen as $label => $count) {
+            Assert::true($count > 0, $label . ' never generated');
+        }
+    }
+
+    /**
+     * @param array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}, misuse: null} $case
+     * @return array<string, int> part counts by name
+     */
+    private function assertMultipartCaseConforms(array $case): array
+    {
         $contract = BodyContracts::multipart();
         $operation = $contract->operation('upload.create');
         $factory = new Psr17Factory();
-        /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}, misuse: null} $case */
         $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
         $result = $contract->validateRequest($request);
 
@@ -1288,16 +1333,19 @@ final class RequestCaseArbitraryTest
         $body = $case['body'];
         Assert::same($body['mediaType'], 'multipart/form-data');
         Assert::same(preg_match('/^openapi-[0-9a-f]{16}\z/', $body['boundary']), 1);
+        Assert::same($request->getHeaderLine('Content-Type'), 'multipart/form-data; boundary=' . $body['boundary']);
         $names = [];
         foreach ($body['parts'] as $part) {
             $names[$part['name']] = ($names[$part['name']] ?? 0) + 1;
             $decoded = $part['encoding'] === 'base64' ? base64_decode($part['value'], strict: true) : $part['value'];
             Assert::true(is_string($decoded) && !str_contains($decoded, $body['boundary']));
             match ($part['name']) {
-                'title' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['text', 'text/markdown', ['X-Example' => 'yes', 'X-Default' => 'd', 'X-Bare' => 'x-openapi']]),
-                'file' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['base64', 'application/octet-stream', []]),
-                'tags' => Assert::same([$part['encoding'], $part['contentType']], ['text', 'text/plain']),
-                'ids', 'many', 'count', 'flag' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['text', 'text/plain', []]),
+                'title' => Assert::same([$part['encoding'], $part['contentType'], $part['headers'], mb_strlen($part['value']) >= 1 && mb_strlen($part['value']) <= 12], ['text', 'text/markdown', ['X-Example' => 'yes', 'X-Default' => 'd', 'X-Bare' => 'x-openapi'], true]),
+                'file' => Assert::same([$part['encoding'], $part['contentType'], $part['headers'], is_string($decoded) && strlen($decoded) <= 64], ['base64', 'application/octet-stream', [], true]),
+                'tags' => Assert::same([$part['encoding'], $part['contentType'], $part['headers']], ['text', 'text/plain', []]),
+                'ids' => Assert::same([$part['encoding'], $part['contentType'], preg_match('/^[0-9]\z/', $part['value'])], ['text', 'text/plain', 1]),
+                'many', 'flag' => Assert::same([$part['encoding'], $part['contentType'], in_array($part['value'], ['true', 'false'], strict: true)], ['text', 'text/plain', true]),
+                'count' => Assert::same([$part['encoding'], $part['contentType'], preg_match('/^(?:[0-9]|[1-9][0-9]|100)\z/', $part['value'])], ['text', 'text/plain', 1]),
             };
         }
         Assert::same($names['title'] ?? 0, 1);
@@ -1305,12 +1353,12 @@ final class RequestCaseArbitraryTest
         Assert::true(($names['tags'] ?? 0) <= 4);
         Assert::true(($names['many'] ?? 0) <= 16);
         Assert::true(!isset($names['ids']) || ($names['ids'] >= 2 && $names['ids'] <= 3));
+        if (isset($names['ids'])) {
+            $ids = array_map(static fn(array $part): string => $part['value'], array_values(array_filter($body['parts'], static fn(array $part): bool => $part['name'] === 'ids')));
+            Assert::same(count(array_unique($ids)), count($ids));
+        }
 
-        Classify::cover(isset($names['tags']), 'tags present', 10.0);
-        Classify::cover(!isset($names['tags']), 'tags absent', 10.0);
-        Classify::cover(isset($names['count']) && isset($names['flag']), 'count and flag present', 10.0);
-        Classify::cover(isset($names['ids']), 'ids present', 10.0);
-        Classify::cover(($names['many'] ?? 0) > 1, 'repeated boolean parts', 10.0);
+        return $names;
     }
 
     public function multipartBoundaryIsDeterministicForTheSameValue(): void
@@ -1328,26 +1376,61 @@ final class RequestCaseArbitraryTest
     #[Property(runs: 120, generators: [BodyContracts::class, 'formCase'])]
     public function generatedFormCasesMaterializeIntoContractValidRequests(array $case): void
     {
-        $contract = BodyContracts::form();
-        $operation = $contract->operation('login');
-        $factory = new Psr17Factory();
         /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'form', value: array<string, mixed>}, misuse: null} $case */
-        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
-        $result = $contract->validateRequest($request);
-
-        Assert::true($result->isValid(), (new \Rasuvaeff\OpenApiContract\ValidationResultFormatter())->format($result));
-        Assert::same($case['body']['encoding'], 'form');
-        Assert::same($request->getHeaderLine('Content-Type'), 'application/x-www-form-urlencoded');
-        $value = $case['body']['value'];
-        Assert::true(array_key_exists('user', $value));
-        Assert::same(array_diff(array_keys($value), ['user', 'age', 'ratio', 'active', 'tags', 'meta']), []);
-        $wire = (string) $request->getBody();
-        Assert::true(!str_contains($wire, 'meta='));
+        $value = $this->assertFormCaseConforms($case);
 
         Classify::cover(array_key_exists('tags', $value) && count((array) $value['tags']) > 1, 'tags with several items', 10.0);
         Classify::cover(array_key_exists('meta', $value), 'meta present', 10.0);
         Classify::cover(!array_key_exists('meta', $value), 'meta absent', 10.0);
         Classify::cover(array_key_exists('active', $value), 'boolean present', 10.0);
+    }
+
+    public function formGenerationConformsAcrossSeeds(): void
+    {
+        $arbitrary = (new RequestCaseArbitrary())->forOperation(BodyContracts::form()->operation('login'));
+        $seen = ['several tags' => 0, 'empty tags' => 0, 'meta' => 0, 'no meta' => 0, 'boolean' => 0, 'ratio' => 0];
+        foreach (range(1, 80) as $seed) {
+            /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'form', value: array<string, mixed>}, misuse: null} $case */
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $value = $this->assertFormCaseConforms($case);
+            $seen['several tags'] += array_key_exists('tags', $value) && count((array) $value['tags']) > 1 ? 1 : 0;
+            $seen['empty tags'] += array_key_exists('tags', $value) && $value['tags'] === [] ? 1 : 0;
+            $seen['meta'] += array_key_exists('meta', $value) ? 1 : 0;
+            $seen['no meta'] += array_key_exists('meta', $value) ? 0 : 1;
+            $seen['boolean'] += array_key_exists('active', $value) ? 1 : 0;
+            $seen['ratio'] += array_key_exists('ratio', $value) ? 1 : 0;
+        }
+
+        foreach ($seen as $label => $count) {
+            Assert::true($count > 0, $label . ' never generated');
+        }
+    }
+
+    /**
+     * @param array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: array{mediaType: string, encoding: 'form', value: array<string, mixed>}, misuse: null} $case
+     * @return array<string, mixed> the logical form value
+     */
+    private function assertFormCaseConforms(array $case): array
+    {
+        $contract = BodyContracts::form();
+        $operation = $contract->operation('login');
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+        $result = $contract->validateRequest($request);
+
+        Assert::true($result->isValid(), (new \Rasuvaeff\OpenApiContract\ValidationResultFormatter())->format($result));
+        Assert::same($case['body']['encoding'], 'form');
+        Assert::same($case['body']['mediaType'], 'application/x-www-form-urlencoded');
+        Assert::same($request->getHeaderLine('Content-Type'), 'application/x-www-form-urlencoded');
+        $value = $case['body']['value'];
+        Assert::true(array_key_exists('user', $value) && is_string($value['user']) && $value['user'] !== '');
+        Assert::same(array_diff(array_keys($value), ['user', 'age', 'ratio', 'active', 'tags', 'meta']), []);
+        $wire = (string) $request->getBody();
+        Assert::true(!str_contains($wire, 'meta='));
+        Assert::true(str_contains($wire, 'user='));
+        Assert::same(str_contains($wire, 'tags='), array_key_exists('tags', $value) && $value['tags'] !== []);
+
+        return $value;
     }
 
     #[DataProvider('failClosedBodyProvider')]
@@ -1372,6 +1455,9 @@ final class RequestCaseArbitraryTest
         yield 'form encoding explode' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['explode' => 'yes']]]]], 'Form encoding supports only form style and boolean explode'];
         yield 'multipart schema not an object' => [['content' => [$multipart => ['schema' => ['type' => 'array']]]], 'Multipart request body schema must be an object'];
         yield 'multipart encoding is a list' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Multipart encoding must be an object'];
+        yield 'multipart encoding with a non-string key' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [7 => ['style' => 'form']]]]], 'Multipart encoding supports only form style'];
+        yield 'form encoding with a non-string key' => [['content' => [$form => ['schema' => $object, 'encoding' => [7 => ['style' => 'form']]]]], 'Form encoding entries must be objects'];
+        yield 'multipart encoding entry not an object' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => 'form']]]], 'Multipart encoding supports only form style'];
         yield 'multipart encoding style' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => ['style' => 'spaceDelimited']]]]], 'Multipart encoding supports only form style'];
         yield 'multipart properties is a list' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => [['type' => 'string']]]]]], 'Multipart properties must be an object'];
         yield 'multipart required not a list' => [['content' => [$multipart => ['schema' => $object + ['required' => 'a']]]], 'Multipart required must be a list'];
@@ -1384,6 +1470,103 @@ final class RequestCaseArbitraryTest
         yield 'request body content not an object' => [['content' => 'oops'], 'Request body content must be an object'];
         yield 'no supported media type' => [['content' => ['text/csv' => ['schema' => ['type' => 'string']]]], 'Request body has no supported media type'];
         yield 'json schema is a list' => [['content' => ['application/json' => ['schema' => ['a']]]], 'JSON request body schema must be an object'];
+    }
+
+    public function formRequiredPropertyThatIsNotASchemaFailsClosed(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['required' => true, 'content' => ['application/x-www-form-urlencoded' => ['schema' => ['type' => 'object', 'required' => ['a', 'b'], 'properties' => ['a' => 'string', 'b' => ['type' => 'string']]]]]]);
+
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new RequestCaseArbitrary())->forOperation($operation);
+    }
+
+    public function requiredContainersAreGeneratedNonEmptyWhileOptionalOnesMayBeEmpty(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/search' => ['post' => [
+                'operationId' => 'search',
+                'parameters' => [
+                    ['name' => 'req', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1]]],
+                    ['name' => 'opt', 'in' => 'query', 'schema' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1]]],
+                    ['name' => 'filter', 'in' => 'query', 'required' => true, 'style' => 'deepObject', 'schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string', 'minLength' => 1], 'b' => ['type' => 'string', 'minLength' => 1]]]],
+                ],
+                'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => [
+                    'schema' => ['type' => 'object', 'required' => ['tags'], 'properties' => ['tags' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1]], 'extra' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1]]]],
+                ]]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('search');
+        $arbitrary = (new RequestCaseArbitrary())->forOperation($operation);
+        $factory = new Psr17Factory();
+        $materializer = new RequestMaterializer($factory, $factory);
+        $emptyOptional = 0;
+        $emptyExtra = 0;
+        foreach (range(1, 80) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $result = $contract->validateRequest($materializer->materialize($operation, $case));
+
+            Assert::true($result->isValid(), (new \Rasuvaeff\OpenApiContract\ValidationResultFormatter())->format($result));
+            Assert::true(is_array($case['query']['req'] ?? null) && $case['query']['req'] !== []);
+            Assert::true(is_array($case['query']['filter'] ?? null) && $case['query']['filter'] !== []);
+            Assert::true(is_array($case['body']['value']['tags'] ?? null) && $case['body']['value']['tags'] !== []);
+            $emptyOptional += ($case['query']['opt'] ?? null) === [] ? 1 : 0;
+            $emptyExtra += ($case['body']['value']['extra'] ?? null) === [] ? 1 : 0;
+        }
+
+        Assert::true($emptyOptional > 0, 'optional empty array never generated');
+        Assert::true($emptyExtra > 0, 'optional empty form array never generated');
+    }
+
+    #[DataProvider('mediaTypeSpellingProvider')]
+    public function normalizesFormAndMultipartMediaTypeSpellings(string $mediaType, string $encoding): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['required' => true, 'content' => [$mediaType => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string']]]]]]);
+
+        $case = (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(2))->value;
+
+        Assert::same($case['body']['encoding'] ?? null, $encoding);
+        Assert::same($case['body']['mediaType'] ?? null, $mediaType);
+    }
+
+    public static function mediaTypeSpellingProvider(): iterable
+    {
+        yield 'form with parameters and case' => ['Application/X-WWW-Form-Urlencoded ; charset=utf-8', 'form'];
+        yield 'multipart with parameters and case' => ['Multipart/Form-Data ; boundary=x', 'multipart'];
+    }
+
+    public function binaryPartsFollowTheFormatWhenTheTypeIsOmittedButNotWhenItIsNotAString(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['required' => true, 'content' => ['multipart/form-data' => ['schema' => ['type' => 'object', 'required' => ['blob', 'code'], 'properties' => [
+            'blob' => ['format' => 'binary'],
+            'code' => ['type' => 'integer', 'format' => 'binary', 'minimum' => 1, 'maximum' => 9],
+        ]]]]]);
+
+        $case = (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(4))->value;
+        $parts = [];
+        foreach ($case['body']['parts'] ?? [] as $part) {
+            $parts[$part['name']] = [$part['encoding'], $part['contentType']];
+        }
+
+        Assert::same($parts, ['blob' => ['base64', 'application/octet-stream'], 'code' => ['text', 'application/octet-stream']]);
+    }
+
+    public function parameterValuesWithNestedObjectsFailClosed(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets' => ['get' => [
+                'operationId' => 'pets.list',
+                'parameters' => [['name' => 'filter', 'in' => 'query', 'required' => true, 'style' => 'deepObject', 'schema' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'object', 'required' => ['b'], 'properties' => ['b' => ['type' => 'string']]]]]]],
+                'responses' => ['200' => []],
+            ]]],
+        ]);
+
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Parameter values must be scalar, arrays, or objects with scalar properties');
+
+        (new RequestCaseArbitrary())->forOperation($contract->operation('pets.list'))->generate(new Random(1));
     }
 
     public function multipartWithoutPropertiesProducesAnEmptyPartList(): void

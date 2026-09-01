@@ -22,9 +22,9 @@ final class BodyContracts
                 'operationId' => 'upload.create',
                 'requestBody' => ['required' => true, 'content' => ['multipart/form-data' => [
                     'schema' => ['type' => 'object', 'required' => ['title', 'file'], 'properties' => [
+                        'tags' => ['type' => 'array', 'maxItems' => 4, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 5]],
                         'title' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 12],
                         'file' => ['type' => 'string', 'format' => 'binary'],
-                        'tags' => ['type' => 'array', 'maxItems' => 4, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 5]],
                         'ids' => ['type' => 'array', 'uniqueItems' => true, 'minItems' => 2, 'maxItems' => 3, 'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
                         'many' => ['type' => 'array', 'items' => ['type' => 'boolean']],
                         'count' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 100],
@@ -32,13 +32,15 @@ final class BodyContracts
                     ]],
                     'encoding' => [
                         'title' => ['contentType' => 'text/markdown', 'headers' => [
+                            'X-Malformed' => 'ignored',
+                            7 => ['required' => true, 'example' => 'seven'],
+                            'X-Unspecified' => ['example' => 'u'],
+                            'X-Optional' => ['required' => false, 'example' => 'no'],
                             'X-Example' => ['required' => true, 'example' => 'yes'],
                             'X-Default' => ['required' => true, 'default' => 'd'],
                             'X-Bare' => ['required' => true],
-                            'X-Optional' => ['required' => false, 'example' => 'no'],
-                            'X-Malformed' => 'ignored',
                         ]],
-                        'tags' => ['contentType' => 'text/plain'],
+                        'tags' => ['contentType' => 'text/plain', 'style' => 'form'],
                     ],
                 ]]],
                 'responses' => ['201' => []],
