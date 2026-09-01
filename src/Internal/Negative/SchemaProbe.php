@@ -144,6 +144,41 @@ final readonly class SchemaProbe
         return self::FORMAT_WITNESSES[$schema['format']] ?? null;
     }
 
+    /**
+     * A pattern witness can be promised only when the pattern is the sole
+     * content assertion: enum, const, and format could reject the witness for
+     * an unrelated reason. The returned length window keeps the witness from
+     * tripping `minLength`/`maxLength` instead of the pattern.
+     *
+     * @param array<string, mixed> $schema
+     * @return array{pattern: non-empty-string, minLength: int<0, max>, maxLength: int<0, max>}|null
+     */
+    public function patternConstraints(array $schema): ?array
+    {
+        if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
+            return null;
+        }
+        foreach (['enum', 'const', 'format'] as $keyword) {
+            if (array_key_exists($keyword, $schema)) {
+                return null;
+            }
+        }
+        $pattern = $schema['pattern'] ?? null;
+        if (!is_string($pattern) || $pattern === '') {
+            return null;
+        }
+        $minLength = $this->intBound($schema['minLength'] ?? null) ?? 0;
+        $maxLength = $this->intBound($schema['maxLength'] ?? null) ?? self::MAX_CONSTRUCTED_LENGTH;
+        if ($minLength < 0 || $maxLength < 0 || $maxLength < $minLength || $minLength > self::MAX_CONSTRUCTED_LENGTH) {
+            return null;
+        }
+        if ($maxLength > self::MAX_CONSTRUCTED_LENGTH) {
+            $maxLength = self::MAX_CONSTRUCTED_LENGTH;
+        }
+
+        return ['pattern' => $pattern, 'minLength' => $minLength, 'maxLength' => $maxLength];
+    }
+
     private function intBound(mixed $value): ?int
     {
         return is_int($value) ? $value : null;

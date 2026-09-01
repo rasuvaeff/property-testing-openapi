@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Constructive `pattern` negative category:
+  `NegativeRequestCaseArbitrary::patternMismatchForOperation()` searches a
+  counter-witness among bounded alphabet samples and mutations of an accepted
+  value, using the pattern itself as the `preg_match()` oracle, and fails
+  closed on a PCRE error or an exhausted candidate/time budget.
+
 ## 0.1.0 — 2026-08-29
 
 - Initial release: data-only OpenAPI request-case generators with a fail-closed

@@ -45,6 +45,12 @@ Public API:
   replaces one required string parameter with a fixed witness violating its
   `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
   `misuse.kind = 'format'`; `url` is not asserted by the backend and is skipped.
+- `NegativeRequestCaseArbitrary::patternMismatchForOperation(Operation)`
+  replaces one required string parameter with a searched value failing its
+  `pattern` (the pattern is the `preg_match()` oracle; bounded alphabet samples
+  and mutations of an accepted value) and records `misuse.kind = 'pattern'`;
+  parameters with `enum`/`const`/`format` are skipped and an exhausted search
+  budget or a PCRE error fails closed.
 - `NegativeRequestCaseArbitrary::additionalPropertyForOperation(Operation)`
   adds one undeclared property to a required JSON object body with
   `additionalProperties: false` and records
