@@ -272,6 +272,44 @@ use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
 ```
 
+## Response Generation
+
+For testing an API client without live traffic, the package generates the
+responses a documented provider may return — and the ones it must not:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
+
+$case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random(42))->value;
+$response = (new ResponseMaterializer($responseFactory, $streamFactory))->materialize($operation, $case);
+$contract->validateResponse('payments.get', $response)->assertValid();
+```
+
+`ResponseCaseArbitrary::forOperation()` takes an explicit concrete status; the
+Response Object is the one the contract resolves it to (exact code, then
+`NXX`, then `default` — the same selection `validateResponse()` applies, via
+`Operation::responseFor()`). Required response headers are always present,
+optional ones take both branches, and the JSON body is generated with
+`writeOnly` properties left out. `ResponseCaseData` is JSON-compatible and
+corpus-safe like its request counterpart. An undeclared status, a required
+header without a schema, or a body without a JSON media type fail closed as
+`UnsupportedGeneration`.
+
+`NegativeResponseCaseArbitrary` mutates a valid case constructively:
+`undeclared-status`, a `missing-required` header, and the body categories
+`missing-required`, `type`, `enum`, `const`, `boundary`, `length`, `pattern`
+(through the same bounded `preg_match()` oracle as request generation),
+`additional-properties`, `media-type`, and `json-syntax` — on top-level
+object properties, or on a scalar/array body root (`misuse.name` is `$`).
+`forOperation()` is the weighted union of every constructible category.
+Every case is provably invalid under `Contract::validateResponse()`, the
+`misuse` metadata survives shrinking, and a category without a constructible
+witness fails closed. Feed the valid cases through your client's decoder to
+exercise documented optional fields and enum states, and the invalid ones to
+prove the client rejects a malformed provider payload instead of mapping it.
+
 ## Test Runner Integration
 
 `OperationProperty` is the framework-neutral runner surface: each operation is

@@ -272,6 +272,44 @@ use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
 ```
 
+## Генерация responses
+
+Для тестирования API-клиента без живого трафика пакет генерирует ответы,
+которые документированный провайдер может вернуть — и те, которые не должен:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
+
+$case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random(42))->value;
+$response = (new ResponseMaterializer($responseFactory, $streamFactory))->materialize($operation, $case);
+$contract->validateResponse('payments.get', $response)->assertValid();
+```
+
+`ResponseCaseArbitrary::forOperation()` принимает явный конкретный статус;
+Response Object — тот, к которому его резолвит контракт (точный код, затем
+`NXX`, затем `default` — тот же выбор, что в `validateResponse()`, через
+`Operation::responseFor()`). Required response headers присутствуют всегда,
+optional берут обе ветви, JSON body генерируется без `writeOnly`-свойств.
+`ResponseCaseData` JSON-compatible и corpus-safe, как и request-аналог.
+Необъявленный статус, required header без схемы и body без JSON media type
+падают как `UnsupportedGeneration`.
+
+`NegativeResponseCaseArbitrary` конструктивно мутирует валидный case:
+`undeclared-status`, `missing-required` header и body-категории
+`missing-required`, `type`, `enum`, `const`, `boundary`, `length`, `pattern`
+(через тот же bounded `preg_match()`-оракул, что и у requests),
+`additional-properties`, `media-type`, `json-syntax` — на top-level
+свойствах объекта или на скалярном/массивном корне body (`misuse.name` =
+`$`). `forOperation()` — взвешенное объединение всех конструируемых
+категорий. Каждый case доказуемо невалиден по
+`Contract::validateResponse()`, `misuse` переживает shrinking, категория без
+конструируемого witness падает fail-closed. Валидные cases прогоняйте через
+decoder клиента (documented optional fields, enum states), невалидные —
+чтобы доказать, что клиент отвергает malformed provider payload, а не
+маппит его.
+
 ## Интеграция с test runner'ами
 
 `OperationProperty` — framework-neutral runner-поверхность: операция — это

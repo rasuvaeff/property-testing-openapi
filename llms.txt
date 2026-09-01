@@ -117,6 +117,30 @@ Public API:
   byte-bounded and UTF-8 safe.
 - `SuiteConfigurationError` for selection/transport misconfiguration;
   `CheckFailed` for built-in check failures.
+- `ResponseCaseArbitrary::forOperation(Operation, int $status): ArbitraryInterface`
+  generates valid, corpus-safe response cases `{operationKey, status, headers,
+  body: null|{mediaType, encoding: 'json'|'raw', value}, misuse: null}` for the
+  Response Object the status resolves to (exact -> NXX -> default via
+  `Operation::responseFor`); required headers always present, `writeOnly`
+  properties left out; `jsonBody(Operation, int)` exposes the response-direction
+  media type + schema. Undeclared status / required header without schema /
+  non-JSON content throw `UnsupportedGeneration`.
+- `ResponseMaterializer(ResponseFactoryInterface, StreamFactoryInterface)
+  ::materialize(Operation, array $case): ResponseInterface` builds the PSR-7
+  response (list headers join with commas; JSON body is schema-aware, so `{}`
+  stays an object; `Content-Type` from the case).
+- `NegativeResponseCaseArbitrary::forOperation(Operation, int $status)` is the
+  weighted union of constructive invalid-response categories; per-category
+  methods `undeclaredStatusForOperation`, `missingRequiredHeaderForOperation`,
+  `missingRequiredForOperation`, `typeMismatchForOperation`,
+  `enumMismatchForOperation`, `constMismatchForOperation`,
+  `boundaryMismatchForOperation`, `lengthMismatchForOperation`,
+  `patternMismatchForOperation`, `additionalPropertyForOperation`,
+  `mediaTypeMismatchForOperation`, `malformedJsonForOperation`. Body targets
+  are top-level object properties or the scalar/array root (`misuse.name` =
+  `$`); every case is provably invalid under `Contract::validateResponse()`,
+  misuse survives shrinking, unconstructible categories throw
+  `UnsupportedGeneration`.
 - `OperationProperty::check(ContractSuite, string $operationKey, int $runs = 100, ?int $seed = null)`
   runs `exampleCases()` first (before corpus replay and the random phase,
   under every seed); a failing example throws `OperationPropertyFailed` with

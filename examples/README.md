@@ -11,6 +11,11 @@ before any transport would run.
 the deterministic example phase of `OperationProperty`: a point fault the
 document describes is found by name on the first run, before any random trial.
 
+`response-cases.php` generates a contract-valid provider response and a
+provably invalid one (`enum` misuse) for the same operation and shows the
+core validator accepting the first and rejecting the second — the harness for
+testing an API client without live traffic.
+
 `suite-check.php` runs `ContractSuite` against an in-process PSR-15 handler:
 valid trials must conform without a 5xx, and a constructive negative case must
 be rejected without a 5xx. Its `afterRequest` hook also counts one state reset
