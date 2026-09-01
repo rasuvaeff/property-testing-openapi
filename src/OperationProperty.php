@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
 use Rasuvaeff\PropertyTesting\Runner\CallableTrialExecutor;
 use Rasuvaeff\PropertyTesting\Runner\Corpus;
+use Rasuvaeff\PropertyTesting\Runner\ExampleFailed;
 use Rasuvaeff\PropertyTesting\Runner\Falsified;
 use Rasuvaeff\PropertyTesting\Runner\PropertyConfig;
 use Rasuvaeff\PropertyTesting\Runner\PropertyDefinition;
@@ -19,6 +20,12 @@ use Rasuvaeff\PropertyTesting\Runner\PropertyRunner;
  * category. Call it from a plain test method under any runner; a falsified
  * phase surfaces as {@see OperationPropertyFailed} with the shrunk minimal
  * case and a redacted curl reproducer.
+ *
+ * The valid phase starts with the document's own examples
+ * ({@see ContractSuite::exampleCases()}): they run before corpus replay and
+ * the random phase under every seed, so a point fault the document itself
+ * describes is found on the first run instead of by chance. A failing example
+ * is reported by name, unshrunk.
  *
  * Environment parity with the property-testing adapters: `PROPERTY_RUNS`
  * overrides the run count, `PROPERTY_SEED` fixes the seed unless an explicit
@@ -37,7 +44,7 @@ final readonly class OperationProperty
         $seed ??= self::resolveSeed();
         $corpus = self::resolveCorpus();
 
-        self::run($suite, $operationKey, phase: 'valid', cases: $suite->validCases($operationKey), runs: $runs, seed: $seed, corpus: $corpus);
+        self::run($suite, $operationKey, phase: 'valid', cases: $suite->validCases($operationKey), runs: $runs, seed: $seed, corpus: $corpus, examples: $suite->exampleCases($operationKey));
 
         try {
             $negative = $suite->negativeCases($operationKey);
@@ -50,6 +57,7 @@ final readonly class OperationProperty
 
     /**
      * @param 'valid'|'negative' $phase
+     * @param array<string, CaseData> $examples
      */
     private static function run(
         ContractSuite $suite,
@@ -59,13 +67,17 @@ final readonly class OperationProperty
         int $runs,
         ?int $seed,
         ?Corpus $corpus,
+        array $examples = [],
     ): void {
+        $exampleNames = array_map(strval(...), array_keys($examples));
+        $exampleCases = array_values($examples);
         $definition = new PropertyDefinition(
             id: sprintf('openapi::%s::%s', $operationKey, $phase),
             name: sprintf('%s %s', $operationKey, $phase),
             generators: ['case' => $cases],
             parameterNames: ['case'],
             config: new PropertyConfig(runs: $runs, seed: $seed),
+            examples: array_map(static fn(array $case): array => [$case], $exampleCases),
             replayRegressions: $seed === null,
         );
         $executor = new CallableTrialExecutor(static function (mixed $case) use ($suite, $operationKey, $phase): void {
@@ -88,6 +100,23 @@ final readonly class OperationProperty
                 $result->counterExample(),
                 self::reproducer($suite, $operationKey, $result->counterExample()->shrunkArguments),
                 $failure,
+            );
+        }
+        if ($result instanceof ExampleFailed) {
+            $index = $result->exception->getIndex();
+            $case = $exampleCases[$index] ?? null;
+            $name = $exampleNames[$index] ?? null;
+            if ($case === null || $name === null) {
+                throw new \LogicException('Failed example index is outside the example set');
+            }
+
+            throw OperationPropertyFailed::forExample(
+                $operationKey,
+                $phase,
+                $name,
+                $case,
+                self::reproducer($suite, $operationKey, ['case' => $case]),
+                $result->exception,
             );
         }
 

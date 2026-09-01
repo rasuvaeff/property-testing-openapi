@@ -79,6 +79,16 @@ Public API:
   `rejectionPolicy(RejectionPolicy)`, `baseUri(string)` (materialize against
   an explicit base URI instead of the declared server).
 - `ContractSuite::operationKeys(): list<string>` resolves the selection.
+- `ContractSuite::exampleCases(string $operationKey): array<string, CaseData>`
+  (via `DocumentExamples::forOperation(Operation)`) derives named valid cases
+  from the document's `example`/`examples`: parameter/media-type `examples`
+  map (Example Objects with `value`) -> named cases, one per distinct name
+  across all parts; `example`, then Schema Object `example`, then
+  `examples[0]` -> the unnamed case `example`. Missing parts fall back to the
+  unnamed example, then to a fixed-seed base case. Deterministic under every
+  seed; `externalValue`-only entries and multipart bodies contribute nothing;
+  unrepresentable parameter examples throw `UnsupportedGeneration`. Not
+  validated here: an invalid example fails `checkValid()` before transport.
 - `ContractSuite::validCases(string $operationKey)` /
   `negativeCases(string $operationKey)` return case arbitraries for a selected
   operation; `negativeCases` weights every constructively supported negative
@@ -104,6 +114,9 @@ Public API:
 - `SuiteConfigurationError` for selection/transport misconfiguration;
   `CheckFailed` for built-in check failures.
 - `OperationProperty::check(ContractSuite, string $operationKey, int $runs = 100, ?int $seed = null)`
+  runs `exampleCases()` first (before corpus replay and the random phase,
+  under every seed); a failing example throws `OperationPropertyFailed` with
+  `$example` set to its name, the case unshrunk and `runsBeforeFailure = 0`.
   runs the valid phase always and the negative phase when the operation has a
   constructible misuse category; a falsified phase throws
   `OperationPropertyFailed` (operation key, phase, `CounterExample`, redacted

@@ -57,6 +57,7 @@ final class ContractSuite
         private RequestMaterializer $materializer,
         private readonly RequestCaseArbitrary $valid = new RequestCaseArbitrary(),
         private readonly NegativeRequestCaseArbitrary $negative = new NegativeRequestCaseArbitrary(),
+        private readonly DocumentExamples $examples = new DocumentExamples(),
     ) {}
 
     public static function fromContract(Contract $contract, RequestFactoryInterface $requests, StreamFactoryInterface $streams): self
@@ -189,6 +190,19 @@ final class ContractSuite
     public function validCases(string $operationKey): ArbitraryInterface
     {
         return $this->valid->forOperation($this->requireSelected($operationKey));
+    }
+
+    /**
+     * Named valid cases derived from the document's `example`/`examples`
+     * declarations (see {@see DocumentExamples}); empty when the operation
+     * declares none. {@see OperationProperty} runs them before the random
+     * phase; each one is still checked with {@see checkValid()}.
+     *
+     * @return array<string, CaseData>
+     */
+    public function exampleCases(string $operationKey): array
+    {
+        return $this->examples->forOperation($this->requireSelected($operationKey));
     }
 
     /**

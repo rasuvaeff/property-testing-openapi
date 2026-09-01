@@ -437,6 +437,26 @@ final class ContractSuiteTest
     }
 
 
+    public function exampleCasesRequireASelectedOperation(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets/{id}' => ['get' => [
+                'operationId' => 'pets.get',
+                'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer'], 'example' => 3]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $suite = ContractSuite::fromContract($contract, $factory, $factory);
+
+        Assert::same(array_keys($suite->operations(['pets.get'])->exampleCases('pets.get')), ['example']);
+
+        Expect::exception(SuiteConfigurationError::class);
+
+        $suite->exampleCases('pets.get');
+    }
+
     public function baseUriOverrideKeepsInProcessRequestsHostAgnostic(): void
     {
         $contract = $this->absoluteServerContract();
