@@ -79,6 +79,10 @@ final readonly class DocumentExamples
     private function parts(Operation $operation): array
     {
         $parts = [];
+        $body = $this->bodyPart($operation);
+        if ($body !== null) {
+            $parts[] = $body;
+        }
         foreach ($operation->parameters as $parameter) {
             $unnamed = $this->unnamed($parameter, $parameter['schema']);
             $named = $this->named($parameter['examples'] ?? null, sprintf('parameter "%s"', $parameter['name']));
@@ -100,10 +104,6 @@ final readonly class DocumentExamples
                 'named' => $named,
             ];
         }
-        $body = $this->bodyPart($operation);
-        if ($body !== null) {
-            $parts[] = $body;
-        }
 
         return $parts;
     }
@@ -113,10 +113,7 @@ final readonly class DocumentExamples
      */
     private function bodyPart(Operation $operation): ?array
     {
-        $content = $operation->requestBody['content'] ?? null;
-        if (!is_array($content)) {
-            return null;
-        }
+        $content = isset($operation->requestBody['content']) && is_array($operation->requestBody['content']) ? $operation->requestBody['content'] : [];
         foreach ($content as $mediaType => $definition) {
             if (!is_string($mediaType) || !is_array($definition)) {
                 continue;
@@ -229,16 +226,16 @@ final readonly class DocumentExamples
     private function wireValue(mixed $value, array $schema, string $parameter): string|array
     {
         if (is_array($value)) {
+            if (array_is_list($value)) {
+                return array_map(fn(mixed $item): string => $this->scalar($item, $parameter), $value);
+            }
+            if (($schema['type'] ?? null) === 'array') {
+                throw new UnsupportedGeneration(sprintf('Example of parameter "%s" must be a list for an array schema', $parameter));
+            }
             $result = [];
             /** @var mixed $item */
             foreach ($value as $key => $item) {
                 $result[(string) $key] = $this->scalar($item, $parameter);
-            }
-            if (array_is_list($value)) {
-                return array_values($result);
-            }
-            if (($schema['type'] ?? null) === 'array') {
-                throw new UnsupportedGeneration(sprintf('Example of parameter "%s" must be a list for an array schema', $parameter));
             }
 
             return $result;

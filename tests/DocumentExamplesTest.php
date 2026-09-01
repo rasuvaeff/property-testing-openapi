@@ -6,7 +6,9 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\DocumentExamples;
+use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
@@ -19,18 +21,72 @@ use Testo\Test;
 #[Covers(DocumentExamples::class)]
 final class DocumentExamplesTest
 {
-    public function producesNoCasesWithoutExamples(): void
+    public function producesNoCasesWithoutExamplesAndDrawsNothing(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets/{id}' => ['post' => [
+                'operationId' => 'pets.update',
+                'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['not' => ['minimum' => 1]]]],
+                'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['type' => 'object']]]],
+                'responses' => ['200' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('pets.update');
+
+        Expect::exception(UnsupportedGeneration::class);
+        Assert::same((new DocumentExamples())->forOperation($operation), []);
+
+        (new RequestCaseArbitrary())->forOperation($operation);
+    }
+
+    public function namedExamplesAloneProduceNoUnnamedCase(): void
     {
         $contract = Contract::fromArray([
             'openapi' => '3.1.0',
             'paths' => ['/pets/{id}' => ['get' => [
                 'operationId' => 'pets.get',
-                'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer'], 'examples' => ['first' => ['value' => 1]]]],
                 'responses' => ['200' => []],
             ]]],
         ]);
 
-        Assert::same((new DocumentExamples())->forOperation($contract->operation('pets.get')), []);
+        Assert::same(array_keys((new DocumentExamples())->forOperation($contract->operation('pets.get'))), ['first']);
+    }
+
+    public function handBuiltOperationsWithMalformedBodyContentContributeNoBodyExample(): void
+    {
+        $operation = new Operation(key: 'x', operationId: 'x', method: 'POST', path: '/x', requestBody: ['content' => ['application/json' => 'oops']]);
+        Assert::same((new DocumentExamples())->forOperation($operation), []);
+
+        $operation = new Operation(key: 'x', operationId: 'x', method: 'POST', path: '/x', requestBody: ['content' => ['application/json' => ['schema' => ['a', 'b'], 'example' => []]]]);
+        Assert::same((new DocumentExamples())->forOperation($operation), []);
+
+        $operation = new Operation(key: 'x', operationId: 'x', method: 'POST', path: '/x', requestBody: ['content' => 'oops']);
+        Assert::same((new DocumentExamples())->forOperation($operation), []);
+    }
+
+    #[DataProvider('jsonMediaTypeProvider')]
+    public function recognizesJsonMediaTypesWithParametersAndSuffixes(string $mediaType): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets' => ['post' => [
+                'operationId' => 'pets.create',
+                'requestBody' => ['required' => true, 'content' => [$mediaType => ['schema' => ['type' => 'object'], 'example' => ['name' => 'Rex']]]],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
+
+        $case = (new DocumentExamples())->forOperation($contract->operation('pets.create'))['example'];
+
+        Assert::same($case['body'], ['mediaType' => $mediaType, 'encoding' => 'json', 'value' => ['name' => 'Rex']]);
+    }
+
+    public static function jsonMediaTypeProvider(): iterable
+    {
+        yield 'with parameters and odd spacing' => ['Application/JSON ; charset=utf-8'];
+        yield 'structured suffix' => ['application/vnd.api+json'];
     }
 
     public function parameterExampleWinsOverSchemaExampleWhichWinsOverSchemaExamples(): void
@@ -40,10 +96,11 @@ final class DocumentExamplesTest
             'paths' => ['/pets' => ['get' => [
                 'operationId' => 'pets.list',
                 'parameters' => [
+                    ['name' => 'd', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 5, 'maximum' => 5]],
                     ['name' => 'a', 'in' => 'query', 'required' => true, 'example' => 1, 'schema' => ['type' => 'integer', 'example' => 2, 'examples' => [3]]],
                     ['name' => 'b', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'example' => 2, 'examples' => [3]]],
                     ['name' => 'c', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'examples' => [3, 4]]],
-                    ['name' => 'd', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 5, 'maximum' => 5]],
+                    ['name' => 'e', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 6, 'maximum' => 6, 'examples' => 'not-a-list']],
                 ],
                 'responses' => ['200' => []],
             ]]],
@@ -52,7 +109,7 @@ final class DocumentExamplesTest
         $cases = (new DocumentExamples())->forOperation($contract->operation('pets.list'));
 
         Assert::same(array_keys($cases), ['example']);
-        Assert::same($cases['example']['query'], ['a' => '1', 'b' => '2', 'c' => '3', 'd' => '5']);
+        Assert::same($cases['example']['query'], ['d' => '5', 'a' => '1', 'b' => '2', 'c' => '3', 'e' => '6']);
         Assert::same($cases['example']['operationKey'], 'pets.list');
         Assert::same($cases['example']['misuse'], null);
     }
@@ -64,12 +121,13 @@ final class DocumentExamplesTest
             'paths' => ['/pets/{id}' => ['post' => [
                 'operationId' => 'pets.update',
                 'parameters' => [
+                    ['name' => 'page', 'in' => 'query', 'schema' => ['type' => 'integer'], 'examples' => ['minimal' => ['value' => 2]]],
                     ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 1], 'examples' => ['minimal' => ['value' => 1], 'full' => ['value' => 1]]],
                     ['name' => 'verbose', 'in' => 'query', 'schema' => ['type' => 'boolean'], 'example' => false, 'examples' => ['full' => ['summary' => 'everything', 'value' => true]]],
                 ],
                 'requestBody' => ['required' => true, 'content' => ['application/json' => [
-                    'schema' => ['type' => 'object', 'required' => ['name'], 'properties' => ['name' => ['type' => 'string', 'const' => 'base']]],
-                    'examples' => ['minimal' => ['value' => ['name' => 'base']], 'external' => ['externalValue' => 'https://example.com/e.json']],
+                    'schema' => ['type' => 'object', 'required' => ['name'], 'properties' => ['name' => ['type' => 'string', 'minLength' => 12]]],
+                    'examples' => ['external' => ['externalValue' => 'https://example.com/e.json'], 'minimal' => ['value' => ['name' => 'from-example']]],
                 ]]],
                 'responses' => ['200' => []],
             ]]],
@@ -78,11 +136,15 @@ final class DocumentExamplesTest
         $cases = (new DocumentExamples())->forOperation($contract->operation('pets.update'));
 
         Assert::same(array_keys($cases), ['example', 'minimal', 'full']);
-        Assert::same($cases['example']['query'], ['verbose' => 'false']);
-        Assert::same($cases['minimal']['query'], ['verbose' => 'false']);
-        Assert::same($cases['full']['query'], ['verbose' => 'true']);
-        Assert::same($cases['minimal']['body'], ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['name' => 'base']]);
-        Assert::same($cases['full']['body'], ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['name' => 'base']]);
+        Assert::same($cases['example']['query']['verbose'] ?? null, 'false');
+        Assert::same($cases['minimal']['query']['verbose'] ?? null, 'false');
+        Assert::same($cases['minimal']['query']['page'] ?? null, '2');
+        Assert::same($cases['full']['query']['verbose'] ?? null, 'true');
+        Assert::same($cases['minimal']['body'], ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['name' => 'from-example']]);
+        Assert::same($cases['full']['body']['mediaType'] ?? null, 'application/json');
+        Assert::true(($cases['full']['body']['value']['name'] ?? null) !== 'from-example');
+        Assert::same($cases['full']['body'], $cases['example']['body']);
+        Assert::same(array_key_exists('page', $cases['full']['query']), array_key_exists('page', $cases['example']['query']));
         foreach ($cases as $case) {
             Assert::same($case['path'], ['id' => '1']);
         }
@@ -100,6 +162,8 @@ final class DocumentExamplesTest
                     ['name' => 'nothing', 'in' => 'query', 'example' => null, 'schema' => ['type' => 'null']],
                     ['name' => 'tags', 'in' => 'query', 'example' => ['a', 2], 'schema' => ['type' => 'array', 'items' => ['type' => 'string']]],
                     ['name' => 'filter', 'in' => 'query', 'example' => ['state' => 'active', 'age' => 3], 'style' => 'deepObject', 'schema' => ['type' => 'object', 'properties' => ['state' => ['type' => 'string'], 'age' => ['type' => 'integer']]]],
+                    ['name' => 'session', 'in' => 'cookie', 'example' => 'abc', 'schema' => ['type' => 'string']],
+                    ['name' => 'X-Trace', 'in' => 'header', 'example' => 't/1', 'schema' => ['type' => 'string']],
                 ],
                 'responses' => ['200' => []],
             ]]],
@@ -110,6 +174,8 @@ final class DocumentExamplesTest
         ksort($query);
 
         Assert::same($query, ['filter' => ['state' => 'active', 'age' => '3'], 'flag' => 'true', 'nothing' => 'null', 'ratio' => '1.5', 'tags' => ['a', '2']]);
+        Assert::same($case['cookies'], ['session' => 'abc']);
+        Assert::same($case['headers'], ['X-Trace' => 't/1']);
     }
 
     public function formBodyExamplesKeepTheFormEncoding(): void

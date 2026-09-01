@@ -104,16 +104,12 @@ final readonly class OperationProperty
         }
         if ($result instanceof ExampleFailed) {
             $index = $result->exception->getIndex();
-            $case = $exampleCases[$index] ?? null;
-            $name = $exampleNames[$index] ?? null;
-            if ($case === null || $name === null) {
-                throw new \LogicException('Failed example index is outside the example set');
-            }
+            $case = $exampleCases[$index] ?? throw new \LogicException('Failed example index is outside the example set');
 
             throw OperationPropertyFailed::forExample(
                 $operationKey,
                 $phase,
-                $name,
+                $exampleNames[$index] ?? throw new \LogicException('Failed example index is outside the example set'),
                 $case,
                 self::reproducer($suite, $operationKey, ['case' => $case]),
                 $result->exception,

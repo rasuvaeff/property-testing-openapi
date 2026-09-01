@@ -1245,4 +1245,30 @@ final class RequestCaseArbitraryTest
         yield 'form' => ['application/x-www-form-urlencoded', 'form'];
         yield 'multipart' => ['multipart/form-data', 'multipart'];
     }
+
+    #[DataProvider('unsupportedEncodingObjectProvider')]
+    public function rejectsAnUnsupportedEncodingObjectStyle(string $mediaType, string $message): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/login' => ['post' => [
+                'operationId' => 'login',
+                'requestBody' => ['required' => true, 'content' => [$mediaType => [
+                    'schema' => ['type' => 'object', 'properties' => ['user' => ['type' => 'string']]],
+                    'encoding' => ['user' => ['style' => 'spaceDelimited']],
+                ]]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+
+        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+
+        (new RequestCaseArbitrary())->forOperation($contract->operation('login'));
+    }
+
+    public static function unsupportedEncodingObjectProvider(): iterable
+    {
+        yield 'form' => ['application/x-www-form-urlencoded', 'Form encoding supports only form style and boolean explode'];
+        yield 'multipart' => ['multipart/form-data', 'Multipart encoding supports only form style'];
+    }
 }

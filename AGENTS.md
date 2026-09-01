@@ -37,3 +37,10 @@ search-budget constants, duplicate-skip bookkeeping, UTF-8 defense checks) —
 every returned witness is still verified by the `preg_match()` oracle before
 use — and fail-closed fast paths whose removal is masked because the
 fail-closed valid base rejects the same schema at the public surface.
+
+`DocumentExamples` adds: `(string)` casts on array *keys* (PHP normalizes a
+numeric-string key to `int` either way, so the cast only matters where the
+value is passed on as a `string` argument), `isset()` guarding an
+`is_array()` on the same offset (the `isset` exists for psalm narrowing, not
+behavior), and `true` values in a name-lookup map read only through
+`array_keys()`.
