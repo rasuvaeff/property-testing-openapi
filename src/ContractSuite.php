@@ -54,7 +54,7 @@ final class ContractSuite
 
     private function __construct(
         private readonly Contract $contract,
-        private readonly RequestMaterializer $materializer,
+        private RequestMaterializer $materializer,
         private readonly RequestCaseArbitrary $valid = new RequestCaseArbitrary(),
         private readonly NegativeRequestCaseArbitrary $negative = new NegativeRequestCaseArbitrary(),
     ) {}
@@ -106,6 +106,21 @@ final class ContractSuite
     {
         $suite = clone $this;
         $suite->unsafeAllowed = true;
+
+        return $suite;
+    }
+
+    /**
+     * Materializes every request against this base URI instead of the
+     * operation's declared server. A root-relative override keeps the request
+     * host-agnostic for in-process transports; an absolute one must agree
+     * with a declared server, or the built-in checks fail closed with
+     * `request.server.mismatch` before transport.
+     */
+    public function baseUri(string $baseUri): self
+    {
+        $suite = clone $this;
+        $suite->materializer = $this->materializer->withBaseUri($baseUri);
 
         return $suite;
     }

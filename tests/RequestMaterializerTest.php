@@ -10,7 +10,9 @@ use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ServerContracts;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Property;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -630,5 +632,150 @@ final class RequestMaterializerTest
             'body' => $body,
             'misuse' => ['kind' => $kind, 'location' => 'body', 'name' => 'body'],
         ];
+    }
+
+
+    public function prefixesTheDeclaredRelativeServerBase(): void
+    {
+        $contract = $this->serverContract(['/api/v1']);
+        $request = $this->materializer()->materialize($contract->operation('pets.get'), $this->petCase());
+
+        Assert::same((string) $request->getUri(), '/api/v1/pets/42');
+        Assert::same($request->getUri()->getHost(), '');
+        Assert::true($contract->validateRequest($request)->isValid());
+    }
+
+    public function buildsAnAbsoluteUriFromAnAbsoluteServerWithSubstitutedVariables(): void
+    {
+        $contract = $this->serverContract([
+            ['url' => 'https://{env}.example.com:8443/v{version}', 'variables' => ['env' => ['default' => 'api', 'enum' => ['api', 'staging']], 'version' => ['default' => '2']]],
+            'https://other.example.com/v2',
+        ]);
+        $request = $this->materializer()->materialize($contract->operation('pets.get'), $this->petCase());
+
+        Assert::same((string) $request->getUri(), 'https://api.example.com:8443/v2/pets/42');
+        Assert::same($contract->match($request)?->operation->key, 'pets.get');
+        Assert::true($contract->validateRequest($request)->isValid());
+    }
+
+    public function honorsOperationLevelServerPrecedence(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'servers' => [['url' => 'https://root.example.com/root']],
+            'paths' => [
+                '/pets/{id}' => [
+                    'servers' => [['url' => 'https://path.example.com/path']],
+                    'get' => [
+                        'operationId' => 'pets.get',
+                        'servers' => [['url' => 'https://operation.example.com/operation']],
+                        'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                        'responses' => ['200' => []],
+                    ],
+                    'delete' => [
+                        'operationId' => 'pets.delete',
+                        'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                        'responses' => ['204' => []],
+                    ],
+                ],
+            ],
+        ]);
+
+        $get = $this->materializer()->materialize($contract->operation('pets.get'), $this->petCase());
+        $delete = $this->materializer()->materialize($contract->operation('pets.delete'), ['operationKey' => 'pets.delete'] + $this->petCase());
+
+        Assert::same((string) $get->getUri(), 'https://operation.example.com/operation/pets/42');
+        Assert::same((string) $delete->getUri(), 'https://path.example.com/path/pets/42');
+        Assert::true($contract->validateRequest($get)->isValid());
+        Assert::true($contract->validateRequest($delete)->isValid());
+    }
+
+    public function fallsBackToTheBasePathProjectionOfAHandBuiltOperation(): void
+    {
+        $operation = new Operation(key: 'legacy.get', operationId: 'legacy.get', method: 'GET', path: '/pets', serverBases: ['/legacy']);
+        $request = $this->materializer()->materialize($operation, ['operationKey' => 'legacy.get', 'path' => [], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null]);
+
+        Assert::same((string) $request->getUri(), '/legacy/pets');
+    }
+
+    #[DataProvider('baseUriProvider')]
+    public function replacesTheDeclaredServerWithTheBaseUri(string $baseUri, string $expected): void
+    {
+        $contract = $this->serverContract(['https://api.example.com/v1']);
+        $request = $this->materializer()->withBaseUri($baseUri)->materialize($contract->operation('pets.get'), $this->petCase());
+
+        Assert::same((string) $request->getUri(), $expected);
+    }
+
+    public static function baseUriProvider(): iterable
+    {
+        yield 'root-relative base' => ['/local', '/local/pets/42'];
+        yield 'root' => ['/', '/pets/42'];
+        yield 'absolute host' => ['http://localhost:8080', 'http://localhost:8080/pets/42'];
+        yield 'absolute host with base' => ['http://localhost:8080/v1', 'http://localhost:8080/v1/pets/42'];
+    }
+
+    #[DataProvider('malformedBaseUriProvider')]
+    public function rejectsAMalformedBaseUri(string $baseUri): void
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        $this->materializer()->withBaseUri($baseUri);
+    }
+
+    public static function malformedBaseUriProvider(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'trailing slash' => ['/local/'];
+        yield 'protocol-relative' => ['//localhost'];
+        yield 'query' => ['http://localhost/?debug'];
+        yield 'fragment' => ['http://localhost/#top'];
+        yield 'userinfo' => ['http://user@localhost'];
+        yield 'unsupported scheme' => ['ftp://localhost'];
+        yield 'bare authority' => ['localhost:8080'];
+        yield 'whitespace' => ['http://localhost /v1'];
+    }
+
+    #[Property(runs: 60, generators: [ServerContracts::class, 'multiHostCase'])]
+    public function generatedCasesMatchTheirOperationUnderMultiHostServers(array $case): void
+    {
+        $contract = ServerContracts::multiHost();
+        /** @var array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{mediaType: string, encoding: 'json', value: mixed}, misuse: null} $case */
+        $request = $this->materializer()->materialize($contract->operation('pets.get'), $case);
+
+        Assert::same($request->getUri()->getHost(), 'a.example.com');
+        Assert::same($contract->match($request)?->operation->key, 'pets.get');
+        Assert::true($contract->validateRequest($request)->isValid());
+    }
+
+    /** @param list<array<string, mixed>|string> $servers */
+    private function serverContract(array $servers): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'servers' => array_map(static fn(array|string $server): array => is_string($server) ? ['url' => $server] : $server, $servers),
+            'paths' => [
+                '/pets/{id}' => [
+                    'get' => [
+                        'operationId' => 'pets.get',
+                        'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                        'responses' => ['200' => []],
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    /** @return array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: null, misuse: null} */
+    private function petCase(): array
+    {
+        return ['operationKey' => 'pets.get', 'path' => ['id' => '42'], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null];
+    }
+
+    private function materializer(): RequestMaterializer
+    {
+        $factory = new Psr17Factory();
+
+        return new RequestMaterializer($factory, $factory);
     }
 }

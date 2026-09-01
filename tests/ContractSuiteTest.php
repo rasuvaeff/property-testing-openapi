@@ -435,4 +435,83 @@ final class ContractSuiteTest
             ],
         ]);
     }
+
+
+    public function baseUriOverrideKeepsInProcessRequestsHostAgnostic(): void
+    {
+        $contract = $this->absoluteServerContract();
+        $seen = [];
+        $factory = new Psr17Factory();
+        $suite = ContractSuite::fromContract($contract, $factory, $factory)
+            ->operations(['pets.get'])
+            ->baseUri('/v1')
+            ->transport(new CallableTransport(static function (RequestInterface $request) use (&$seen): ResponseInterface {
+                $seen[] = (string) $request->getUri();
+
+                return new Response(204);
+            }));
+
+        $suite->checkValid('pets.get', ['operationKey' => 'pets.get', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null]);
+
+        Assert::same($seen, ['/v1/pets/7']);
+    }
+
+    public function baseUriLeavesTheOriginalSuiteUntouched(): void
+    {
+        $contract = $this->absoluteServerContract();
+        $seen = [];
+        $factory = new Psr17Factory();
+        $transport = new CallableTransport(static function (RequestInterface $request) use (&$seen): ResponseInterface {
+            $seen[] = (string) $request->getUri();
+
+            return new Response(204);
+        });
+        $original = ContractSuite::fromContract($contract, $factory, $factory)->operations(['pets.get'])->transport($transport);
+        $original->baseUri('/v1');
+
+        $original->checkValid('pets.get', ['operationKey' => 'pets.get', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null]);
+
+        Assert::same($seen, ['https://api.example.com/v1/pets/7']);
+    }
+
+    public function anAbsoluteBaseUriContradictingTheContractFailsClosedBeforeTransport(): void
+    {
+        $contract = $this->absoluteServerContract();
+        $factory = new Psr17Factory();
+        $sent = false;
+        $suite = ContractSuite::fromContract($contract, $factory, $factory)
+            ->operations(['pets.get'])
+            ->baseUri('http://localhost:8080/v1')
+            ->transport(new CallableTransport(static function () use (&$sent): ResponseInterface {
+                $sent = true;
+
+                return new Response(204);
+            }));
+
+        try {
+            $suite->checkValid('pets.get', ['operationKey' => 'pets.get', 'path' => ['id' => '7'], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null]);
+            Assert::true(actual: false, message: 'Expected the mismatching base URI to fail closed');
+        } catch (CheckFailed $failure) {
+            Assert::string($failure->getMessage())->contains('request.server.mismatch');
+        }
+
+        Assert::false($sent);
+    }
+
+    private function absoluteServerContract(): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'servers' => [['url' => 'https://api.example.com/v1']],
+            'paths' => [
+                '/pets/{id}' => [
+                    'get' => [
+                        'operationId' => 'pets.get',
+                        'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                        'responses' => ['204' => []],
+                    ],
+                ],
+            ],
+        ]);
+    }
 }

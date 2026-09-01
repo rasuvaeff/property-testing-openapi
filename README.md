@@ -43,6 +43,22 @@ credentials and can therefore be persisted by the property corpus.
 Object schemas honor `minProperties`, `maxProperties`, and boolean or
 schema-valued `additionalProperties` within the generation budget.
 
+The request target is built against the operation's first effective server
+(operation > path > root precedence, server variables substituted with their
+defaults by `openapi-contract`): a relative server such as `/api/v1` yields a
+path-only URI that stays host-agnostic, an absolute server yields an absolute
+URI (`https://api.example.com:8443/v2/pets/42`). `withBaseUri()` replaces the
+declared server with an explicit `scheme://host[:port][/base]` or root-relative
+`/base` for a consumer environment; the contract still decides whether the
+result matches, so an absolute override that contradicts every declared server
+fails validation with `request.server.mismatch` instead of silently matching.
+Credentials are applied after the URI is chosen and cannot change scheme or
+host.
+
+```php
+$local = (new RequestMaterializer($factory, $factory))->withBaseUri('/v1');
+```
+
 The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
 other negative assertions remain fail-closed as `UnsupportedGeneration`.
 
@@ -167,6 +183,12 @@ The default selection is empty. `operations()` adds explicit operation keys,
 listed explicitly **and** enabled with `allowUnsafeOperations()`; a selection
 naming an unsafe operation without that gate throws `SuiteConfigurationError`
 instead of silently filtering it out.
+
+`baseUri()` materializes every request against an explicit base URI instead
+of the operation's declared server — a root-relative `/v1` keeps in-process
+requests host-agnostic when the document declares a production host, while an
+absolute override must agree with a declared server or `checkValid()` fails
+closed with `request.server.mismatch` before transport.
 
 `checkValid()` materializes the case (applying credentials selected through
 the configured `CredentialsProviderInterface`), requires the request to be

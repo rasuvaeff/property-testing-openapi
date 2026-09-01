@@ -13,6 +13,13 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 /**
  * Materializes a data-only case as a PSR-7 request immediately before transport.
  *
+ * The request target is built against the operation's first effective server:
+ * a relative server yields a path-only URI (host-agnostic, so in-process
+ * transports keep working), an absolute server yields an absolute URI. An
+ * explicit base URI replaces the declared server for a consumer environment;
+ * the contract still has the last word, so an absolute override that
+ * contradicts every declared server fails closed before transport.
+ *
  * @api
  */
 final readonly class RequestMaterializer
@@ -21,7 +28,22 @@ final readonly class RequestMaterializer
         private RequestFactoryInterface $requests,
         private StreamFactoryInterface $streams,
         private ParameterSerializer $parameters = new ParameterSerializer(),
-    ) {}
+        private ?string $baseUri = null,
+    ) {
+        if ($baseUri !== null) {
+            $this->assertBaseUri($baseUri);
+        }
+    }
+
+    /**
+     * Base URI used instead of the declared server: either an absolute
+     * `scheme://host[:port][/base]` or a root-relative `/base` path, without
+     * userinfo, query, or fragment.
+     */
+    public function withBaseUri(string $baseUri): self
+    {
+        return new self($this->requests, $this->streams, $this->parameters, $baseUri);
+    }
 
     /**
      * @param array{
@@ -71,7 +93,7 @@ final readonly class RequestMaterializer
             $path .= '?' . implode('&', $query);
         }
 
-        $request = $this->requests->createRequest($operation->method, $path);
+        $request = $this->requests->createRequest($operation->method, $this->requestTarget($operation, $path));
         foreach ($headers as $name => $value) {
             $request = $request->withHeader($name, $value);
         }
@@ -109,6 +131,46 @@ final readonly class RequestMaterializer
             ->withBody($this->streams->createStream($payload));
 
         return $credentials?->apply($request) ?? $request;
+    }
+
+    private function requestTarget(Operation $operation, string $path): string
+    {
+        if ($this->baseUri !== null) {
+            return $this->joinBase($this->baseUri, $path);
+        }
+        $server = $operation->servers[0] ?? null;
+        if ($server === null) {
+            return $this->joinBase($operation->serverBases[0] ?? '/', $path);
+        }
+        $authority = $server['host'] === null
+            ? ''
+            : sprintf('%s://%s%s', $server['scheme'] ?? '', $server['host'], $server['port'] === null ? '' : ':' . $server['port']);
+
+        return $authority . $this->joinBase($server['base'], $path);
+    }
+
+    private function joinBase(string $base, string $path): string
+    {
+        $base = rtrim($base, '/');
+
+        return $base === '' ? $path : $base . $path;
+    }
+
+    private function assertBaseUri(string $baseUri): void
+    {
+        if ($baseUri === '' || ($baseUri !== '/' && str_ends_with($baseUri, '/')) || preg_match('/[?#@\\s]/', $baseUri) === 1) {
+            throw new \InvalidArgumentException(sprintf('Base URI "%s" must be an absolute URI or a root-relative path without a trailing slash, userinfo, query, or fragment', $baseUri));
+        }
+        if (str_starts_with($baseUri, '/')) {
+            if (str_starts_with($baseUri, '//')) {
+                throw new \InvalidArgumentException(sprintf('Base URI "%s" must not be protocol-relative', $baseUri));
+            }
+
+            return;
+        }
+        if (preg_match('~^(?:https?)://[A-Za-z0-9.\-]+(?::[1-9][0-9]{0,4})?(?:/[^/?#][^?#]*)?\z~', $baseUri) !== 1) {
+            throw new \InvalidArgumentException(sprintf('Base URI "%s" must be http(s)://host[:port][/base] or a root-relative path', $baseUri));
+        }
     }
 
     /**
