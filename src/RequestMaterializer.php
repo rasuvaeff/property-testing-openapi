@@ -8,6 +8,7 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 
 /**
@@ -29,6 +30,7 @@ final readonly class RequestMaterializer
         private StreamFactoryInterface $streams,
         private ParameterSerializer $parameters = new ParameterSerializer(),
         private ?string $baseUri = null,
+        private JsonBodyEncoder $json = new JsonBodyEncoder(),
     ) {
         if ($baseUri !== null) {
             $this->assertBaseUri($baseUri);
@@ -42,7 +44,7 @@ final readonly class RequestMaterializer
      */
     public function withBaseUri(string $baseUri): self
     {
-        return new self($this->requests, $this->streams, $this->parameters, $baseUri);
+        return new self($this->requests, $this->streams, $this->parameters, $baseUri, $this->json);
     }
 
     /**
@@ -123,7 +125,7 @@ final readonly class RequestMaterializer
             $body['mediaType'] .= '; boundary=' . $boundary;
         } else {
             $schema = $this->bodySchema($operation, $body['mediaType'], $case['misuse']);
-            $payload = json_encode($this->jsonValue($body['value'] ?? null, $schema), JSON_THROW_ON_ERROR);
+            $payload = $this->json->encode($body['value'] ?? null, $schema);
         }
 
         $request = $request
@@ -374,32 +376,6 @@ final readonly class RequestMaterializer
     }
 
     /** @param array<string, mixed> $schema */
-    private function jsonValue(mixed $value, array $schema): mixed
-    {
-        if ($this->isArraySchema($schema) && is_array($value) && array_is_list($value)) {
-            $items = $this->schemaObject($schema['items'] ?? null, 'Array items must be a schema object');
-
-            return array_map(fn(mixed $item): mixed => $this->jsonValue($item, $items), $value);
-        }
-        if ($this->isObjectSchema($schema) && is_array($value) && ($value === [] || !array_is_list($value))) {
-            $properties = $this->schemaObject($schema['properties'] ?? [], 'Object properties must be an object');
-            /** @var array<string, mixed> $result */
-            $result = [];
-            foreach (array_keys($value) as $name) {
-                if (!is_string($name)) {
-                    throw new UnsupportedGeneration('JSON object keys must be strings');
-                }
-                $property = $this->schemaObject($properties[$name] ?? [], 'Object property must be a schema object');
-                $result = $this->withJsonValue($result, $name, $value[$name], $property);
-            }
-
-            return (object) $result;
-        }
-
-        return $value;
-    }
-
-    /** @param array<string, mixed> $schema */
     private function isArraySchema(array $schema): bool
     {
         return ($schema['type'] ?? null) === 'array' || array_key_exists('items', $schema);
@@ -431,16 +407,6 @@ final readonly class RequestMaterializer
         }
 
         return $result;
-    }
-
-    /**
-     * @param array<string, mixed> $result
-     * @param array<string, mixed> $schema
-     * @return array<string, mixed>
-     */
-    private function withJsonValue(array $result, string $name, mixed $value, array $schema): array
-    {
-        return $this->withValue($result, $name, $this->jsonValue($value, $schema));
     }
 
     /**

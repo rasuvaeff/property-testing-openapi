@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Stop generating `null` for `nullable: true` schemas whose `enum` does not
+  list `null` (and for a non-null `const`): the validator rejects such a
+  null, so the valid phase produced provably invalid values. Found by the
+  payments-stripe response-contract fixture on a nullable refund `status`.
+- Generate expected provider responses for API-client tests:
+  `ResponseCaseArbitrary::forOperation(Operation, int $status)` produces
+  JSON-compatible, corpus-safe response cases for the Response Object the
+  status resolves to (exact → `NXX` → `default`, via the new
+  `Operation::responseFor()` of `openapi-contract` 0.2), with required
+  headers always present and `writeOnly` properties left out;
+  `ResponseMaterializer` builds the PSR-7 response.
+  `NegativeResponseCaseArbitrary` adds the constructive invalid categories
+  `undeclared-status`, missing required header, and body
+  `missing-required`/`type`/`enum`/`const`/`boundary`/`length`/`pattern`/
+  `additional-properties`/`media-type`/`json-syntax` (top-level object
+  properties or the scalar/array body root), each provably invalid under
+  `Contract::validateResponse()` with misuse metadata that survives
+  shrinking.
 - Render complete contract diagnostics: `CheckFailed::invalidGeneratedRequest()`
   and `exchangeViolations()` keep the structured `ValidationResult` in the new
   `$result` property and format every violation through `openapi-contract`'s

@@ -56,3 +56,16 @@ hash (any deterministic 16-hex boundary is equivalent); the `max(1, …)`
 floor in `nonEmptyContainer()` which makes the default of a missing
 `minItems`/`minProperties` irrelevant; and guards masked by `??` on scalar
 offsets (`'x'['k'] ?? null` is `null`, not an error).
+
+Response generation (`ResponseTargets`, `NegativeResponseCaseArbitrary`,
+`ResponseCaseArbitrary`, `ResponseMaterializer`, `ResponseSchemas`) adds:
+witness-container and witness-value variations that the oracle cannot tell
+apart (any non-conforming value still falsifies the schema, so replacing an
+out-of-range number, a `not-a-<type>` string, or a dropped `['value' => …]`
+key with another invalid value or `null` keeps `validateResponse()` red);
+mutations that only widen an already invalid case (slicing the object,
+dropping `array_merge`, flipping the additional property's boolean);
+the undeclared-status candidate ladder constants (any first undeclared
+candidate serves); guard precedence masked by `??` on scalar offsets or by a
+later fail-closed check; and the `64`-item construction budget with its
+redundant int casts.

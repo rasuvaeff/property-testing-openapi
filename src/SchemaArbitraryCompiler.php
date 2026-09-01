@@ -53,6 +53,14 @@ final readonly class SchemaArbitraryCompiler
         }
         if (($schema['nullable'] ?? false) === true) {
             unset($schema['nullable']);
+            // OAS 3.0: with an enum (or const), null is selectable only when
+            // the enum itself lists it — the validator rejects a bare null.
+            if (isset($schema['enum']) && is_array($schema['enum']) && !in_array(null, $schema['enum'], strict: true)) {
+                return $this->compile($schema);
+            }
+            if (array_key_exists('const', $schema) && $schema['const'] !== null) {
+                return $this->compile($schema);
+            }
 
             return Gen::nullable($this->compile($schema));
         }

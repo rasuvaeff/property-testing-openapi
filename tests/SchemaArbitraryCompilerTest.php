@@ -12,6 +12,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Random;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -111,9 +112,11 @@ final class SchemaArbitraryCompilerTest
         foreach (Gen::sample($compiler->compile(['type' => 'string', 'format' => 'uuid']), count: 5, seed: 3) as $value) {
             Assert::true(is_string($value) && preg_match('/^[0-9a-f-]{36}$/', $value) === 1);
         }
-        $nullable = Gen::sample($compiler->compile(['type' => 'string', 'nullable' => true, 'const' => 'value']), count: 30, seed: 73);
-        Assert::true(in_array(null, $nullable, strict: true));
-        Assert::true(in_array('value', $nullable, strict: true));
+        // A const (like an enum without null) keeps null unselectable: the
+        // validator rejects a bare null even under `nullable: true`.
+        foreach (Gen::sample($compiler->compile(['type' => 'string', 'nullable' => true, 'const' => 'value']), count: 10, seed: 73) as $value) {
+            Assert::same($value, 'value');
+        }
     }
 
     public function honorsPatternAndLengthBounds(): void
@@ -1047,5 +1050,20 @@ final class SchemaArbitraryCompilerTest
         foreach (Gen::sample($arbitrary, count: 20, seed: 41) as $value) {
             Assert::true(is_array($value) && array_key_exists('id', $value) && array_key_exists('name', $value));
         }
+    }
+
+    public function nullableWithAnEnumYieldsNullOnlyWhenTheEnumListsIt(): void
+    {
+        $closed = (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'nullable' => true, 'enum' => ['a', 'b']]);
+        $open = (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'nullable' => true, 'enum' => ['a', null]]);
+        $const = (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'nullable' => true, 'const' => 'a']);
+        $sawNull = false;
+        foreach (range(1, 60) as $seed) {
+            Assert::true(in_array($closed->generate(new Random($seed))->value, ['a', 'b'], strict: true));
+            Assert::same($const->generate(new Random($seed))->value, 'a');
+            $sawNull = $sawNull || $open->generate(new Random($seed))->value === null;
+        }
+
+        Assert::true($sawNull, 'an enum listing null never produced it');
     }
 }
