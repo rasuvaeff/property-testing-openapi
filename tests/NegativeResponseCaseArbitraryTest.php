@@ -12,6 +12,7 @@ use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ResponseContracts;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -262,17 +263,14 @@ final class NegativeResponseCaseArbitraryTest
         (new NegativeResponseCaseArbitrary())->mediaTypeMismatchForOperation($operation, 200);
     }
 
-    public function everyCandidateStatusDeclaredFailsClosed(): void
+    public function theUndeclaredStatusScanSkipsDeclaredStatuses(): void
     {
-        $responses = [];
-        foreach ([599, 499, 399, 299, 199, 598, 498, 398, 298, 198] as $status) {
-            $responses[(string) $status] = ['description' => 'declared'];
-        }
-        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: $responses);
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['599' => ['description' => 'declared'], '598' => ['description' => 'declared'], '200' => ['description' => 'ok']]);
 
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Operation "op" declares every candidate status');
+        $case = (new NegativeResponseCaseArbitrary())->undeclaredStatusForOperation($operation, 200)->generate(new Random(1))->value;
 
-        (new NegativeResponseCaseArbitrary())->undeclaredStatusForOperation($operation, 599);
+        Assert::same($case['status'], 597);
+        Assert::same($case['misuse'], ['kind' => 'undeclared-status', 'location' => 'status', 'name' => '597']);
     }
 
     public function skipsNullableAndNegatedSchemasAndTypeUnions(): void
@@ -332,6 +330,85 @@ final class NegativeResponseCaseArbitraryTest
         $case = (new NegativeResponseCaseArbitrary())->constMismatchForOperation(ResponseContracts::pets()->operation('pets.get'), 200)->generate(new Random(1))->value;
 
         Assert::same($case['body']['value']['kind'] ?? null, 'pet__openapi_misuse__');
+    }
+
+    /**
+     * The witness values themselves are pinned exactly: any variation in how
+     * a witness container or value is built is visible here even when the
+     * oracle cannot tell two invalid values apart.
+     */
+    public function witnessValuesArePinnedExactly(): void
+    {
+        $targets = new ResponseTargets();
+        $body = static fn(array $properties, array $required = []): Operation => new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['type' => 'object', 'required' => $required, 'properties' => $properties]]]]]);
+
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'type'), ['name' => 'p', 'invalid' => 'not-a-number']);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string']]), 200, 'type'), ['name' => 'p', 'invalid' => 4096]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'minimum' => 5, 'maximum' => 5]]), 200, 'boundary'), ['name' => 'p', 'invalid' => 4]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'boundary'), ['name' => 'p', 'invalid' => 6.0]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'maxLength' => 3]]), 200, 'length'), ['name' => 'p', 'invalid' => 'aaaa']);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'integer']]]), 200, 'length'), ['name' => 'p', 'invalid' => []]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 0, 'items' => ['type' => 'integer']]]), 200, 'length'), ['name' => 'p', 'invalid' => [null]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'integer']]]), 200, 'length'), ['name' => 'p', 'invalid' => [null, null, null]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'enum' => ['a']]]), 200, 'enum'), ['name' => 'p', 'invalid' => '__openapi_misuse__']);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'const' => 7]]), 200, 'const'), ['name' => 'p', 'invalid' => '__openapi_misuse__']);
+
+        $pattern = $targets->bodyWitness($body(['p' => ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']]), 200, 'pattern');
+        Assert::same($pattern['name'], 'p');
+        Assert::true(is_string($pattern['invalid']) && preg_match('/^[a-z]{2,4}$/', $pattern['invalid']) === 0);
+
+        Expect::exception(UnsupportedGeneration::class);
+        $targets->bodyWitness($body(['p' => ['type' => 'unknown-kind']]), 200, 'type');
+    }
+
+    public function headerAndPropertyTargetsSkipMalformedDeclarations(): void
+    {
+        $targets = new ResponseTargets();
+
+        $headers = static fn(array $headers): Operation => new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['headers' => $headers]]);
+        Assert::same($targets->requiredHeader($headers([5 => ['required' => true], 'X-Req' => ['required' => true]]), 200), 'X-Req');
+
+        try {
+            $targets->requiredHeader($headers(['X-Doc' => ['description' => 'no required flag']]), 200);
+            Assert::true(actual: false, message: 'A header without a required flag is not required');
+        } catch (UnsupportedGeneration) {
+            Assert::true(actual: true);
+        }
+
+        $required = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['type' => 'object', 'required' => [5, 'a'], 'properties' => ['a' => ['type' => 'string']]]]]]]);
+        Assert::same($targets->missingRequired($required, 200), 'a');
+
+        $colliding = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['type' => 'object', 'additionalProperties' => false, 'properties' => ['__openapi_extra_property__' => ['type' => 'string']]]]]]]);
+        Assert::same($targets->additionalProperty($colliding, 200), '__openapi_extra_property___');
+    }
+
+    /**
+     * The mutation applied to a valid case is exactly one change: comparing
+     * against the same-seed valid base pins the mutated body byte for byte.
+     */
+    public function mutationsChangeExactlyOneThing(): void
+    {
+        $contract = ResponseContracts::pets();
+        $operation = $contract->operation('pets.get');
+        $negative = new NegativeResponseCaseArbitrary();
+        $seed = 9;
+        /** @var array{body: array{value: array<string, mixed>}} $base */
+        $base = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random($seed))->value;
+
+        $missing = $negative->missingRequiredForOperation($operation, 200)->generate(new Random($seed))->value;
+        $withoutId = $base['body']['value'];
+        unset($withoutId['id']);
+        Assert::same($missing['body']['value'], $withoutId);
+
+        $extra = $negative->additionalPropertyForOperation($operation, 200)->generate(new Random($seed))->value;
+        Assert::same($extra['body']['value'], array_merge($base['body']['value'], ['__openapi_extra_property__' => true]));
+
+        $type = $negative->typeMismatchForOperation($operation, 200)->generate(new Random($seed))->value;
+        Assert::same($type['body']['value'], array_merge($base['body']['value'], ['id' => 'not-a-integer']));
+
+        $scalarOperation = $contract->operation('pets.count');
+        $scalarType = $negative->typeMismatchForOperation($scalarOperation, 200)->generate(new Random($seed))->value;
+        Assert::same($scalarType['body']['value'], 'not-a-integer');
     }
 
     /**

@@ -178,6 +178,8 @@ final class ResponseCaseArbitraryTest
         $schemas = new ResponseSchemas();
 
         Assert::same($schemas->effective(['properties' => 'x']), ['properties' => 'x']);
+        Assert::same($schemas->effective(['items' => 'x']), ['items' => 'x']);
+        Assert::same($schemas->effective(['properties' => ['bad' => ['x'], 'w' => ['type' => 'string', 'writeOnly' => true], 'k' => ['type' => 'string']]]), ['properties' => ['k' => ['type' => 'string']]]);
         Assert::same($schemas->effective(['properties' => ['a' => ['type' => 'string']], 'required' => 'x']), ['properties' => ['a' => ['type' => 'string']], 'required' => 'x']);
         Assert::same($schemas->effective(['items' => ['a', 'b']]), ['items' => ['a', 'b']]);
         Assert::same($schemas->effective(['allOf' => 'x']), ['allOf' => 'x']);
@@ -238,6 +240,19 @@ final class ResponseCaseArbitraryTest
         Expect::exception(UnsupportedGeneration::class)->withMessage('Response for status 503 of operation "ping" declares no JSON media type');
 
         (new ResponseCaseArbitrary())->jsonBody(ResponseContracts::pets()->operation('ping'), 503);
+    }
+
+    public function headerValuesRenderEveryScalarKind(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['headers' => [
+            'X-F' => ['required' => true, 'schema' => ['type' => 'number', 'minimum' => 0.5, 'maximum' => 0.5]],
+            'X-N' => ['required' => true, 'schema' => ['type' => 'null']],
+            'X-B' => ['required' => true, 'schema' => ['type' => 'boolean', 'enum' => [true]]],
+        ]]]);
+
+        $case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random(3))->value;
+
+        Assert::same($case['headers'], ['X-F' => '0.5', 'X-N' => 'null', 'X-B' => 'true']);
     }
 
     public function rejectsAStatusOutsideTheHttpRange(): void

@@ -37,7 +37,7 @@ final readonly class ResponseTargets
         if (array_key_exists('default', $operation->responses)) {
             throw new UnsupportedGeneration(sprintf('Operation "%s" declares a default response; every status is declared', $operation->key));
         }
-        foreach ([599, 499, 399, 299, 199, 598, 498, 398, 298, 198] as $candidate) {
+        for ($candidate = 599; $candidate >= 100; --$candidate) {
             if ($operation->responseFor($candidate) === null) {
                 return $candidate;
             }
@@ -50,7 +50,7 @@ final readonly class ResponseTargets
     public function requiredHeader(Operation $operation, int $status): string
     {
         $definition = $operation->responseFor($status)['definition'] ?? [];
-        $headers = isset($definition['headers']) && is_array($definition['headers']) ? $definition['headers'] : [];
+        $headers = $this->mapOf($definition['headers'] ?? null);
         /** @var mixed $header */
         foreach ($headers as $name => $header) {
             if (is_string($name) && $name !== '' && is_array($header) && ($header['required'] ?? false) === true) {
@@ -100,7 +100,7 @@ final readonly class ResponseTargets
     public function missingRequired(Operation $operation, int $status): string
     {
         $schema = $this->requireJsonBody($operation, $status, 'missing required property')['schema'];
-        $required = isset($schema['required']) && is_array($schema['required']) ? $schema['required'] : [];
+        $required = $this->mapOf($schema['required'] ?? null);
         if ($this->isObject($schema)) {
             /** @var mixed $name */
             foreach ($required as $name) {
@@ -120,7 +120,7 @@ final readonly class ResponseTargets
         if (!$this->isObject($schema) || ($schema['additionalProperties'] ?? null) !== false) {
             throw new UnsupportedGeneration(sprintf('Response for status %d of operation "%s" does not reject additional properties', $status, $operation->key));
         }
-        $properties = isset($schema['properties']) && is_array($schema['properties']) ? $schema['properties'] : [];
+        $properties = $this->mapOf($schema['properties'] ?? null);
         $name = '__openapi_extra_property__';
         while (array_key_exists($name, $properties)) {
             $name .= '_';
@@ -156,7 +156,7 @@ final readonly class ResponseTargets
             return [self::ROOT => $schema];
         }
         $candidates = [];
-        $properties = isset($schema['properties']) && is_array($schema['properties']) ? $schema['properties'] : [];
+        $properties = $this->mapOf($schema['properties'] ?? null);
         /** @var mixed $property */
         foreach ($properties as $name => $property) {
             if (is_string($name) && $name !== '' && is_array($property) && !array_is_list($property)) {
@@ -307,5 +307,11 @@ final readonly class ResponseTargets
     private function isObject(array $schema): bool
     {
         return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function mapOf(mixed $value): array
+    {
+        return is_array($value) ? $value : [];
     }
 }

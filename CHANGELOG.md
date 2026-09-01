@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Stop generating `null` for `nullable: true` schemas whose `enum` does not
+  list `null` (and for a non-null `const`): the validator rejects such a
+  null, so the valid phase produced provably invalid values. Found by the
+  payments-stripe response-contract fixture on a nullable refund `status`.
 - Generate expected provider responses for API-client tests:
   `ResponseCaseArbitrary::forOperation(Operation, int $status)` produces
   JSON-compatible, corpus-safe response cases for the Response Object the

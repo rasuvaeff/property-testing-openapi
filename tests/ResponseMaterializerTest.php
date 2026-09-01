@@ -137,6 +137,9 @@ final class ResponseMaterializerTest
     public function jsonEncoderKeepsEmptyObjectsInsideLists(): void
     {
         Assert::same((new JsonBodyEncoder())->encode([[]], ['type' => 'array', 'items' => ['type' => 'object']]), '[{}]');
+        Assert::same((new JsonBodyEncoder())->encode([[]], ['items' => ['type' => 'object']]), '[{}]');
+        Assert::same((new JsonBodyEncoder())->encode(['a', 'b'], ['type' => 'object']), '["a","b"]');
+        Assert::same((new JsonBodyEncoder())->encode(['a' => [], 'b' => []], ['type' => 'object', 'properties' => ['a' => ['type' => 'object'], 'b' => ['type' => 'object']]]), '{"a":{},"b":{}}');
     }
 
     public function jsonEncoderRejectsNonStringObjectKeys(): void
