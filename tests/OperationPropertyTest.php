@@ -11,6 +11,7 @@ use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
 use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
 use Rasuvaeff\PropertyTesting\OpenApi\OpenApiOperations;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationProperty;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationPropertyFailed;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
@@ -32,6 +33,22 @@ final class OperationPropertyTest
         OperationProperty::check($suite, 'pets.get', runs: 15, seed: 17);
 
         Assert::true(actual: true);
+    }
+
+    public function bothPhasesFeedTheCoverageRecord(): void
+    {
+        $coverage = new OperationCoverage();
+        $suite = $this->suite(static fn(Contract $contract, RequestInterface $request): Response
+            => $contract->validateRequest($request)->isValid() ? new Response(204) : new Response(400))->coverage($coverage);
+
+        OperationProperty::check($suite, 'pets.get', runs: 15, seed: 17);
+
+        $report = $suite->coverageReport();
+        Assert::same($report->covered, ['pets.get']);
+        Assert::same(array_keys($report->statuses['pets.get']), [204, 400]);
+        Assert::same($report->statuses['pets.get'][204], 15);
+        Assert::same($report->statuses['pets.get'][400], 15);
+        Assert::same($report->uncovered, array_values(array_diff($suite->operationKeys(), ['pets.get'])));
     }
 
     public function skipsTheNegativePhaseWithoutAConstructibleCategory(): void

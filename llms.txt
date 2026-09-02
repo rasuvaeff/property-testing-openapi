@@ -155,6 +155,21 @@ Public API:
 - `OpenApiOperations::keys(ContractSuite): iterable<string, array{string}>`
   yields the resolved selection as named single-argument tuples for Testo
   `#[DataProvider]` and PHPUnit `#[DataProviderExternal]` providers.
+- `OperationCoverage` is a caller-owned, process-local record attached with
+  `ContractSuite::coverage(OperationCoverage)`; every `checkValid()`/
+  `checkNegative()` trial records `(operationKey, response status)` after
+  transport (a 5xx counts). Hold one instance per run (static property) —
+  suites rebuilt per test case and suites derived by fluent calls share it.
+  `record(string, int)`, `exercised(): list<string>`,
+  `report(list<string> $selected): CoverageReport`.
+- `ContractSuite::coverageReport(): CoverageReport` restricts the record to
+  `operationKeys()`; throws `SuiteConfigurationError` without a record.
+- `CoverageReport` (readonly): `selected`, `covered`, `uncovered` (selection
+  order), `statuses: array<string, array<int, positive-int>>` (sorted, only
+  selected operations), `isComplete()`, `assertComplete()` (opt-in gate,
+  throws `CoverageIncomplete` with `$report`), `toArray()`, `toJson()`
+  (stable, `statuses` always a JSON object). Statuses are diagnostics, not a
+  gate. Merge per-process reports outside the package.
 
 `RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
 an optional JSON-compatible body: `{mediaType, encoding: 'json'|'raw'|'form', value}`

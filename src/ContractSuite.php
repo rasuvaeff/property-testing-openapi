@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
@@ -51,6 +52,8 @@ final class ContractSuite
     private ?CredentialsProviderInterface $credentials = null;
 
     private ?RejectionPolicy $rejectionPolicy = null;
+
+    private ?OperationCoverage $coverage = null;
 
     private function __construct(
         private readonly Contract $contract,
@@ -152,6 +155,31 @@ final class ContractSuite
         $suite->rejectionPolicy = $policy;
 
         return $suite;
+    }
+
+    /**
+     * Records every exercised operation and observed response status into a
+     * caller-owned {@see OperationCoverage}. Suites derived from this one by
+     * further fluent calls share the same record.
+     */
+    public function coverage(OperationCoverage $coverage): self
+    {
+        $suite = clone $this;
+        $suite->coverage = $coverage;
+
+        return $suite;
+    }
+
+    /**
+     * The configured coverage record restricted to the resolved selection.
+     */
+    public function coverageReport(): CoverageReport
+    {
+        if (!$this->coverage instanceof OperationCoverage) {
+            throw new SuiteConfigurationError('No coverage record is configured; call coverage() before requesting a report');
+        }
+
+        return $this->coverage->report($this->operationKeys());
     }
 
     /**
@@ -260,7 +288,7 @@ final class ContractSuite
             throw CheckFailed::invalidGeneratedRequest($operation->key, $result);
         }
 
-        $response = $this->requireTransport()->send($request);
+        $response = $this->send($operation, $request);
         if ($response->getStatusCode() >= 500) {
             throw CheckFailed::serverError($operation->key, $response->getStatusCode());
         }
@@ -291,7 +319,7 @@ final class ContractSuite
             throw CheckFailed::unexpectedlyValidRequest($operation->key);
         }
 
-        $response = $this->requireTransport()->send($request);
+        $response = $this->send($operation, $request);
         if ($response->getStatusCode() >= 500) {
             throw CheckFailed::serverError($operation->key, $response->getStatusCode());
         }
@@ -320,13 +348,15 @@ final class ContractSuite
         return $this->contract->operation($operationKey);
     }
 
-    private function requireTransport(): TransportInterface
+    private function send(Operation $operation, RequestInterface $request): ResponseInterface
     {
         if (!$this->transport instanceof TransportInterface) {
             throw new SuiteConfigurationError('A transport must be configured before checks run');
         }
+        $response = $this->transport->send($request);
+        $this->coverage?->record($operation->key, $response->getStatusCode());
 
-        return $this->transport;
+        return $response;
     }
 
     /** @param CaseData $case */

@@ -20,3 +20,8 @@ testing an API client without live traffic.
 valid trials must conform without a 5xx, and a constructive negative case must
 be rejected without a 5xx. Its `afterRequest` hook also counts one state reset
 after every in-process request.
+
+`coverage-report.php` attaches an `OperationCoverage` record to a suite with
+two selected operations, exercises only one of them, prints the JSON coverage
+report, and shows the opt-in `assertComplete()` gate naming the operation that
+never ran a trial.

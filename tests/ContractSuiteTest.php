@@ -18,6 +18,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -406,6 +407,87 @@ final class ContractSuiteTest
 
         Expect::exception(CredentialsUnavailable::class);
         $suite->checkValid('secure.get', $case);
+    }
+
+    public function recordsExercisedOperationsAndObservedStatusesIntoTheCoverageRecord(): void
+    {
+        $coverage = new OperationCoverage();
+        $suite = $this->suite()
+            ->operations(['pets.list', 'pets.get', 'secure.get'])
+            ->coverage($coverage)
+            ->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface
+                => $request->getUri()->getPath() === '/pets' ? new Response(204) : new Response(400)));
+
+        $suite->checkValid('pets.list', $suite->validCases('pets.list')->generate(new Random(1))->value);
+        $suite->checkValid('pets.list', $suite->validCases('pets.list')->generate(new Random(2))->value);
+        $suite->checkNegative('pets.get', $suite->negativeCases('pets.get')->generate(new Random(3))->value);
+
+        $report = $suite->coverageReport();
+        Assert::same($report->selected, ['pets.list', 'pets.get', 'secure.get']);
+        Assert::same($report->covered, ['pets.list', 'pets.get']);
+        Assert::same($report->uncovered, ['secure.get']);
+        Assert::same($report->statuses, ['pets.list' => [204 => 2], 'pets.get' => [400 => 1]]);
+    }
+
+    public function recordsAServerErrorAsAnExercisedOperation(): void
+    {
+        $coverage = new OperationCoverage();
+        $suite = $this->suite()
+            ->operations(['pets.get'])
+            ->coverage($coverage)
+            ->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(503)));
+
+        try {
+            $suite->checkValid('pets.get', $suite->validCases('pets.get')->generate(new Random(5))->value);
+            Assert::true(actual: false, message: 'Expected CheckFailed');
+        } catch (CheckFailed) {
+        }
+
+        Assert::same($suite->coverageReport()->statuses, ['pets.get' => [503 => 1]]);
+    }
+
+    public function derivedSuitesShareTheCoverageRecordAndReportTheirOwnSelection(): void
+    {
+        $coverage = new OperationCoverage();
+        $base = $this->suite()
+            ->allSafeOperations()
+            ->coverage($coverage)
+            ->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(204)));
+        $narrow = $base->exclude(['secure.get']);
+
+        $narrow->checkValid('pets.list', $narrow->validCases('pets.list')->generate(new Random(7))->value);
+
+        Assert::same($narrow->coverageReport()->uncovered, ['pets.get']);
+        Assert::same($base->coverageReport()->uncovered, ['pets.get', 'secure.get']);
+        Assert::same($coverage->exercised(), ['pets.list']);
+    }
+
+    public function coverageConfigurationDoesNotMutateTheOriginalSuite(): void
+    {
+        $original = $this->suite()->operations(['pets.get']);
+        $configured = $original->coverage(new OperationCoverage());
+
+        Assert::same($configured->coverageReport()->uncovered, ['pets.get']);
+        Expect::exception(SuiteConfigurationError::class);
+        $original->coverageReport();
+    }
+
+    public function coverageReportRequiresAConfiguredRecord(): void
+    {
+        Expect::exception(SuiteConfigurationError::class);
+
+        $this->suite()->operations(['pets.get'])->coverageReport();
+    }
+
+    public function checksRunWithoutACoverageRecord(): void
+    {
+        $suite = $this->suite()
+            ->operations(['pets.get'])
+            ->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(204)));
+
+        $suite->checkValid('pets.get', $suite->validCases('pets.get')->generate(new Random(11))->value);
+
+        Assert::true(actual: true);
     }
 
     private function suite(): ContractSuite
