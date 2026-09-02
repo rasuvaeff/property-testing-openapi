@@ -376,4 +376,66 @@ Redis corpus. Redis DSNs use `redis://host[:port][/key-prefix]`; the prefix
 defaults to `property-testing:corpus:`. Install `ext-redis` or `predis/predis`.
 Connections are opened lazily, and unsupported schemes fail closed.
 
+## Coverage Report
+
+`OperationCoverage` answers the question a first run leaves open: which of
+the selected operations actually ran a trial. Attach one caller-owned record
+to the suite; every `checkValid()`/`checkNegative()` trial records its
+operation key and the observed response status, and `coverageReport()`
+restricts the record to the resolved selection:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
+use Testo\Lifecycle\AfterClass;
+
+#[Test]
+final class ApiContractTest
+{
+    private static ?OperationCoverage $coverage = null;
+
+    #[DataProvider('operations')]
+    public function operationConforms(string $operationKey): void
+    {
+        OperationProperty::check(self::suite(), $operationKey, runs: 100);
+    }
+
+    #[AfterClass]
+    public static function reportCoverage(): void
+    {
+        $report = self::suite()->coverageReport();
+        file_put_contents(__DIR__ . '/../build/openapi-coverage.json', $report->toJson());
+        $report->assertComplete();
+    }
+
+    private static function suite(): ContractSuite
+    {
+        return ContractSuite::fromContract($contract, $factory, $factory)
+            ->allSafeOperations()
+            ->coverage(self::$coverage ??= new OperationCoverage())
+            ->transport($transport);
+    }
+}
+```
+
+Hold the record in a static property: a suite rebuilt per test case must
+share it, and suites derived by further fluent calls (`exclude()`,
+`transport()`) share it automatically. Under PHPUnit the same shape uses
+`tearDownAfterClass()`; `composer build` runs that fixture too.
+
+`CoverageReport` lists `selected`, `covered`, and `uncovered` operation keys
+in selection order plus the per-operation status distribution — `statuses`,
+e.g. `{"pets.get": {"204": 100, "400": 100}}` — and renders as stable JSON
+through `toArray()`/`toJson()`. Operations exercised outside the selection are
+not reported. A 5xx counts as exercised: the trial ran, the check failing is a
+separate outcome.
+
+The gate is opt-in: `assertComplete()` throws `CoverageIncomplete` (report
+attached in `$report`) when a selected operation never ran a trial — the
+typical cause is a data provider built from a different selection than the
+one under test. Response statuses are diagnostics only, never a gate: a
+request generator cannot make the server produce every documented 404 or 409.
+The record is process-local by design; under process isolation or parallel
+workers write one JSON report per process and merge the lists outside the
+package.
+
 See [examples](examples/README.md) for the runnable scripts.

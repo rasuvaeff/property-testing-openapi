@@ -377,4 +377,67 @@ Redis corpus. Формат DSN: `redis://host[:port][/key-prefix]`, prefix по 
 `property-testing:corpus:`. Нужен `ext-redis` или `predis/predis`; соединение
 открывается лениво, а неизвестные схемы завершаются fail-closed.
 
+## Отчёт о покрытии
+
+`OperationCoverage` отвечает на вопрос, который первый прогон оставляет
+открытым: какие из выбранных операций реально выполнили хотя бы один trial.
+К suite прикрепляется одна запись, которой владеет вызывающий код; каждый
+trial `checkValid()`/`checkNegative()` записывает ключ операции и наблюдаемый
+статус ответа, а `coverageReport()` ограничивает запись разрешённой выборкой:
+
+```php
+use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
+use Testo\Lifecycle\AfterClass;
+
+#[Test]
+final class ApiContractTest
+{
+    private static ?OperationCoverage $coverage = null;
+
+    #[DataProvider('operations')]
+    public function operationConforms(string $operationKey): void
+    {
+        OperationProperty::check(self::suite(), $operationKey, runs: 100);
+    }
+
+    #[AfterClass]
+    public static function reportCoverage(): void
+    {
+        $report = self::suite()->coverageReport();
+        file_put_contents(__DIR__ . '/../build/openapi-coverage.json', $report->toJson());
+        $report->assertComplete();
+    }
+
+    private static function suite(): ContractSuite
+    {
+        return ContractSuite::fromContract($contract, $factory, $factory)
+            ->allSafeOperations()
+            ->coverage(self::$coverage ??= new OperationCoverage())
+            ->transport($transport);
+    }
+}
+```
+
+Запись держите в статическом свойстве: suite, пересобираемый на каждый test
+case, должен её разделять, а suite, производные через дальнейшие fluent-вызовы
+(`exclude()`, `transport()`), разделяют её автоматически. Под PHPUnit та же
+схема использует `tearDownAfterClass()`; `composer build` гоняет и эту
+fixture.
+
+`CoverageReport` перечисляет ключи операций `selected`, `covered` и
+`uncovered` в порядке выборки плюс распределение статусов по операциям —
+`statuses`, например `{"pets.get": {"204": 100, "400": 100}}`, — и
+рендерится в стабильный JSON через `toArray()`/`toJson()`. Операции,
+выполненные вне выборки, в отчёт не попадают. 5xx считается выполненной
+операцией: trial состоялся, а провал проверки — отдельный исход.
+
+Gate — opt-in: `assertComplete()` бросает `CoverageIncomplete` (отчёт лежит в
+`$report`), если выбранная операция ни разу не выполнила trial; типичная
+причина — data provider, собранный из другой выборки, чем та, что под тестом.
+Статусы ответов — только диагностика, никогда не gate: генератор запросов не
+может заставить сервер вернуть каждый задокументированный 404 или 409. Запись
+намеренно локальна для процесса; при process isolation или параллельных
+worker'ах пишите по одному JSON-отчёту на процесс и сливайте списки вне
+пакета.
+
 Runnable scripts находятся в [examples](examples/README.md).

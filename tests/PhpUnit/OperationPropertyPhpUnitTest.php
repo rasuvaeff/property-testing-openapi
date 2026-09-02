@@ -14,6 +14,7 @@ use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
 use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
 use Rasuvaeff\PropertyTesting\OpenApi\OpenApiOperations;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationProperty;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationPropertyFailed;
 
@@ -25,6 +26,14 @@ use Rasuvaeff\PropertyTesting\OpenApi\OperationPropertyFailed;
 #[CoversNothing]
 final class OperationPropertyPhpUnitTest extends TestCase
 {
+    private static ?OperationCoverage $coverage = null;
+
+    #[\Override]
+    public static function tearDownAfterClass(): void
+    {
+        self::suite(conforming: true)->coverageReport()->assertComplete();
+    }
+
     #[DataProvider('operations')]
     public function testOperationConforms(string $operationKey): void
     {
@@ -83,6 +92,7 @@ final class OperationPropertyPhpUnitTest extends TestCase
 
         return ContractSuite::fromContract($contract, $factory, $factory)
             ->allSafeOperations()
+            ->coverage(self::$coverage ??= new OperationCoverage())
             ->transport($transport);
     }
 }
