@@ -7,17 +7,32 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 
 /**
  * Produces valid, corpus-safe request cases for one compiled operation.
+ *
+ * Parameters are generated for the wire: OAS 3.0 `nullable` is dropped
+ * (an optional parameter's "null" is its absent branch), and a path
+ * parameter never carries an empty string or a `/`/`\` that would leave its
+ * template segment after percent-decoding. Request bodies are generated
+ * from the request direction of their schema, without `readOnly` members.
  *
  * @api
  */
 final readonly class RequestCaseArbitrary
 {
+    private ParameterSchemas $parameterSchemas;
+
+    private RequestSchemas $requestSchemas;
+
     public function __construct(
         private SchemaArbitraryCompiler $schemas = new SchemaArbitraryCompiler(),
-    ) {}
+    ) {
+        $this->parameterSchemas = new ParameterSchemas();
+        $this->requestSchemas = new RequestSchemas();
+    }
 
     /**
      * @return ArbitraryInterface<array{
@@ -26,7 +41,7 @@ final readonly class RequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: null,
      * }>
      */
@@ -54,7 +69,7 @@ final readonly class RequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * }> $arbitrary */
         return $arbitrary;
@@ -71,10 +86,14 @@ final readonly class RequestCaseArbitrary
             if ($parameter['in'] !== $location) {
                 continue;
             }
-            $schema = $parameter['required'] ? $this->nonEmptyContainer($parameter['schema']) : $parameter['schema'];
+            $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location);
+            $compiled = $this->schemas->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
+            if ($location === 'path') {
+                $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isPathSafe($value));
+            }
             $value = Gen::map(
-                $this->schemas->compile($schema),
-                fn(mixed $value): string|array => $this->wireValue($value, $parameter['schema']),
+                $compiled,
+                fn(mixed $value): string|array => $this->wireValue($value, $schema),
             );
             $shape[$parameter['name']] = $parameter['required']
                 ? $this->included($value)
@@ -106,6 +125,7 @@ final readonly class RequestCaseArbitrary
             }
             /** @var array<string, mixed> $schema */
             $normalized = strtolower(trim(explode(';', $mediaType, 2)[0]));
+            $schema = $this->requestSchemas->effective($schema);
             if ($this->isJsonMediaType($mediaType)) {
                 $body = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,

@@ -42,6 +42,24 @@ final class ResponseMaterializerTest
         Assert::true($contract->validateResponse('pets.get', $response)->isValid());
     }
 
+    public function serializesHeadersWithTheSimpleStyle(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['204' => []]);
+
+        $response = $this->materializer()->materialize($operation, [
+            'operationKey' => 'op',
+            'status' => 204,
+            'headers' => ['X-Trace' => "a\r\nb, c", 'X-Tags' => ['a,b', 'c d', 'é'], 'X-Plain' => '42'],
+            'body' => null,
+            'misuse' => null,
+        ]);
+
+        Assert::same($response->getHeaderLine('X-Trace'), 'a%0D%0Ab%2C%20c');
+        Assert::same($response->getHeaderLine('X-Tags'), 'a%2Cb,c%20d,%C3%A9');
+        Assert::same($response->getHeader('X-Tags'), ['a%2Cb,c%20d,%C3%A9']);
+        Assert::same($response->getHeaderLine('X-Plain'), '42');
+    }
+
     public function writesARawBodyVerbatim(): void
     {
         $response = $this->materializer()->materialize(ResponseContracts::pets()->operation('pets.get'), [

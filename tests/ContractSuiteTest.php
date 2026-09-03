@@ -12,6 +12,7 @@ use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\UnknownOperation;
 use Rasuvaeff\OpenApiContract\ValidationResult;
 use Rasuvaeff\OpenApiContract\Violation;
+use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
 use Rasuvaeff\PropertyTesting\OpenApi\CheckFailed;
 use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
@@ -21,7 +22,9 @@ use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
+use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ZooContracts;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\PropertyTesting\Random;
 use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Understudy;
@@ -488,6 +491,120 @@ final class ContractSuiteTest
         $suite->checkValid('pets.get', $suite->validCases('pets.get')->generate(new Random(11))->value);
 
         Assert::true(actual: true);
+    }
+
+    /**
+     * The zoo: every schema feature the valid phase has to get right runs
+     * end to end — materialize, validate before transport, transport, validate
+     * the exchange — with the contract as the oracle.
+     *
+     * @param array{key: string, case: array<string, mixed>} $tagged
+     */
+    #[Property(runs: 240, generators: [ZooContracts::class, 'taggedCase'])]
+    public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
+    {
+        $key = $tagged['key'];
+        /** @var array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed}, misuse: null} $case */
+        $case = $tagged['case'];
+        foreach (ZooContracts::VALID_OPERATIONS as $operation) {
+            Classify::when(condition: $key === $operation, label: $operation);
+        }
+        $suite = $key === 'search.get' ? ZooContracts::legacySuite() : ZooContracts::suite();
+
+        $suite->checkValid($key, $case);
+
+        if ($key === 'strings.get') {
+            $key1 = $case['path']['key'];
+            Assert::true(is_string($key1) && $key1 !== '' && !str_contains($key1, '/') && !str_contains($key1, '\\'));
+            Classify::cover(condition: is_string($key1) && preg_match('/[^\x20-\x7e]/', $key1) === 1, label: 'non-ASCII path key', minPercent: 1.0);
+            $tags = $case['path']['tag'];
+            Assert::true(is_array($tags) && $tags !== []);
+            foreach (is_array($tags) ? $tags : [] as $tag) {
+                Assert::true(is_string($tag) && $tag !== '' && !str_contains($tag, '/') && !str_contains($tag, '\\'));
+            }
+        }
+        if ($key === 'enum.get') {
+            Assert::same($case['path']['mode'], 'ok');
+        }
+        if ($key === 'users.create') {
+            $value = $case['body']['value'] ?? null;
+            Assert::true(is_array($value) && !array_key_exists('id', $value));
+            Assert::true(is_array($value) && is_array($value['profile']) && !array_key_exists('createdAt', $value['profile']));
+            foreach (is_array($value) && is_array($value['history'] ?? null) ? $value['history'] : [] as $entry) {
+                Assert::true(is_array($entry) && !array_key_exists('at', $entry));
+            }
+            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 1.0);
+        }
+        if ($key === 'search.get') {
+            Assert::true(in_array($case['path']['scope'], ['all', 'mine'], strict: true));
+            Assert::true($case['query']['limit'] !== 'null');
+            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 1.0);
+            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 1.0);
+        }
+    }
+
+    /**
+     * One fixed case per zoo operation runs before the random phase, so
+     * every operation is exercised deterministically under any seed.
+     *
+     * @return iterable<string, array{array{key: string, case: array<string, mixed>}}>
+     */
+    public static function zooValidCasesPassTheBuiltInChecksExamples(): iterable
+    {
+        foreach (ZooContracts::taggedExamples() as $key => $tagged) {
+            yield $key => [$tagged];
+        }
+    }
+
+    public function zooOperationsTheGeneratorCannotServeFailClosedAtSelection(): void
+    {
+        $factory = new Psr17Factory();
+        $suite = ContractSuite::fromContract(ZooContracts::contract(), $factory, $factory)
+            ->operations(['uuid.get', 'links.get', 'conflict.create'])
+            ->allowUnsafeOperations();
+
+        foreach ([
+            'uuid.get' => 'format "uuid" cannot satisfy the length window',
+            'links.get' => 'path parameter format "uri" always carries a slash',
+            'conflict.create' => 'allOf branch bounding additionalProperties cannot admit sibling property "b"',
+        ] as $key => $message) {
+            try {
+                $suite->validCases($key);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: ' . $message);
+            }
+        }
+    }
+
+    public function zooExampleCasesDropReadOnlyMembersAndPassTheChecks(): void
+    {
+        $suite = ZooContracts::suite();
+
+        $examples = $suite->exampleCases('users.create');
+
+        Assert::same(array_keys($examples), ['example']);
+        $value = $examples['example']['body']['value'] ?? null;
+        Assert::same($value, ['name' => 'Ann', 'profile' => ['slug' => 'ann'], 'history' => [['note' => 'hi']]]);
+        $suite->checkValid('users.create', $examples['example']);
+    }
+
+    public function zooDeclaredNonJsonResponsesAreNotViolations(): void
+    {
+        $suite = ZooContracts::suite();
+
+        foreach (['health.get', 'version.get', 'files.get'] as $key) {
+            $suite->checkValid($key, $suite->validCases($key)->generate(new Random(3))->value);
+        }
+
+        $tooLong = ZooContracts::suite()->transport(new CallableTransport(static fn(RequestInterface $request): ResponseInterface => new Response(200, ['Content-Type' => 'text/plain'], 'v1.2.3-longer')));
+
+        try {
+            $tooLong->checkValid('version.get', $tooLong->validCases('version.get')->generate(new Random(3))->value);
+            Assert::true(actual: false, message: 'Expected a check failure');
+        } catch (CheckFailed $failure) {
+            Assert::same($failure->result?->violations[0]->code, 'response.body.schema');
+        }
     }
 
     private function suite(): ContractSuite

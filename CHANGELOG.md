@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0 — 2026-09-03
+
+- String path parameters no longer break route matching (#27): every string
+  of a path value is generated non-empty and without `/` or `\` at any
+  nesting level, `enum` members no template segment can carry are dropped
+  (an all-unsafe enum or const fails closed), and a `uri`/`uri-reference`/
+  `url` path format fails closed at compile time.
+- `readOnly` properties are no longer generated into request bodies (#28):
+  `Internal\RequestSchemas` mirrors `ResponseSchemas` for the request
+  direction (JSON, form and multipart bodies), and document examples lose
+  their `readOnly` members the same way.
+- OAS 3.0 `nullable` parameters never travel as the string `null` (#29):
+  `nullable`, `null` enum members and a `null` const are dropped from
+  parameter schemas at every nesting level (null is the absent branch of an
+  optional parameter).
+- `allOf` merge fails closed when a branch bounding `additionalProperties`
+  does not declare every property a sibling branch adds (#30); the merged
+  generator is checked against the contract validator in the test suite.
+- Declared non-JSON responses (`text/plain`, `application/octet-stream`, …)
+  are no longer red on every trial (#31): requires `rasuvaeff/openapi-contract`
+  `^0.2.1`, which treats them as opaque or validates the raw payload against
+  a string-typed schema; only `response.body.unsupported` remains a
+  violation.
+- `Psr15Transport` populates the server request like the SAPI (#32):
+  `queryParams`, `cookieParams`, `parsedBody` for form-urlencoded and
+  multipart bodies, and `uploadedFiles` for multipart parts with a filename
+  when a `StreamFactoryInterface` and an `UploadedFileFactoryInterface` are
+  passed as the new optional fourth and fifth constructor arguments. The
+  materializer emits `filename="<part>"` for binary multipart parts.
+- Unsatisfiable schema combinations fail closed at compile time instead of
+  exhausting the generator at run time (#33): `pattern` combined with an
+  asserted `format`; a length window outside the format's length band
+  (including `maxLength: 0`); `uniqueItems` over a finite item domain smaller
+  than `minItems`; a `not` type predicate covering every declared type.
+  Fractional bounds on integers now round inward instead of failing, and an
+  open number bound steps inside by a quarter of a narrow window instead of a
+  fixed 0.1.
+- Response headers are serialized with the `simple` style (#34):
+  percent-encoded values, lists joined with commas, so control characters no
+  longer throw from the PSR-7 factory and commas inside an item survive.
+- Fail-closed strictness: the direction views no longer drop malformed
+  `properties` entries silently; the compiler reports them as before.
+- `SchemaArbitraryCompiler`, `SecuritySelector`, `RequestReproducer` and
+  `DocumentExamples` are now `@internal`; reach them through
+  `RequestCaseArbitrary`/`ResponseCaseArbitrary` and `ContractSuite`.
+- README: supported schema keyword matrix, transport parsed-body semantics,
+  and a note that generated traffic targets the document's own `servers`.
+- Dev/packaging: `minimum-stability: dev` removed; `testo/testo` `^0.10.39`.
+
 ## 0.2.1 — 2026-09-02
 
 - Operation coverage report: `OperationCoverage` attached with

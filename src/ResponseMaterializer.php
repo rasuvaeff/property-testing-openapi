@@ -9,12 +9,14 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 
 /**
  * Materializes a data-only response case as a PSR-7 response immediately
- * before it is handed to the client under test: status, headers (a list
- * value joins with commas as the simple style does), and a JSON body encoded
- * against the declared schema with its `Content-Type`.
+ * before it is handed to the client under test: status, headers serialized
+ * with the `simple` style like request headers (percent-encoded, a list
+ * value joined with commas), and a JSON body encoded against the declared
+ * schema with its `Content-Type`.
  *
  * @api
  *
@@ -26,6 +28,7 @@ final readonly class ResponseMaterializer
         private ResponseFactoryInterface $responses,
         private StreamFactoryInterface $streams,
         private JsonBodyEncoder $json = new JsonBodyEncoder(),
+        private ParameterSerializer $parameters = new ParameterSerializer(),
     ) {}
 
     /** @param ResponseCaseData $case */
@@ -36,7 +39,7 @@ final readonly class ResponseMaterializer
         }
         $response = $this->responses->createResponse($case['status']);
         foreach ($case['headers'] as $name => $value) {
-            $response = $response->withHeader($name, is_array($value) ? implode(',', $value) : $value);
+            $response = $response->withHeader($name, $this->parameters->serialize(name: $name, value: $value, style: 'simple', explode: false));
         }
         $body = $case['body'];
         if ($body === null) {

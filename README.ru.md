@@ -77,6 +77,36 @@ $local = (new RequestMaterializer($factory, $factory))->withBaseUri('/v1');
 и `type`; остальные negative assertions остаются fail-closed с
 `UnsupportedGeneration`.
 
+Параметры генерируются для провода. OAS 3.0 `nullable` из схемы параметра
+убирается («null» optional-параметра — это его ветвь отсутствия, а required
+его нести не может) вместе с `null`-членами `enum`. Path-параметр никогда не
+покидает свой сегмент шаблона: каждая строка его значения генерируется
+непустой и без `/` и `\`, непереносимые члены `enum` отбрасываются, а format
+`uri`/`uri-reference`/`url` падает fail-closed. Request body генерируется по
+request-направлению схемы — `readOnly`-свойства уходят из `properties` и
+`required` так же, как их отбрасывает валидатор контракта, — и примеры из
+документа теряют `readOnly`-члены тем же способом.
+
+### Поддерживаемые keywords схемы
+
+| Keyword | Генерация |
+|---|---|
+| `type` (один или список), `const`, `enum`, `nullable` (OAS 3.0) | поддержано; список типов — взвешенное объединение |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; дробная граница у integer округляется внутрь, открытая граница отступает внутрь на десятую (или четверть узкого окна) |
+| `minLength`, `maxLength` (не более 64), `pattern` (подмножество PCRE) | поддержано |
+| `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
+| `items`, `minItems`, `maxItems` (не более 16), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
+| `properties`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано |
+| `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
+| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
+| `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed |
+| `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
+
+Каждая невыполнимая комбинация, которую компилятор способен распознать,
+отвергается при компиляции; то, что остаётся вероятностным (`pattern`, редко
+попадающий в окно длины), всплывает как `GenerationExhausted` из бюджета
+генератора.
+
 ## Credentials для security
 
 Security requirements наследуются операциями; явный пустой список `security`
@@ -177,6 +207,26 @@ PSR-15 boundary. Исключение transport пробрасывается в�
 через hook вызов `Yiisoft\Di\StateResetter::reset()`, переиспользуя загруженные
 runner и handler; не создавайте runner для каждого сгенерированного request.
 
+`Psr15Transport` отдаёт handler'у то, что заполнил бы SAPI: query-параметры
+из URI, cookie-параметры из заголовка `Cookie`, parsed body для
+`application/x-www-form-urlencoded` и `multipart/form-data` (семантика
+`parse_str()` для имён, так что `tags[]` становится списком) и — когда
+четвёртым и пятым аргументами конструктора переданы `StreamFactoryInterface`
+и `UploadedFileFactoryInterface` — uploaded files для multipart-частей с
+filename (materializer именует каждую binary-часть `filename="<part>"`). Без
+фабрик файловые части не попадают в parsed body и uploaded files не
+прикладываются. Сырой поток body всегда передаётся дальше, перемотанный.
+
+```php
+$transport = new Psr15Transport($handler, $psr17, null, $psr17, $psr17);
+```
+
+Requests материализуются против `servers` самого документа (или override из
+`baseUri()`). Транспорт с настоящим сетевым I/O отправит сгенерированный
+трафик туда, куда укажет недоверенный документ; чужие контракты гоняйте
+только через in-process или callable transports либо прибивайте цель через
+`baseUri()`.
+
 ## Suite
 
 `ContractSuite` — framework-neutral модель suite: явный выбор операций,
@@ -211,7 +261,11 @@ transport, отправляет его и падает с `CheckFailed` на 5xx
 неконформном exchange. `checkNegative()` требует `misuse` metadata и
 invalid-статус case до transport, после чего проверяет, что invalid input не
 приводит к 5xx. Более строгий oracle — opt-in `RejectionPolicy`: из OpenAPI
-`invalid -> 4xx` не следует:
+`invalid -> 4xx` не следует: Объявленный не-JSON response (`text/plain`,
+`application/octet-stream`, ...) — не нарушение: `openapi-contract` считает
+его непрозрачным без схемы и проверяет сырое тело по строковой схеме;
+сообщается только не-JSON media type со схемой, которую он не может
+проверить, — как `response.body.unsupported`.
 
 `CheckFailed`, брошенный из-за validation result, хранит его в `$result` и
 рендерит в сообщении каждое нарушение через `ValidationResultFormatter` из
@@ -300,6 +354,10 @@ Response Object — тот, к которому его резолвит конт
 `NXX`, затем `default` — тот же выбор, что в `validateResponse()`, через
 `Operation::responseFor()`). Required response headers присутствуют всегда,
 optional берут обе ветви, JSON body генерируется без `writeOnly`-свойств.
+`ResponseMaterializer` сериализует значения заголовков `simple`-стилем, как и
+request-заголовки, — percent-encoded, список через запятую, — так что
+управляющие символы не доходят до PSR-7-фабрики, а запятая внутри элемента
+переживает round trip.
 `ResponseCaseData` JSON-compatible и corpus-safe, как и request-аналог.
 Необъявленный статус, required header без схемы и body без JSON media type
 падают как `UnsupportedGeneration`.

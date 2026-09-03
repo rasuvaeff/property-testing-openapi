@@ -14,7 +14,7 @@ use Rasuvaeff\OpenApiContract\Operation;
  * redacts user-declared case fields, and a small default header set is
  * redacted defensively.
  *
- * @api
+ * @internal Reach it through {@see ContractSuite::reproduce()}.
  */
 final readonly class RequestReproducer
 {

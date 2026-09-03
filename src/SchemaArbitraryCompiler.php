@@ -14,7 +14,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 /**
  * Compiles the explicit JSON-compatible schema subset into shrinkable values.
  *
- * @api
+ * @internal Reach it through {@see RequestCaseArbitrary} and {@see ResponseCaseArbitrary}.
  */
 final readonly class SchemaArbitraryCompiler
 {

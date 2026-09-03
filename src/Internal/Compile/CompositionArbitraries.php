@@ -59,6 +59,7 @@ final readonly class CompositionArbitraries
         $forbidden = $schema['not'];
         $this->assertNotSchema($forbidden);
         unset($schema['not']);
+        $this->assertNotLeavesAType($schema, $forbidden);
         $source = $this->compiler->compile($schema);
         if (array_key_exists('const', $schema) && array_key_exists('const', $forbidden)
             && $schema['const'] === $forbidden['const']) {
@@ -102,6 +103,37 @@ final readonly class CompositionArbitraries
                 }
             }
         }
+    }
+
+    /**
+     * A `not` that is a pure type predicate must leave at least one declared
+     * (or structurally implied) type of the source, or it rejects every value.
+     *
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $forbidden
+     */
+    private function assertNotLeavesAType(array $schema, array $forbidden): void
+    {
+        if (array_key_exists('const', $forbidden) || array_key_exists('enum', $forbidden)) {
+            return;
+        }
+        $forbiddenTypes = $this->facts->types($forbidden['type'] ?? null) ?? [];
+        $sourceTypes = $this->facts->types($schema['type'] ?? null) ?? match (true) {
+            array_key_exists('properties', $schema) => ['object'],
+            array_key_exists('items', $schema) => ['array'],
+            default => null,
+        };
+        if ($sourceTypes === null || $sourceTypes === []) {
+            return;
+        }
+        foreach ($sourceTypes as $type) {
+            $covered = in_array($type, $forbiddenTypes, strict: true) || $type === 'integer' && in_array('number', $forbiddenTypes, strict: true);
+            if (!$covered) {
+                return;
+            }
+        }
+
+        throw UnsupportedGeneration::forSchema('not excludes every value of the declared type');
     }
 
     /** @param list<mixed> $allowed @param list<mixed> $forbidden */
@@ -222,8 +254,31 @@ final readonly class CompositionArbitraries
         if ($required !== []) {
             $merged['required'] = array_keys($required);
         }
+        $this->assertAdditionalPropertiesAdmitSiblings($branches, array_keys($properties));
 
         return $merged;
+    }
+
+    /**
+     * The validator checks every branch on its own, so a branch that bounds
+     * additional properties would reject the properties its siblings add.
+     *
+     * @param list<array<string, mixed>> $branches
+     * @param list<string> $names
+     */
+    private function assertAdditionalPropertiesAdmitSiblings(array $branches, array $names): void
+    {
+        foreach ($branches as $branch) {
+            if (!array_key_exists('additionalProperties', $branch) || $branch['additionalProperties'] === true) {
+                continue;
+            }
+            $declared = $this->facts->schemaObject($branch['properties'] ?? [], 'allOf properties must be an object');
+            foreach ($names as $name) {
+                if (!array_key_exists($name, $declared)) {
+                    throw UnsupportedGeneration::forSchema(sprintf('allOf branch bounding additionalProperties cannot admit sibling property "%s"', $name));
+                }
+            }
+        }
     }
 
     /**

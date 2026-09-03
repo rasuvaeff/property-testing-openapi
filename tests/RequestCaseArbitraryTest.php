@@ -1114,7 +1114,7 @@ final class RequestCaseArbitraryTest
                 $param('c', 'cookie', ['const' => 'cv']),
                 $param('int', 'query', ['const' => 5]),
                 $param('bool', 'query', ['const' => true]),
-                $param('null', 'query', ['enum' => [null]]),
+                $param('null', 'query', ['enum' => [null, 'nv']]),
             ],
         );
 
@@ -1123,7 +1123,7 @@ final class RequestCaseArbitraryTest
         Assert::same($case['path'], ['p' => 'pv']);
         Assert::same($case['headers'], ['h' => 'hv']);
         Assert::same($case['cookies'], ['c' => 'cv']);
-        Assert::same($case['query'], ['int' => '5', 'bool' => 'true', 'null' => 'null']);
+        Assert::same($case['query'], ['int' => '5', 'bool' => 'true', 'null' => 'nv']);
     }
 
     public function convertsListAndObjectValuesToWireShapes(): void

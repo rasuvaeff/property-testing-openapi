@@ -9,7 +9,7 @@ use Rasuvaeff\OpenApiContract\Operation;
 /**
  * Selects the first fully satisfiable OpenAPI security alternative.
  *
- * @api
+ * @internal Reach it through {@see ContractSuite::credentials()}.
  */
 final readonly class SecuritySelector
 {

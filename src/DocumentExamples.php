@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\Random;
 
 /**
@@ -25,9 +26,11 @@ use Rasuvaeff\PropertyTesting\Random;
  * surfaces through the same pre-transport validation as a generated case, as
  * a diagnosable document defect rather than a silently skipped example.
  * Example Objects with only `externalValue`, and multipart bodies, contribute
- * nothing. Credentials are never part of an example case.
+ * nothing. A body example shared between directions loses its `readOnly`
+ * members, as the request direction of its schema does. Credentials are
+ * never part of an example case.
  *
- * @api
+ * @internal Reach it through {@see ContractSuite::exampleCases()}.
  *
  * @psalm-import-type CaseData from ContractSuite
  */
@@ -37,9 +40,13 @@ final readonly class DocumentExamples
 
     private const int BASE_SEED = 0;
 
+    private RequestSchemas $requestSchemas;
+
     public function __construct(
         private RequestCaseArbitrary $cases = new RequestCaseArbitrary(),
-    ) {}
+    ) {
+        $this->requestSchemas = new RequestSchemas();
+    }
 
     /**
      * @return array<string, CaseData> keyed by example name, unnamed first,
@@ -209,7 +216,7 @@ final readonly class DocumentExamples
                 continue;
             }
             if ($part['location'] === 'body') {
-                $case['body'] = ['mediaType' => $part['mediaType'], 'encoding' => $part['encoding'], 'value' => $example['value']];
+                $case['body'] = ['mediaType' => $part['mediaType'], 'encoding' => $part['encoding'], 'value' => $this->requestSchemas->value($example['value'], $part['schema'])];
 
                 continue;
             }

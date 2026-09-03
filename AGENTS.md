@@ -13,7 +13,33 @@ OpenAPI contract plan.
 - A materialized valid case must pass `Contract::validateRequest()` before a
   transport may observe it.
 - Keep parameter serialization location-aware. A path value must not escape its
-  template segment after percent decoding.
+  template segment after percent decoding: `Internal\ParameterSchemas` raises
+  `minLength` to 1 on every path string, drops unsafe `enum` members, refuses
+  slash-carrying formats, and `RequestCaseArbitrary` filters the generated
+  value with `isPathSafe()`. Keep both halves — the schema rewrite constructs,
+  the filter guards what the rewrite cannot see (a `pattern`).
+- Schemas are generated per direction: `Internal\RequestSchemas` (drops
+  `readOnly`) for request bodies and document examples, `ResponseSchemas`
+  (drops `writeOnly`) for responses, both over `DirectionalSchemas`. Malformed
+  members pass through untouched so the compiler still fails closed on them.
+- Parameters travel as text: `ParameterSchemas` strips OAS 3.0 `nullable`,
+  `null` enum members and a `null` const at every nesting level.
+- Every unsatisfiable combination the compiler can recognise fails closed at
+  compile time (`pattern` + asserted `format`, format length bands,
+  `uniqueItems` over a finite domain, `not.type` covering the source, `allOf`
+  branch bounding `additionalProperties` without its siblings' properties).
+  Do not push such checks into `Gen::filter()`; a run-time
+  `GenerationExhausted` is a defect here.
+- The end-to-end oracle for the valid phase is `tests/Support/ZooContracts.php`
+  + `ContractSuiteTest::zooValidCasesPassTheBuiltInChecks`: one operation per
+  schema feature, checked through materialize → validate → transport →
+  validate the exchange. Add a zoo operation with every new keyword or
+  location rule; a unit test on the compiler alone does not prove the wire.
+- `Psr15Transport` mimics the SAPI (`parse_str()` semantics for query/form/
+  multipart names, `uploadedFiles` only with both PSR-17 factories). The
+  local `make mutation` needs the `/repo` mount when the contract comes from a
+  path repository (`vendor/rasuvaeff/openapi-contract` is a symlink into the
+  monorepo) plus `git config --global --add safe.directory "*"`.
 - Preserve the public documentation in `README.md`, `README.ru.md`,
   `llms.txt`, and `examples/` with public API changes.
 
@@ -56,6 +82,13 @@ hash (any deterministic 16-hex boundary is equivalent); the `max(1, …)`
 floor in `nonEmptyContainer()` which makes the default of a missing
 `minItems`/`minProperties` irrelevant; and guards masked by `??` on scalar
 offsets (`'x'['k'] ?? null` is `null`, not an error).
+
+`ParameterSchemas`/`DirectionalSchemas`/`MultipartParser` add: `+=` versus
+`[$k => $v]` assignment forms (equivalent for unique keys), the order of
+equivalent `str_contains()` guards, `array_values()` re-indexing after a
+filter whose consumer iterates values only, and boundary-read offsets in the
+multipart reader that only move where a malformed payload already ends the
+read.
 
 Response generation (`ResponseTargets`, `NegativeResponseCaseArbitrary`,
 `ResponseCaseArbitrary`, `ResponseMaterializer`, `ResponseSchemas`) adds:

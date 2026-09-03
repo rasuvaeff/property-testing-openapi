@@ -54,6 +54,19 @@ final class DocumentExamplesTest
         Assert::same(array_keys((new DocumentExamples())->forOperation($contract->operation('pets.get'))), ['first']);
     }
 
+    public function malformedContentEntriesAreSkippedBeforeTheJsonOne(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['content' => [
+            0 => ['schema' => ['type' => 'string'], 'example' => 'not a media type'],
+            'text/csv' => 'not a definition',
+            'application/json' => ['schema' => ['type' => 'object'], 'example' => ['a' => 1]],
+        ]]);
+
+        $cases = (new DocumentExamples())->forOperation($operation);
+
+        Assert::same($cases['example']['body'] ?? null, ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a' => 1]]);
+    }
+
     public function handBuiltOperationsWithMalformedBodyContentContributeNoBodyExample(): void
     {
         $operation = new Operation(key: 'x', operationId: 'x', method: 'POST', path: '/x', requestBody: ['content' => ['application/json' => 'oops']]);
