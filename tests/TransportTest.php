@@ -6,9 +6,11 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
+use Nyholm\Psr7\Stream;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
@@ -69,6 +71,87 @@ final class TransportTest
         Assert::same($seen->getBody()->tell(), 0);
         Assert::same($seen->getBody()->getContents(), 'user=ann&tags[]=x&tags[]=y&meta[a]=1');
         Assert::same($seen->getQueryParams(), []);
+    }
+
+    public function psr15TransportRewindsASeekableBodyItDoesNotParse(): void
+    {
+        $factory = new Psr17Factory();
+        $handler = $this->recorder();
+        $body = $factory->createStream('{"name":"Milo"}');
+        $body->seek(5);
+        $request = $factory->createRequest('POST', '/pets')
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody($body);
+
+        (new Psr15Transport($handler, $factory))->send($request);
+
+        $seen = $handler->request;
+        Assert::instanceOf($seen, ServerRequestInterface::class);
+        Assert::same($seen->getBody(), $body);
+        Assert::same($seen->getBody()->tell(), 0);
+        Assert::same($seen->getBody()->getContents(), '{"name":"Milo"}');
+        Assert::same($seen->getParsedBody(), null);
+    }
+
+    public function psr15TransportPassesANonSeekableBodyItDoesNotParseThroughUntouched(): void
+    {
+        $factory = new Psr17Factory();
+        $handler = $this->recorder();
+        $body = $this->nonSeekable('{"name":"Milo"}');
+        $request = $factory->createRequest('POST', '/pets')
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody($body);
+
+        (new Psr15Transport($handler, $factory))->send($request);
+
+        $seen = $handler->request;
+        Assert::instanceOf($seen, ServerRequestInterface::class);
+        Assert::same($seen->getBody(), $body);
+        Assert::false($seen->getBody()->eof());
+        Assert::same($seen->getBody()->getContents(), '{"name":"Milo"}');
+        Assert::same($seen->getParsedBody(), null);
+    }
+
+    public function psr15TransportBuffersANonSeekableFormBodyThroughTheStreamFactory(): void
+    {
+        $factory = new Psr17Factory();
+        $handler = $this->recorder();
+        $body = $this->nonSeekable('user=ann&tags[]=x');
+        $request = $factory->createRequest('POST', '/login')
+            ->withHeader('Content-Type', 'application/x-www-form-urlencoded')
+            ->withBody($body);
+
+        (new Psr15Transport($handler, $factory, null, $factory))->send($request);
+
+        $seen = $handler->request;
+        Assert::instanceOf($seen, ServerRequestInterface::class);
+        Assert::same($seen->getParsedBody(), ['user' => 'ann', 'tags' => ['x']]);
+        Assert::true($seen->getBody() !== $body);
+        Assert::true($seen->getBody()->isSeekable());
+        Assert::same($seen->getBody()->tell(), 0);
+        Assert::same($seen->getBody()->getContents(), 'user=ann&tags[]=x');
+    }
+
+    public function psr15TransportRefusesANonSeekableFormBodyWithoutAStreamFactory(): void
+    {
+        Expect::exception(\LogicException::class)
+            ->withMessage('Psr15Transport needs a StreamFactoryInterface (fourth constructor argument) to buffer a non-seekable form or multipart body');
+        $factory = new Psr17Factory();
+        $handler = $this->recorder();
+        $request = $factory->createRequest('POST', '/upload')
+            ->withHeader('Content-Type', 'multipart/form-data; boundary=b1')
+            ->withBody($this->nonSeekable("--b1\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n1\r\n--b1--\r\n"));
+        $resets = 0;
+        $transport = new Psr15Transport($handler, $factory, afterRequest: static function () use (&$resets): void {
+            ++$resets;
+        });
+
+        try {
+            $transport->send($request);
+        } finally {
+            Assert::same($handler->request, null);
+            Assert::same($resets, 1);
+        }
     }
 
     public function psr15TransportParsesMultipartFieldsAndFilesWhenFactoriesAreConfigured(): void
@@ -260,6 +343,20 @@ final class TransportTest
         } finally {
             Assert::same($resets, 1);
         }
+    }
+
+    private function nonSeekable(string $contents): StreamInterface
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        if ($pair === false) {
+            throw new \RuntimeException('Unable to create a socket pair');
+        }
+        fwrite($pair[0], $contents);
+        fclose($pair[0]);
+        $stream = Stream::create($pair[1]);
+        Assert::false($stream->isSeekable());
+
+        return $stream;
     }
 
     /** @return RequestHandlerInterface&object{request: null|ServerRequestInterface} */

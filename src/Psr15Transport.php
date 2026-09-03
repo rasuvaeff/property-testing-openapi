@@ -23,8 +23,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
  * payloads (PHP's own `parse_str()` semantics for names), and uploaded files
  * for multipart parts with a filename when a stream factory and an uploaded
  * file factory are configured — without them file parts are left out of the
- * parsed body and no uploaded files are attached. The raw body stream is
- * always passed through, rewound.
+ * parsed body and no uploaded files are attached. A body that needs no
+ * parsing is never read: a seekable stream is rewound, a non-seekable one is
+ * passed through untouched. A form or multipart body on a non-seekable stream
+ * is buffered into a fresh stream from the stream factory; without one the
+ * transport fails closed instead of handing over an exhausted stream.
  *
  * @api
  */
@@ -75,18 +78,27 @@ final readonly class Psr15Transport implements TransportInterface
     private function withBody(ServerRequestInterface $serverRequest, RequestInterface $request): ServerRequestInterface
     {
         $stream = $request->getBody();
+        $contentType = $request->getHeaderLine('Content-Type');
+        $mediaType = strtolower(trim(explode(';', $contentType, 2)[0]));
+        $form = $mediaType === 'application/x-www-form-urlencoded';
+        if (!$form && !str_starts_with($mediaType, 'multipart/')) {
+            if ($stream->isSeekable()) {
+                $stream->rewind();
+            }
+
+            return $serverRequest->withBody($stream);
+        }
         $contents = (string) $stream;
         if ($stream->isSeekable()) {
             $stream->rewind();
+        } elseif ($this->streams instanceof StreamFactoryInterface) {
+            $stream = $this->streams->createStream($contents);
+        } else {
+            throw new \LogicException('Psr15Transport needs a StreamFactoryInterface (fourth constructor argument) to buffer a non-seekable form or multipart body');
         }
         $serverRequest = $serverRequest->withBody($stream);
-        $contentType = $request->getHeaderLine('Content-Type');
-        $mediaType = strtolower(trim(explode(';', $contentType, 2)[0]));
-        if ($mediaType === 'application/x-www-form-urlencoded') {
+        if ($form) {
             return $serverRequest->withParsedBody($this->pairs($contents));
-        }
-        if (!str_starts_with($mediaType, 'multipart/')) {
-            return $serverRequest;
         }
         $fields = [];
         $files = [];

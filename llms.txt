@@ -38,8 +38,11 @@ Public API:
   `queryParams` (URI), `cookieParams` (`Cookie`), `parsedBody` for
   form-urlencoded and multipart (`parse_str()` name semantics), and
   `uploadedFiles` for multipart parts with a filename when both factories are
-  given (otherwise file parts are dropped). The body stream is passed through
-  rewound. The materializer emits `filename="<part>"` for binary parts.
+  given (otherwise file parts are dropped). A body that needs no parsing is
+  never read (seekable → rewound, non-seekable → untouched); a form/multipart
+  body on a non-seekable stream is buffered through `$streams`, and without a
+  stream factory the transport throws `LogicException`. The materializer
+  emits `filename="<part>"` for binary parts.
 - Security: requests target the document's `servers` (or `baseUri()`); do not
   run untrusted contracts through a networked transport.
 - `SecurityRequirement`, `CredentialsProviderInterface`, `CredentialsUnavailable`,

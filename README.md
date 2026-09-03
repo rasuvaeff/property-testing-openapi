@@ -215,7 +215,12 @@ list), and — when a `StreamFactoryInterface` and an
 arguments — uploaded files for multipart parts with a filename (the
 materializer names every binary part `filename="<part>"`). Without the
 factories file parts are left out of the parsed body and no uploaded files
-are attached. The raw body stream is always passed through, rewound.
+are attached. A body that needs no parsing (JSON, raw bytes) is never read by
+the transport: a seekable stream is rewound, a non-seekable one is passed
+through untouched. A form or multipart body on a non-seekable stream is
+buffered into a fresh seekable stream through the `StreamFactoryInterface`;
+without one the transport throws `LogicException` rather than handing the
+handler an exhausted stream.
 
 ```php
 $transport = new Psr15Transport($handler, $psr17, null, $psr17, $psr17);
