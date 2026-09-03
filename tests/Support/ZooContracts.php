@@ -13,6 +13,7 @@ use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
 use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
+use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * The "zoo": one operation per schema feature the valid phase has to get
@@ -186,6 +187,24 @@ final class ZooContracts
                 default => new Response(204),
             };
         });
+    }
+
+    /**
+     * One fixed-seed valid case per zoo operation, tagged with its key.
+     *
+     * @return array<string, array{key: string, case: array<string, mixed>}>
+     */
+    public static function taggedExamples(): array
+    {
+        $suite = self::suite();
+        $legacy = self::legacySuite();
+        $examples = [];
+        foreach (self::VALID_OPERATIONS as $key) {
+            $cases = $key === 'search.get' ? $legacy->validCases($key) : $suite->validCases($key);
+            $examples[$key] = ['key' => $key, 'case' => $cases->generate(new Random(7))->value];
+        }
+
+        return $examples;
     }
 
     /**

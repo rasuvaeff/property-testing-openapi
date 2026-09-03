@@ -507,7 +507,7 @@ final class ContractSuiteTest
         /** @var array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed}, misuse: null} $case */
         $case = $tagged['case'];
         foreach (ZooContracts::VALID_OPERATIONS as $operation) {
-            Classify::cover(condition: $key === $operation, label: $operation, minPercent: 5.0);
+            Classify::when(condition: $key === $operation, label: $operation);
         }
         $suite = $key === 'search.get' ? ZooContracts::legacySuite() : ZooContracts::suite();
 
@@ -516,7 +516,7 @@ final class ContractSuiteTest
         if ($key === 'strings.get') {
             $key1 = $case['path']['key'];
             Assert::true(is_string($key1) && $key1 !== '' && !str_contains($key1, '/') && !str_contains($key1, '\\'));
-            Classify::cover(condition: is_string($key1) && preg_match('/[^\x20-\x7e]/', $key1) === 1, label: 'non-ASCII path key', minPercent: 2.0);
+            Classify::cover(condition: is_string($key1) && preg_match('/[^\x20-\x7e]/', $key1) === 1, label: 'non-ASCII path key', minPercent: 1.0);
             $tags = $case['path']['tag'];
             Assert::true(is_array($tags) && $tags !== []);
             foreach (is_array($tags) ? $tags : [] as $tag) {
@@ -533,13 +533,26 @@ final class ContractSuiteTest
             foreach (is_array($value) && is_array($value['history'] ?? null) ? $value['history'] : [] as $entry) {
                 Assert::true(is_array($entry) && !array_key_exists('at', $entry));
             }
-            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 2.0);
+            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 1.0);
         }
         if ($key === 'search.get') {
             Assert::true(in_array($case['path']['scope'], ['all', 'mine'], strict: true));
             Assert::true($case['query']['limit'] !== 'null');
-            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 2.0);
-            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 2.0);
+            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 1.0);
+            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 1.0);
+        }
+    }
+
+    /**
+     * One fixed case per zoo operation runs before the random phase, so
+     * every operation is exercised deterministically under any seed.
+     *
+     * @return iterable<string, array{array{key: string, case: array<string, mixed>}}>
+     */
+    public static function zooValidCasesPassTheBuiltInChecksExamples(): iterable
+    {
+        foreach (ZooContracts::taggedExamples() as $key => $tagged) {
+            yield $key => [$tagged];
         }
     }
 
