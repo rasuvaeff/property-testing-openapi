@@ -310,7 +310,8 @@ final readonly class RequestMaterializer
                 throw new UnsupportedGeneration('Multipart base64 value is invalid');
             }
             $payload .= '--' . $boundary . "\r\n";
-            $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . "\"\r\n";
+            $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . '"'
+                . ($part['encoding'] === 'base64' ? '; filename="' . $this->quoteHeader($name) . '"' : '') . "\r\n";
             $payload .= 'Content-Type: ' . $contentType . "\r\n";
             foreach ($headers as $header => $headerValue) {
                 $payload .= $header . ': ' . $headerValue . "\r\n";

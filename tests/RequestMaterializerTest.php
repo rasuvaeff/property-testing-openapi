@@ -472,7 +472,7 @@ final class RequestMaterializerTest
             . 'Content-Type: text/plain' . "\r\n\r\n"
             . 'two' . "\r\n"
             . '--openapi-test-boundary' . "\r\n"
-            . 'Content-Disposition: form-data; name="file"' . "\r\n"
+            . 'Content-Disposition: form-data; name="file"; filename="file"' . "\r\n"
             . 'Content-Type: application/octet-stream' . "\r\n\r\n"
             . "\x00\xFF\r\n"
             . '--openapi-test-boundary--' . "\r\n",

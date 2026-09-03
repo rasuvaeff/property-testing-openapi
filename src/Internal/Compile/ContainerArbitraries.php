@@ -38,10 +38,37 @@ final readonly class ContainerArbitraries
         }
 
         $element = $this->compiler->compile($items);
+        if (($schema['uniqueItems'] ?? false) !== true) {
+            return Gen::arrayOf($element, $min, $max);
+        }
+        $domain = $this->finiteDomain($items);
+        if ($domain !== null && $domain < $min) {
+            throw UnsupportedGeneration::forSchema('uniqueItems cannot fill minItems from the finite item domain');
+        }
 
-        return ($schema['uniqueItems'] ?? false) === true
-            ? Gen::uniqueArrayOf($element, $min, $max)
-            : Gen::arrayOf($element, $min, $max);
+        return Gen::uniqueArrayOf($element, $min, $max);
+    }
+
+    /**
+     * The number of distinct values an item schema can take when that number
+     * is knowable from its shape alone.
+     *
+     * @param array<string, mixed> $items
+     */
+    private function finiteDomain(array $items): ?int
+    {
+        if (array_key_exists('const', $items)) {
+            return 1;
+        }
+        if (is_array($items['enum'] ?? null)) {
+            return count(array_unique(array_map(serialize(...), (array) $items['enum'])));
+        }
+
+        return match ($items['type'] ?? null) {
+            'boolean' => 2,
+            'null' => 1,
+            default => null,
+        };
     }
 
     /** @param array<string, mixed> $schema */

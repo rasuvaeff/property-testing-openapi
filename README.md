@@ -78,6 +78,36 @@ $local = (new RequestMaterializer($factory, $factory))->withBaseUri('/v1');
 The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
 other negative assertions remain fail-closed as `UnsupportedGeneration`.
 
+Parameters are generated for the wire. OAS 3.0 `nullable` is dropped from a
+parameter schema (an optional parameter's "null" is its absent branch; a
+required one cannot carry it), together with `null` enum members. A path
+parameter never leaves its template segment: every string of its value is
+generated non-empty and without `/` or `\`, `enum` members that cannot be
+carried are dropped, and a `uri`/`uri-reference`/`url` format fails closed.
+Request bodies are generated from the request direction of their schema —
+`readOnly` properties leave `properties` and `required` the way the contract
+validator drops them — and document examples lose their `readOnly` members
+the same way.
+
+### Supported schema keywords
+
+| Keyword | Generation |
+|---|---|
+| `type` (single or list), `const`, `enum`, `nullable` (OAS 3.0) | supported; a type list is a weighted union |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; a fractional bound on an integer rounds inward, an open bound steps inside by a tenth (or a quarter of a narrow window) |
+| `minLength`, `maxLength` (capped at 64), `pattern` (PCRE subset) | supported |
+| `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
+| `items`, `minItems`, `maxItems` (capped at 16), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
+| `properties`, `required`, `minProperties`, `maxProperties` (capped at 16), `additionalProperties` (boolean or schema) | supported |
+| `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
+| `anyOf`, `oneOf` (provably disjoint branches), `allOf` (mergeable branches; a branch bounding `additionalProperties` must declare every sibling property) | supported |
+| `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed |
+| `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
+
+Every unsatisfiable combination the compiler can recognise is refused at
+compile time; what remains probabilistic (a `pattern` that rarely matches its
+length window) surfaces as `GenerationExhausted` from the generator budget.
+
 ## Security Credentials
 
 Security requirements are inherited by operations; an explicit empty
@@ -176,6 +206,27 @@ handler throws. For Yii workers, pass `Yiisoft\Di\StateResetter::reset()`
 through this hook while reusing the booted runner and handler; do not construct
 a runner for every generated request.
 
+`Psr15Transport` hands the handler what the SAPI would have populated: query
+parameters from the URI, cookie parameters from the `Cookie` header, the
+parsed body of `application/x-www-form-urlencoded` and `multipart/form-data`
+payloads (PHP's `parse_str()` semantics for names, so `tags[]` becomes a
+list), and — when a `StreamFactoryInterface` and an
+`UploadedFileFactoryInterface` are passed as the fourth and fifth constructor
+arguments — uploaded files for multipart parts with a filename (the
+materializer names every binary part `filename="<part>"`). Without the
+factories file parts are left out of the parsed body and no uploaded files
+are attached. The raw body stream is always passed through, rewound.
+
+```php
+$transport = new Psr15Transport($handler, $psr17, null, $psr17, $psr17);
+```
+
+Requests are materialized against the document's own `servers` (or the
+`baseUri()` override). A transport that performs real network I/O will
+therefore send generated traffic wherever an untrusted document points; run
+foreign contracts only through in-process or callable transports, or pin the
+target with `baseUri()`.
+
 ## Suite
 
 `ContractSuite` is the framework-neutral suite model: explicit operation
@@ -209,7 +260,11 @@ closed with `request.server.mismatch` before transport.
 `checkValid()` materializes the case (applying credentials selected through
 the configured `CredentialsProviderInterface`), requires the request to be
 valid before transport, sends it, and fails with `CheckFailed` on a 5xx status
-or a non-conforming exchange. `checkNegative()` requires the case to carry
+or a non-conforming exchange. A declared non-JSON response (`text/plain`,
+`application/octet-stream`, ...) is not a violation: `openapi-contract`
+treats it as opaque without a schema and validates the raw payload against a
+string-typed schema; only a non-JSON media type with a schema it cannot
+evaluate is reported, as `response.body.unsupported`. `checkNegative()` requires the case to carry
 `misuse` metadata and to be invalid before transport, then asserts that
 invalid input does not produce a 5xx. A stricter oracle is the opt-in
 `RejectionPolicy` — OpenAPI itself does not promise `invalid -> 4xx`:
@@ -300,7 +355,10 @@ Response Object is the one the contract resolves it to (exact code, then
 `NXX`, then `default` — the same selection `validateResponse()` applies, via
 `Operation::responseFor()`). Required response headers are always present,
 optional ones take both branches, and the JSON body is generated with
-`writeOnly` properties left out. `ResponseCaseData` is JSON-compatible and
+`writeOnly` properties left out. `ResponseMaterializer` serializes header
+values with the `simple` style like request headers — percent-encoded, a list
+joined with commas — so control characters never reach the PSR-7 factory and
+a comma inside an item survives the round trip. `ResponseCaseData` is JSON-compatible and
 corpus-safe like its request counterpart. An undeclared status, a required
 header without a schema, or a body without a JSON media type fail closed as
 `UnsupportedGeneration`.

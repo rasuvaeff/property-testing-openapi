@@ -89,7 +89,7 @@ final class ResponseCaseArbitraryTest
         Assert::same($response->getStatusCode(), 200);
         Assert::same($response->getHeaderLine('Content-Type'), 'application/json');
         if (isset($case['headers']['X-Tags']) && is_array($case['headers']['X-Tags'])) {
-            Assert::same($response->getHeaderLine('X-Tags'), implode(',', $case['headers']['X-Tags']));
+            Assert::same($response->getHeaderLine('X-Tags'), implode(',', array_map(rawurlencode(...), $case['headers']['X-Tags'])));
         }
     }
 
@@ -179,7 +179,7 @@ final class ResponseCaseArbitraryTest
 
         Assert::same($schemas->effective(['properties' => 'x']), ['properties' => 'x']);
         Assert::same($schemas->effective(['items' => 'x']), ['items' => 'x']);
-        Assert::same($schemas->effective(['properties' => ['bad' => ['x'], 'w' => ['type' => 'string', 'writeOnly' => true], 'k' => ['type' => 'string']]]), ['properties' => ['k' => ['type' => 'string']]]);
+        Assert::same($schemas->effective(['properties' => ['bad' => ['x'], 'w' => ['type' => 'string', 'writeOnly' => true], 'k' => ['type' => 'string']], 'required' => ['w', 'k', 7]]), ['properties' => ['bad' => ['x'], 'k' => ['type' => 'string']], 'required' => ['k', 7]]);
         Assert::same($schemas->effective(['properties' => ['a' => ['type' => 'string']], 'required' => 'x']), ['properties' => ['a' => ['type' => 'string']], 'required' => 'x']);
         Assert::same($schemas->effective(['items' => ['a', 'b']]), ['items' => ['a', 'b']]);
         Assert::same($schemas->effective(['allOf' => 'x']), ['allOf' => 'x']);

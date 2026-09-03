@@ -50,12 +50,20 @@ final readonly class SchemaFacts
         return $value;
     }
 
-    /** @param array<string, mixed> $schema */
+    /**
+     * A numeric bound of an integer schema; a fractional bound rounds inward
+     * (`minimum: 0.5` admits 1, `maximum: 2.5` admits 2).
+     *
+     * @param array<string, mixed> $schema
+     */
     public function integerBound(array $schema, string $keyword, int $default): int
     {
         $value = $schema[$keyword] ?? $default;
+        if (is_float($value) && is_finite($value) && abs($value) < PHP_INT_MAX) {
+            $value = $keyword === 'minimum' ? (int) ceil($value) : (int) floor($value);
+        }
         if (!is_int($value)) {
-            throw UnsupportedGeneration::forSchema(sprintf('%s for an integer must be an integer', $keyword));
+            throw UnsupportedGeneration::forSchema(sprintf('%s for an integer must be numeric', $keyword));
         }
 
         return $value;

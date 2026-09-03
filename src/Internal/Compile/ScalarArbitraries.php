@@ -18,6 +18,23 @@ final readonly class ScalarArbitraries
 {
     private const int MAX_STRING_LENGTH = 64;
 
+    /**
+     * The length band each format generator can produce; a length window
+     * outside it cannot be satisfied and fails closed at compile time.
+     *
+     * @var array<string, array{int, int}>
+     */
+    private const array FORMAT_LENGTHS = [
+        'uuid' => [36, 36],
+        'email' => [6, 36],
+        'ipv4' => [7, 15],
+        'uri' => [12, 55],
+        'uri-reference' => [12, 55],
+        'url' => [12, 55],
+        'date-time' => [29, 29],
+        'date' => [10, 10],
+    ];
+
     public function __construct(
         private SchemaFacts $facts,
     ) {}
@@ -28,20 +45,26 @@ final readonly class ScalarArbitraries
         $min = $this->facts->nonNegativeInt($schema, 'minLength', 0);
         $max = $this->facts->nonNegativeInt($schema, 'maxLength', self::MAX_STRING_LENGTH);
         $max = min($max, self::MAX_STRING_LENGTH);
-        if ($max === 0) {
-            if ($min !== 0) {
-                throw UnsupportedGeneration::forSchema('minLength exceeds maxLength or the generation budget');
-            }
-
-            return Gen::constant('');
-        }
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('minLength exceeds maxLength or the generation budget');
         }
-
         $format = $schema['format'] ?? null;
         if ($format !== null && !is_string($format)) {
             throw UnsupportedGeneration::forSchema('format must be a string');
+        }
+        $pattern = $schema['pattern'] ?? null;
+        if ($pattern !== null && !is_string($pattern)) {
+            throw UnsupportedGeneration::forSchema('pattern must be a string');
+        }
+        if ($pattern !== null && $format !== null && $format !== 'password') {
+            throw UnsupportedGeneration::forSchema(sprintf('pattern combined with format "%s" is outside the supported subset', $format));
+        }
+        $band = $format === null ? null : (self::FORMAT_LENGTHS[$format] ?? null);
+        if ($format !== null && $band !== null && ($band[0] > $max || $band[1] < $min)) {
+            throw UnsupportedGeneration::forSchema(sprintf('format "%s" cannot satisfy the length window', $format));
+        }
+        if ($max === 0) {
+            return Gen::constant('');
         }
         /** @var ArbitraryInterface<string> $arbitrary */
         $arbitrary = match ($format) {
@@ -67,12 +90,7 @@ final readonly class ScalarArbitraries
             }),
             default => throw UnsupportedGeneration::forSchema(sprintf('format "%s" is outside the supported format subset', $format)),
         };
-        $pattern = $schema['pattern'] ?? null;
         if ($pattern !== null) {
-            if (!is_string($pattern)) {
-                throw UnsupportedGeneration::forSchema('pattern must be a string');
-            }
-
             try {
                 $arbitrary = Gen::stringMatching($pattern);
             } catch (\InvalidArgumentException $exception) {
@@ -126,11 +144,19 @@ final readonly class ScalarArbitraries
     {
         $min = $this->facts->numberBound($schema, 'minimum', -1000.0);
         $max = $this->facts->numberBound($schema, 'maximum', 1000.0);
-        if (($schema['exclusiveMinimum'] ?? false) === true) {
-            $min += 0.1;
+        $exclusiveMinimum = ($schema['exclusiveMinimum'] ?? false) === true;
+        $exclusiveMaximum = ($schema['exclusiveMaximum'] ?? false) === true;
+        if (($exclusiveMinimum || $exclusiveMaximum) && $min >= $max) {
+            throw UnsupportedGeneration::forSchema('number bounds leave no value');
         }
-        if (($schema['exclusiveMaximum'] ?? false) === true) {
-            $max -= 0.1;
+        // Step inside an open bound by a tenth, or by a quarter of a narrow
+        // window, so that `(0, 0.05]` still leaves values.
+        $step = min(0.1, ($max - $min) / 4.0);
+        if ($exclusiveMinimum) {
+            $min += $step;
+        }
+        if ($exclusiveMaximum) {
+            $max -= $step;
         }
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('number bounds leave no value');

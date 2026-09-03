@@ -38,7 +38,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
      * }>
      */
@@ -53,7 +53,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -62,7 +62,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'missing-required', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -97,7 +97,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'type', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -112,7 +112,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -121,7 +121,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'type', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -154,7 +154,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'enum', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -169,7 +169,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -178,7 +178,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'enum', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -208,7 +208,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'const', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -223,7 +223,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -232,7 +232,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'const', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -261,7 +261,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'boundary', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -276,7 +276,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -285,7 +285,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'boundary', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -319,7 +319,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'length', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -334,7 +334,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -343,7 +343,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'length', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -372,7 +372,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'format', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -387,7 +387,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -396,7 +396,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'format', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -426,7 +426,7 @@ final readonly class NegativeRequestCaseArbitrary
      *     query: array<string, string|list<string>|array<string, string>>,
      *     headers: array<string, string|list<string>|array<string, string>>,
      *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
      *     misuse: array{kind: 'pattern', location: 'path'|'query'|'header'|'cookie', name: string},
      * }>
      */
@@ -441,7 +441,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -450,7 +450,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: array{kind: 'pattern', location: 'path'|'query'|'header'|'cookie', name: string},
          * }
          */ static function (array $case) use ($target): array {
@@ -498,7 +498,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -512,11 +512,12 @@ final readonly class NegativeRequestCaseArbitrary
          * }
          */ static function (array $case) use ($target): array {
             $body = $case['body'];
-            if ($body === null || !is_array($body['value'])) {
+            $value = $body['value'] ?? null;
+            if ($body === null || !is_array($value)) {
                 throw new \LogicException('Required JSON object body expected for an additional property misuse');
             }
-            $body['value'][$target['name']] = true;
-            $case['body'] = $body;
+            $value[$target['name']] = true;
+            $case['body'] = ['mediaType' => $body['mediaType'], 'encoding' => 'json', 'value' => $value];
             $case['misuse'] = ['kind' => 'additional-properties', 'location' => 'body', 'name' => $target['name']];
 
             return $case;
@@ -548,7 +549,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{
@@ -565,8 +566,7 @@ final readonly class NegativeRequestCaseArbitrary
             if ($body === null) {
                 throw new \LogicException('Required JSON body expected for a media type misuse');
             }
-            $body['mediaType'] = $target['invalid'];
-            $case['body'] = $body;
+            $case['body'] = ['mediaType' => $target['invalid'], 'encoding' => 'json', 'value' => $body['value'] ?? null];
             $case['misuse'] = ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'];
 
             return $case;
@@ -602,7 +602,7 @@ final readonly class NegativeRequestCaseArbitrary
          *     query: array<string, string|list<string>|array<string, string>>,
          *     headers: array<string, string|list<string>|array<string, string>>,
          *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{mediaType: string, encoding: 'json', value: mixed},
+         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
          *     misuse: null,
          * } $case
          * @return array{

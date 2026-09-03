@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
+use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
-use Rasuvaeff\PropertyTesting\GenerationExhausted;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Random;
@@ -447,7 +450,7 @@ final class SchemaArbitraryCompilerTest
         yield 'empty enum' => [['enum' => []]];
         yield 'unknown type' => [['type' => 'binary']];
         yield 'invalid type union' => [['type' => ['string', 42]]];
-        yield 'invalid integer minimum' => [['type' => 'integer', 'minimum' => 1.5]];
+        yield 'invalid integer minimum' => [['type' => 'integer', 'minimum' => '1']];
         yield 'invalid integer maximum' => [['type' => 'integer', 'maximum' => '10']];
         yield 'invalid number minimum' => [['type' => 'number', 'minimum' => '0']];
         yield 'invalid string min length' => [['type' => 'string', 'minLength' => -1]];
@@ -799,6 +802,145 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    public function allOfBranchesBoundingAdditionalPropertiesMustCoverTheirSiblings(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $factory = new Psr17Factory();
+        $covering = ['allOf' => [
+            ['type' => 'object', 'required' => ['a'], 'additionalProperties' => false, 'properties' => ['a' => ['type' => 'string', 'maxLength' => 3], 'b' => ['type' => 'integer']]],
+            ['type' => 'object', 'properties' => ['a' => ['type' => 'string', 'minLength' => 1]], 'required' => ['b']],
+        ]];
+        $contract = Contract::fromArray(['openapi' => '3.1.0', 'paths' => ['/m' => ['post' => [
+            'operationId' => 'm',
+            'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => $covering]]],
+            'responses' => ['204' => []],
+        ]]]]);
+        $operation = $contract->operation('m');
+        foreach (Gen::sample($compiler->compile($covering), count: 30, seed: 5) as $value) {
+            $request = (new RequestMaterializer($factory, $factory))->materialize($operation, [
+                'operationKey' => 'm', 'path' => [], 'query' => [], 'headers' => [], 'cookies' => [],
+                'body' => ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => $value], 'misuse' => null,
+            ]);
+            Assert::true($contract->validateRequest($request)->isValid());
+        }
+
+        foreach ([
+            [['type' => 'object', 'additionalProperties' => false, 'properties' => ['a' => ['type' => 'string']]], ['type' => 'object', 'properties' => ['b' => ['type' => 'integer']]]],
+            [['type' => 'object', 'properties' => ['b' => ['type' => 'integer']]], ['type' => 'object', 'additionalProperties' => ['type' => 'string'], 'properties' => ['a' => ['type' => 'string']]]],
+            [['type' => 'object', 'additionalProperties' => false], ['type' => 'object', 'properties' => ['b' => ['type' => 'integer']]]],
+        ] as $branches) {
+            try {
+                $compiler->compile(['allOf' => $branches]);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: allOf branch bounding additionalProperties cannot admit sibling property "b"');
+            }
+        }
+        Assert::same(count(Gen::sample($compiler->compile(['allOf' => [['type' => 'object', 'additionalProperties' => true], ['type' => 'object', 'properties' => ['b' => ['type' => 'integer']]]]]), count: 3, seed: 1)), 3);
+    }
+
+    public function notTypeCoveringTheSourceTypeFailsClosed(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach ([
+            ['type' => 'string', 'not' => ['type' => 'string']],
+            ['type' => 'integer', 'not' => ['type' => 'number']],
+            ['type' => ['string', 'integer'], 'not' => ['type' => ['integer', 'string']]],
+            ['properties' => [], 'not' => ['type' => 'object']],
+            ['items' => ['type' => 'string'], 'not' => ['type' => 'array']],
+        ] as $schema) {
+            try {
+                $compiler->compile($schema);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: not excludes every value of the declared type');
+            }
+        }
+        foreach (Gen::sample($compiler->compile(['type' => ['string', 'integer'], 'not' => ['type' => 'string']]), count: 20, seed: 9) as $value) {
+            Assert::true(is_int($value));
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'number', 'not' => ['type' => 'integer']]), count: 5, seed: 9) as $value) {
+            Assert::true(is_float($value));
+        }
+        Assert::same(count(Gen::sample($compiler->compile(['type' => 'string', 'not' => ['enum' => ['a']]]), count: 3, seed: 9)), 3);
+    }
+
+    public function uniqueItemsOverAFiniteDomainFailClosedBelowMinItems(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach ([
+            ['type' => 'boolean'],
+            ['enum' => ['a', 'b', 'a']],
+            ['const' => 1, 'minItems' => 2],
+            ['type' => 'null', 'minItems' => 2],
+        ] as $items) {
+            $min = $items['minItems'] ?? 3;
+            unset($items['minItems']);
+
+            try {
+                $compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => $min, 'items' => $items]);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: uniqueItems cannot fill minItems from the finite item domain');
+            }
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => 2, 'maxItems' => 2, 'items' => ['type' => 'boolean']]), count: 5, seed: 3) as $value) {
+            Assert::true(is_array($value) && count($value) === 2 && $value[0] !== $value[1]);
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => 2, 'items' => ['enum' => ['a', 'b', 'a']]]), count: 5, seed: 3) as $value) {
+            Assert::true(is_array($value) && count($value) === 2);
+        }
+        Assert::same(Gen::sample($compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => 1, 'maxItems' => 1, 'items' => ['const' => 'c']]), count: 2, seed: 3), [['c'], ['c']]);
+        Assert::same(Gen::sample($compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => 1, 'maxItems' => 1, 'items' => ['type' => 'null']]), count: 2, seed: 3), [[null], [null]]);
+        foreach (Gen::sample($compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => 3, 'maxItems' => 3, 'items' => ['enum' => [1, '1', true]]]), count: 3, seed: 3) as $value) {
+            Assert::true(is_array($value) && count($value) === 3);
+        }
+        Assert::same(count(Gen::sample($compiler->compile(['type' => 'array', 'minItems' => 3, 'maxItems' => 3, 'items' => ['type' => 'boolean']]), count: 2, seed: 3)), 2);
+        Assert::same(count(Gen::sample($compiler->compile(['type' => 'array', 'uniqueItems' => true, 'minItems' => 3, 'maxItems' => 3, 'items' => ['type' => 'integer']]), count: 2, seed: 3)), 2);
+    }
+
+    public function exclusiveBoundsStepInsideNarrowWindows(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach (Gen::sample($compiler->compile(['type' => 'number', 'minimum' => 0, 'exclusiveMinimum' => true, 'maximum' => 0.05]), count: 20, seed: 5) as $value) {
+            Assert::true(is_float($value) && $value > 0.0 && $value <= 0.05);
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'number', 'minimum' => 1, 'exclusiveMinimum' => true, 'maximum' => 1.02, 'exclusiveMaximum' => true]), count: 20, seed: 5) as $value) {
+            Assert::true(is_float($value) && $value > 1.0 && $value < 1.02);
+        }
+        $open = Gen::sample($compiler->compile(['type' => 'number', 'minimum' => 0, 'exclusiveMinimum' => true, 'maximum' => 0.4]), count: 60, seed: 5);
+        Assert::true(max($open) > 0.3 && min($open) > 0.0);
+        $closed = Gen::sample($compiler->compile(['type' => 'number', 'minimum' => 0.1, 'maximum' => 0.4, 'exclusiveMaximum' => true]), count: 60, seed: 5);
+        Assert::true(max($closed) < 0.4 && min($closed) < 0.2);
+        foreach ([
+            ['type' => 'number', 'minimum' => 1, 'maximum' => 1, 'exclusiveMinimum' => true],
+            ['type' => 'number', 'minimum' => 2, 'maximum' => 1, 'exclusiveMaximum' => true],
+        ] as $schema) {
+            try {
+                $compiler->compile($schema);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: number bounds leave no value');
+            }
+        }
+    }
+
+    public function fractionalIntegerBoundsRoundInward(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $values = Gen::sample($compiler->compile(['type' => 'integer', 'minimum' => 0.2, 'maximum' => 2.8]), count: 40, seed: 5);
+        Assert::same(min($values), 1);
+        Assert::same(max($values), 2);
+        Assert::same(Gen::sample($compiler->compile(['type' => 'integer', 'minimum' => 3.0, 'maximum' => 3.0]), count: 2, seed: 5), [3, 3]);
+
+        try {
+            $compiler->compile(['type' => 'integer', 'minimum' => '1']);
+            Assert::true(actual: false, message: 'Expected unsupported generation exception');
+        } catch (UnsupportedGeneration $exception) {
+            Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: minimum for an integer must be numeric');
+        }
+    }
+
     public function acceptsEmptyPropertyMapsInsideAllOf(): void
     {
         $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
@@ -832,7 +974,11 @@ final class SchemaArbitraryCompilerTest
         $compiler = new SchemaArbitraryCompiler();
 
         Assert::same(Gen::sample($compiler->compile(['type' => 'string', 'maxLength' => 0]), count: 3, seed: 83), ['', '', '']);
-        Assert::same(Gen::sample($compiler->compile(['type' => 'string', 'format' => 'uuid', 'maxLength' => 0]), count: 3, seed: 89), ['', '', '']);
+        Assert::same(Gen::sample($compiler->compile(['type' => 'string', 'pattern' => '^x*$', 'maxLength' => 0]), count: 3, seed: 89), ['', '', '']);
+        Assert::same(Gen::sample($compiler->compile(['type' => 'string', 'format' => 'password', 'maxLength' => 0]), count: 3, seed: 89), ['', '', '']);
+
+        Expect::exception(UnsupportedGeneration::class);
+        $compiler->compile(['type' => 'string', 'format' => 'uuid', 'maxLength' => 0]);
     }
 
     public function patternStringsHonorTheLengthFilter(): void
@@ -847,11 +993,21 @@ final class SchemaArbitraryCompilerTest
 
         foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
             'type' => 'string',
-            'format' => 'uuid',
+            'format' => 'password',
             'pattern' => '^x*$',
             'minLength' => 1,
         ]), count: 60, seed: 113) as $value) {
             Assert::true(is_string($value) && $value !== '');
+        }
+    }
+
+    public function patternCombinedWithAnAssertedFormatFailsClosed(): void
+    {
+        try {
+            (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'uuid', 'pattern' => '^x*$']);
+            Assert::true(actual: false, message: 'Expected unsupported generation exception');
+        } catch (UnsupportedGeneration $exception) {
+            Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: pattern combined with format "uuid" is outside the supported subset');
         }
     }
 
@@ -992,11 +1148,41 @@ final class SchemaArbitraryCompilerTest
         Assert::true($bare > 0);
     }
 
-    public function formatFiltersEnforceTheLengthBudget(): void
+    public function formatLengthWindowsFailClosedAtCompileTime(): void
     {
-        Expect::exception(GenerationExhausted::class);
+        $compiler = new SchemaArbitraryCompiler();
+        foreach ([
+            ['format' => 'uuid', 'maxLength' => 10],
+            ['format' => 'uuid', 'minLength' => 37],
+            ['format' => 'date', 'maxLength' => 9],
+            ['format' => 'date-time', 'minLength' => 30],
+            ['format' => 'ipv4', 'maxLength' => 6],
+            ['format' => 'email', 'maxLength' => 5],
+            ['format' => 'uri', 'maxLength' => 11],
+        ] as $constraints) {
+            try {
+                $compiler->compile(['type' => 'string', ...$constraints]);
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::same($exception->getMessage(), sprintf('Unsupported OpenAPI schema generation: format "%s" cannot satisfy the length window', $constraints['format']));
+            }
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'string', 'format' => 'uuid', 'minLength' => 36, 'maxLength' => 36]), count: 3, seed: 7) as $value) {
+            Assert::same(strlen($value), 36);
+        }
+        foreach (Gen::sample($compiler->compile(['type' => 'string', 'format' => 'ipv4', 'minLength' => 7, 'maxLength' => 15]), count: 20, seed: 7) as $value) {
+            Assert::true(strlen($value) >= 7 && strlen($value) <= 15);
+        }
+        foreach ([['minLength' => 10, 'maxLength' => 15], ['minLength' => 8, 'maxLength' => 10], ['minLength' => 15], ['maxLength' => 7]] as $window) {
+            Assert::instanceOf($compiler->compile(['type' => 'string', 'format' => 'ipv4', ...$window]), ArbitraryInterface::class);
+        }
 
-        Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'uuid', 'maxLength' => 10]), count: 3, seed: 7);
+        try {
+            $compiler->compile(['type' => 'string', 'pattern' => 42]);
+            Assert::true(actual: false, message: 'Expected unsupported generation exception');
+        } catch (UnsupportedGeneration $exception) {
+            Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: pattern must be a string');
+        }
     }
 
     public function reportsExactMessagesForMalformedPropertyValues(): void
