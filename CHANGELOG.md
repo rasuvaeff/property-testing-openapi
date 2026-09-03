@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- `Psr15Transport` no longer consumes a non-seekable request body before the
+  handler sees it (#36). A body that needs no parsing is not read at all: a
+  seekable stream is rewound, a non-seekable one is passed through untouched.
+  A form or multipart body on a non-seekable stream is buffered into a fresh
+  seekable stream through the `StreamFactoryInterface`; without one the
+  transport throws `LogicException` instead of handing over an exhausted
+  stream. Previously every body was read up front and a non-seekable stream
+  reached the handler at EOF.
+- Requires `rasuvaeff/property-testing-core` `^0.5 || ^0.6` (was `^0.4`, no
+  longer supported) and, for development, `rasuvaeff/property-testing-testo`
+  `^0.7` and `rasuvaeff/understudy-testo` `^0.2` (understudy core `^0.5`).
+
 ## 0.3.0 — 2026-09-03
 
 - String path parameters no longer break route matching (#27): every string

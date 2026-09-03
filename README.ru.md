@@ -215,7 +215,12 @@ runner и handler; не создавайте runner для каждого сге
 и `UploadedFileFactoryInterface` — uploaded files для multipart-частей с
 filename (materializer именует каждую binary-часть `filename="<part>"`). Без
 фабрик файловые части не попадают в parsed body и uploaded files не
-прикладываются. Сырой поток body всегда передаётся дальше, перемотанный.
+прикладываются. Тело, которое не нужно разбирать (JSON, сырые байты),
+транспорт не читает вовсе: seekable-поток перематывается, non-seekable
+передаётся нетронутым. Form- или multipart-тело в non-seekable потоке
+буферизуется в новый seekable-поток через `StreamFactoryInterface`; без
+фабрики транспорт бросает `LogicException`, а не отдаёт handler'у
+исчерпанный поток.
 
 ```php
 $transport = new Psr15Transport($handler, $psr17, null, $psr17, $psr17);
