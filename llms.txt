@@ -128,7 +128,9 @@ Public API:
   materialized request before transport, sends it, and throws `CheckFailed` on
   a 5xx status or a non-conforming exchange. Declared non-JSON responses are
   opaque (no schema) or validated as a string (string-typed schema) by
-  `openapi-contract` ^0.2.1; only `response.body.unsupported` remains.
+  `openapi-contract` ^0.3; only `response.body.unsupported` remains. Present
+  response headers with a `schema` are decoded `simple`-style and validated
+  too (`response.header.schema` / `.serialization` / `.unsupported`).
 - `ContractSuite::checkNegative(string $operationKey, array $case)` requires
   `misuse` metadata and pre-transport invalidity, then throws `CheckFailed`
   if invalid input produces a 5xx or, with a configured `RejectionPolicy`,

@@ -269,7 +269,11 @@ or a non-conforming exchange. A declared non-JSON response (`text/plain`,
 `application/octet-stream`, ...) is not a violation: `openapi-contract`
 treats it as opaque without a schema and validates the raw payload against a
 string-typed schema; only a non-JSON media type with a schema it cannot
-evaluate is reported, as `response.body.unsupported`. `checkNegative()` requires the case to carry
+evaluate is reported, as `response.body.unsupported`. Present response
+headers with a `schema` are part of the exchange check too: `openapi-contract`
+decodes them `simple`-style and validates the value, so a server answering
+`X-RateLimit-Remaining: banana` for a `type: integer` header fails with
+`response.header.schema`. `checkNegative()` requires the case to carry
 `misuse` metadata and to be invalid before transport, then asserts that
 invalid input does not produce a 5xx. A stricter oracle is the opt-in
 `RejectionPolicy` — OpenAPI itself does not promise `invalid -> 4xx`:
