@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Requires `rasuvaeff/openapi-contract` `^0.3` (was `^0.2.1`, no longer
+  supported). `ContractSuite::checkValid()` and the reproducer now see the
+  contract's response header value validation (`response.header.schema`,
+  `response.header.serialization`, `response.header.unsupported`) — a
+  server answering `X-RateLimit-Remaining: banana` for a `type: integer`
+  header is reported instead of passing. Documents whose
+  `components.securitySchemes` lack a supported `type` or a field the type
+  requires no longer compile (`InvalidContract`). Generated responses keep
+  validating: every materialized response header survives the contract's
+  `simple`-style decoding.
+
 ## 0.4.0 — 2026-09-03
 
 - `Psr15Transport` no longer consumes a non-seekable request body before the

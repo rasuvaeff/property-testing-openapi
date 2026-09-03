@@ -263,14 +263,18 @@ override обязан совпадать с объявленным server, ин�
 `checkValid()` materialize-ит case (применяя credentials, выбранные через
 настроенный `CredentialsProviderInterface`), требует валидности request до
 transport, отправляет его и падает с `CheckFailed` на 5xx статусе или
-неконформном exchange. `checkNegative()` требует `misuse` metadata и
-invalid-статус case до transport, после чего проверяет, что invalid input не
-приводит к 5xx. Более строгий oracle — opt-in `RejectionPolicy`: из OpenAPI
-`invalid -> 4xx` не следует: Объявленный не-JSON response (`text/plain`,
+неконформном exchange. Объявленный не-JSON response (`text/plain`,
 `application/octet-stream`, ...) — не нарушение: `openapi-contract` считает
 его непрозрачным без схемы и проверяет сырое тело по строковой схеме;
 сообщается только не-JSON media type со схемой, которую он не может
-проверить, — как `response.body.unsupported`.
+проверить, — как `response.body.unsupported`. Присутствующие
+response-заголовки со `schema` тоже входят в проверку exchange:
+`openapi-contract` декодирует их стилем `simple` и валидирует значение, так
+что сервер, ответивший `X-RateLimit-Remaining: banana` на заголовок
+`type: integer`, падает с `response.header.schema`. `checkNegative()`
+требует `misuse` metadata и invalid-статус case до transport, после чего
+проверяет, что invalid input не приводит к 5xx. Более строгий oracle —
+opt-in `RejectionPolicy`: из OpenAPI `invalid -> 4xx` не следует:
 
 `CheckFailed`, брошенный из-за validation result, хранит его в `$result` и
 рендерит в сообщении каждое нарушение через `ValidationResultFormatter` из
