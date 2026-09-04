@@ -47,8 +47,12 @@ final class DirectionalSchemasTest
                 'list' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => ['v' => []]]],
                 'bad' => 'not a schema',
             ],
-            'oneOf' => [['properties' => []], 'x'],
-            'allOf' => [['properties' => []]],
+            // Dropping the last property drops `properties` itself, as the
+            // contract's own effective schema does: an empty map forbids
+            // nothing, and what the document said about undeclared members
+            // keeps saying it.
+            'oneOf' => [[], 'x'],
+            'allOf' => [[]],
             'anyOf' => [['properties' => ['z' => ['writeOnly' => true]]]],
         ]);
     }

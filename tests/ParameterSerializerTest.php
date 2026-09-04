@@ -17,6 +17,32 @@ use Testo\Test;
 final class ParameterSerializerTest
 {
     /**
+     * A numeric member name is a name, not a malformed key: PHP normalizes the
+     * array key `"2020"` to an integer, and refusing it made a legal document
+     * impossible to serialize.
+     *
+     * @param string|list<string>|array<string, string> $value
+     */
+    #[DataProvider('numericNameCases')]
+    public function serializesNumericMemberNames(string|array $value, string $style, bool $explode, string $expected): void
+    {
+        Assert::same((new ParameterSerializer())->serialize('p', $value, $style, $explode), $expected);
+    }
+
+    /** @return iterable<string, array{string|list<string>|array<string, string>, string, bool, string}> */
+    public static function numericNameCases(): iterable
+    {
+        yield 'simple object exploded' => [['2020' => 'a'], 'simple', true, '2020=a'];
+        yield 'simple object compact' => [['2020' => 'a'], 'simple', false, '2020,a'];
+        yield 'form object exploded' => [['2020' => 'a', 'x' => 'b'], 'form', true, '2020=a&x=b'];
+        yield 'matrix object exploded' => [['2020' => 'a'], 'matrix', true, ';2020=a'];
+        yield 'deep object' => [['2020' => 'a'], 'deepObject', true, 'p%5B2020%5D=a'];
+        // Out-of-order numeric names keep their own positions: `array_merge`
+        // would have renumbered them into 0, 1.
+        yield 'out-of-order numeric names' => [['5' => 'a', '3' => 'b'], 'form', true, '5=a&3=b'];
+    }
+
+    /**
      * `allowReserved` widens what may travel raw, but it may not hand back a
      * character the chosen style uses as a separator: the wire would then say
      * something the value never did, and the contract would read one item as
@@ -196,7 +222,6 @@ final class ParameterSerializerTest
         yield 'pipe object' => [['key' => 'value'], 'pipeDelimited'];
         yield 'deep scalar' => ['value', 'deepObject'];
         yield 'deep list' => [['value'], 'deepObject'];
-        yield 'object non-string key' => [[1 => 'value'], 'simple'];
         yield 'object non-string value' => [['key' => 42], 'simple'];
         yield 'unknown style' => ['value', 'unknown'];
     }

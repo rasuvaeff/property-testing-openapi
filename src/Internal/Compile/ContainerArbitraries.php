@@ -93,6 +93,7 @@ final readonly class ContainerArbitraries
             }
             $requiredNames[$name] = true;
         }
+        /** @var array<string, true> $requiredNames */
         foreach ($properties as $name => $property) {
             if (!is_array($property) || array_is_list($property)) {
                 throw UnsupportedGeneration::forSchema('object properties must contain named schema objects');
@@ -118,9 +119,10 @@ final readonly class ContainerArbitraries
                 /** @var array<string, mixed> $typed */
                 $typed = [];
                 foreach (array_keys($values) as $name) {
-                    if (is_string($name)) {
-                        $typed = array_merge($typed, [$name => $values[$name]]);
-                    }
+                    // `array_replace`, not `array_merge`: the latter renumbers
+                    // an integer-like key, which is exactly the name a numeric
+                    // property carries.
+                    $typed = array_replace($typed, [$name => $values[$name]]);
                 }
 
                 return self::objectValues($typed, $requiredNames);
@@ -206,7 +208,7 @@ final readonly class ContainerArbitraries
         $extras = Gen::dictOf($key, $value, minSize: $missing, maxSize: $room);
 
         /** @var ArbitraryInterface<array<array-key, mixed>> $result */
-        $result = Gen::map($extras, static fn(array $extra): array => array_merge($values, $extra));
+        $result = Gen::map($extras, static fn(array $extra): array => array_replace($values, $extra));
 
         return $result;
     }
@@ -221,23 +223,26 @@ final readonly class ContainerArbitraries
         return Gen::frequency([[1, $absent], [1, $present]]);
     }
 
-    /** @param array<array-key, mixed> $values
-     * @param array<string, true> $requiredNames
-     * @return array<string, mixed>
+    /**
+     * @param array<array-key, mixed> $values
+     * @param array<array-key, true> $requiredNames
+     * @return array<array-key, mixed> keyed by member name; a numeric name is
+     *         an integer key, because that is the only way PHP can hold it
      */
     private static function objectValues(array $values, array $requiredNames): array
     {
         $result = [];
         foreach (array_keys($values) as $name) {
-            if (!is_string($name)) {
-                continue;
-            }
+            // A numeric property name arrives as an integer key and is kept as
+            // one: it normalizes back the moment it is used as an array key,
+            // and dropping such a name — which this used to do — took a
+            // required property out of the generated object entirely.
             if (isset($requiredNames[$name])) {
-                $result = array_merge($result, [$name => $values[$name]]);
+                $result = array_replace($result, [$name => $values[$name]]);
                 continue;
             }
             if (is_array($values[$name]) && ($values[$name]['present'] ?? false) === true && array_key_exists('value', $values[$name])) {
-                $result = array_merge($result, [$name => $values[$name]['value']]);
+                $result = array_replace($result, [$name => $values[$name]['value']]);
             }
         }
 

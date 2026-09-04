@@ -28,7 +28,7 @@ final readonly class ParameterSerializer
         };
     }
 
-    /** @param string|list<string>|array<string, string> $value */
+    /** @param string|list<string>|array<array-key, string> $value */
     private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved, bool $encodeDots = false, string $keepEncoded = ''): string
     {
         if (is_string($value)) {
@@ -39,8 +39,11 @@ final readonly class ParameterSerializer
         }
 
         $parts = [];
+        // PHP cannot keep a numeric-string array key as a string, so the cast
+        // belongs here, where the name goes on the wire, and not where the map
+        // was built.
         foreach ($this->object($value) as $key => $item) {
-            $parts[] = $this->encode($key, $allowReserved, $encodeDots, $keepEncoded) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved, $encodeDots, $keepEncoded);
+            $parts[] = $this->encode((string) $key, $allowReserved, $encodeDots, $keepEncoded) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved, $encodeDots, $keepEncoded);
         }
 
         return implode($explode ? $pairSeparator : ',', $parts);
@@ -72,7 +75,7 @@ final readonly class ParameterSerializer
 
         $parts = [];
         foreach ($this->object($value) as $key => $item) {
-            $parts[] = ';' . $this->encode($key) . '=' . $this->encode($item, $allowReserved, keepEncoded: $keep);
+            $parts[] = ';' . $this->encode((string) $key) . '=' . $this->encode($item, $allowReserved, keepEncoded: $keep);
         }
 
         return implode('', $parts);
@@ -102,7 +105,7 @@ final readonly class ParameterSerializer
 
         $parts = [];
         foreach ($this->object($value) as $key => $item) {
-            $parts[] = $this->pair($key, $item, $allowReserved);
+            $parts[] = $this->pair((string) $key, $item, $allowReserved);
         }
 
         return implode('&', $parts);
@@ -208,8 +211,17 @@ final readonly class ParameterSerializer
         return $value;
     }
 
-    /** @param array<array-key, mixed> $value
-     * @return array<string, string>
+    /**
+     * The member map of an object parameter.
+     *
+     * The key type is `array-key` and not `string` on purpose: PHP normalizes
+     * a numeric-string array key to an integer, so a member the document named
+     * `"2020"` really does arrive as `int 2020`. Saying `string` here made the
+     * casts that put those names back on the wire look redundant, and the
+     * language cannot keep that promise anyway.
+     *
+     * @param array<array-key, mixed> $value
+     * @return array<array-key, string>
      */
     private function object(array $value): array
     {
@@ -218,10 +230,14 @@ final readonly class ParameterSerializer
         }
         $result = [];
         foreach ($value as $key => $item) {
-            if (!is_string($key) || !is_string($item)) {
+            if (!is_string($item)) {
                 throw new UnsupportedGeneration('Parameter object keys and values must be strings');
             }
-            $result[$key] = $item;
+            // A numeric member name arrives as an integer array key. It is a
+            // name the document wrote, not a malformed key — the cast that
+            // matters is at the point of use, where it becomes a string
+            // argument, not here where it stays an array key.
+            $result = array_replace($result, [$key => $item]);
         }
 
         return $result;

@@ -257,12 +257,12 @@ final readonly class RequestMaterializer
                 throw new UnsupportedGeneration('Form object value must be an object');
             }
             /** @var array<array-key, mixed> $value */
-            $properties = $this->schemaObject($schema['properties'] ?? [], 'Form object properties must be an object');
+            $properties = $this->memberMap($schema['properties'] ?? [], 'Form object properties must be an object');
+            /** @var array<array-key, string> $result */
             $result = [];
             foreach (array_keys($value) as $key) {
-                $name = (string) $key;
-                $property = $this->schemaObject($properties[$name] ?? [], 'Form object property must be a schema object');
-                $result = array_merge($result, [$name => $this->scalarValue($value[$key])]);
+                $property = $this->schemaObject($properties[$key] ?? [], 'Form object property must be a schema object');
+                $result = array_replace($result, [$key => $this->scalarValue($value[$key])]);
             }
 
             return $result;
@@ -374,8 +374,31 @@ final readonly class RequestMaterializer
     }
 
 
-    /** @return array<string, mixed> */
+    /**
+     * A Schema Object: keyed by JSON Schema keywords, which are never numeric.
+     *
+     * @return array<string, mixed>
+     */
     private function schemaObject(mixed $value, string $message): array
+    {
+        /** @var array<string, mixed> $map */
+        $map = $this->memberMap($value, $message);
+
+        return $map;
+    }
+
+    /**
+     * A map keyed by member name. The key type is `array-key` because PHP
+     * normalizes a numeric-string key to an integer — see
+     * {@see JsonBodyEncoder} for the same split.
+     *
+     * `array_replace`, not `array_merge`: both quiet the psalm
+     * `MixedAssignment` that a direct `$result[$key] =` raises, but only one
+     * of them keeps an integer-like key where it was put.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function memberMap(mixed $value, string $message): array
     {
         if (!is_array($value)) {
             throw new UnsupportedGeneration($message);
@@ -384,16 +407,10 @@ final readonly class RequestMaterializer
             throw new UnsupportedGeneration($message);
         }
 
-        /** @var array<string, mixed> $result */
+        /** @var array<array-key, mixed> $result */
         $result = [];
         foreach (array_keys($value) as $key) {
-            if (!is_string($key)) {
-                throw new UnsupportedGeneration($message);
-            }
-            // array_merge, not `$result[$key] =`: the value is mixed, and the
-            // direct assignment is a psalm MixedAssignment that only a
-            // suppression would quiet.
-            $result = array_merge($result, [$key => $value[$key]]);
+            $result = array_replace($result, [$key => $value[$key]]);
         }
 
         return $result;
