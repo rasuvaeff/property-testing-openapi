@@ -139,6 +139,8 @@ final readonly class RequestCaseArbitrary
         if (!is_array($content)) {
             throw new UnsupportedGeneration('Request body content must be an object');
         }
+        /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
+        $bodies = [];
         foreach ($content as $mediaType => $definition) {
             if (!is_string($mediaType) || !is_array($definition)) {
                 continue;
@@ -151,40 +153,52 @@ final readonly class RequestCaseArbitrary
             $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
             if (MediaType::isJson($mediaType)) {
-                $body = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
+                /** @var ArbitraryInterface<mixed> $json */
+                $json = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,
                     'encoding' => 'json',
                     'value' => $value,
                 ]);
+                $bodies[] = [1, $json];
             } elseif ($normalized === 'application/x-www-form-urlencoded') {
                 $this->assertObjectSchema($schema, 'Form request body schema must be an object');
                 $this->assertFormEncoding($definition['encoding'] ?? []);
-                $body = Gen::map($this->schemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
+                /** @var ArbitraryInterface<mixed> $form */
+                $form = Gen::map($this->schemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,
                     'encoding' => 'form',
                     'value' => $value,
                 ]);
+                $bodies[] = [1, $form];
             } elseif (str_starts_with($normalized, 'multipart/')) {
                 $this->assertObjectSchema($schema, 'Multipart request body schema must be an object');
                 $this->assertMultipartEncoding($definition['encoding'] ?? []);
-                /** @var array<string, mixed> $definition */
-                $body = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
-            } else {
-                continue;
+                /**
+                 * @var array<string, mixed> $definition
+                 * @var ArbitraryInterface<mixed> $multipart
+                 */
+                $multipart = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
+                $bodies[] = [1, $multipart];
             }
-
-            if (($operation->requestBody['required'] ?? false) === true) {
-                return $body;
-            }
-
-            // The body arbitrary already carries the exact case shape, so the
-            // optional form picks between it and no body at all rather than
-            // wrapping it and reading the shape back — which is what dropped
-            // multipart, the one encoding that carries parts instead of a value.
-            return Gen::nullable($body);
+        }
+        if ($bodies === []) {
+            throw new UnsupportedGeneration('Request body has no supported media type');
         }
 
-        throw new UnsupportedGeneration('Request body has no supported media type');
+        // Every declared media type this package can generate, not the first
+        // one it recognises: a body offering `application/json` beside anything
+        // else was only ever exercised through one of them.
+        $body = count($bodies) === 1 ? $bodies[0][1] : Gen::frequency($bodies);
+
+        if (($operation->requestBody['required'] ?? false) === true) {
+            return $body;
+        }
+
+        // The body arbitrary already carries the exact case shape, so the
+        // optional form picks between it and no body at all rather than
+        // wrapping it and reading the shape back — which is what dropped
+        // multipart, the one encoding that carries parts instead of a value.
+        return Gen::nullable($body);
     }
 
     private function included(ArbitraryInterface $value): ArbitraryInterface
@@ -278,8 +292,14 @@ final readonly class RequestCaseArbitrary
                 throw new UnsupportedGeneration('Multipart properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
-            $value = $this->multipartProperty($property);
-            $shape[$name] = isset($requiredNames[$name]) ? $value : $this->optional($value);
+            $required = isset($requiredNames[$name]);
+            // A required container has to be generated non-empty here as well
+            // as for a form body: an empty array becomes zero parts, and a
+            // multipart entity with no parts is not one — RFC 2046 §5.1.1
+            // requires at least one, and the contract rejects the payload this
+            // generator just called valid.
+            $value = $this->multipartProperty($required ? $this->nonEmptyContainer($property) : $property);
+            $shape[$name] = $required ? $value : $this->optional($value);
         }
         if ($shape === []) {
             return Gen::constant([]);
