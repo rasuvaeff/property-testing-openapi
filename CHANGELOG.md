@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Fixed.** `RedactionPolicy::cookies` does something (#73). The `Cookie`
+  header was redacted wholesale by the default header set, so a policy naming a
+  cookie and one that did not produced byte-identical output — the option was
+  inert. It was also defending the wrong thing: the reproducer never applies
+  credentials, by construction, so what it hid was the case's own generated
+  data. `cookie` is out of the default set; a named cookie is redacted and the
+  rest of the header stays readable. `authorization`, `proxy-authorization` and
+  `set-cookie` stay wholesale, because a header arrives as one opaque string
+  and its name is all there is to judge it by.
+- **Changed.** `minMsi` is 92 rather than 93, against a measured 93.05% (#75).
+  A gate set at the current score has no headroom: adding source code adds
+  mutants, some equivalent by construction, and the score falls before any test
+  can be written to stop it. Two changes in one wave failed the gate on nothing
+  but equivalent mutants they had introduced. The alarm the gate exists for — a
+  real drop of ~36 killed mutants — still fires; the noise does not.
+
 ## 0.9.0 — 2026-09-05
 
 - **Fixed.** `spaceDelimited` and `pipeDelimited` query parameters generate

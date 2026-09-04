@@ -58,7 +58,7 @@ final class RequestReproducerTest
 
         Assert::string($curl)->contains('token=%5Bredacted%5D');
         Assert::string($curl)->contains("-H 'X-Tenant: [redacted]'");
-        Assert::string($curl)->contains("-H 'Cookie: [redacted]'");
+        Assert::string($curl)->contains("-H 'Cookie: session=%5Bredacted%5D'");
         Assert::string($curl)->contains('"secret":"[redacted]"');
         Assert::false(str_contains($curl, 'topsecret'));
         Assert::false(str_contains($curl, 'hunter2'));
@@ -228,6 +228,47 @@ final class RequestReproducerTest
         // A raw body carries no named members to redact.
         Assert::string($this->reproducer()->curl($operation, [...$case, 'body' => ['mediaType' => 'text/plain', 'encoding' => 'raw', 'value' => 'ada']], new RedactionPolicy(bodyPaths: ['user'])))
             ->contains('ada');
+    }
+
+    /**
+     * The policy names a cookie and that cookie is redacted; the rest of the
+     * header stays readable. Redacting the whole `Cookie` header made the
+     * option inert — a policy naming a cookie and one that did not produced
+     * byte-identical output — and it was defending case data rather than a
+     * credential, since the reproducer never applies credentials at all.
+     */
+    public function redactsOnlyTheCookiesThePolicyNames(): void
+    {
+        $case = [
+            'operationKey' => 'pets.update', 'path' => ['id' => '7'], 'query' => [], 'headers' => [],
+            'cookies' => ['session' => 'abc', 'theme' => 'dark'],
+            'body' => null, 'misuse' => null,
+        ];
+
+        $redacted = $this->reproducer()->curl($this->cookieOperation(), $case, new RedactionPolicy(cookies: ['session']));
+        Assert::false(str_contains($redacted, 'abc'));
+        Assert::string($redacted)->contains("-H 'Cookie: session=%5Bredacted%5D; theme=dark'");
+
+        // Without a policy the case's own data is readable, which is the point
+        // of a reproducer.
+        $plain = $this->reproducer()->curl($this->cookieOperation(), $case);
+        Assert::string($plain)->contains("-H 'Cookie: session=abc; theme=dark'");
+    }
+
+    private function cookieOperation(): Operation
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets/{id}' => ['post' => [
+                'operationId' => 'pets.update',
+                'parameters' => [
+                    ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']],
+                    ['name' => 'session', 'in' => 'cookie', 'schema' => ['type' => 'string']],
+                    ['name' => 'theme', 'in' => 'cookie', 'schema' => ['type' => 'string']],
+                ],
+                'responses' => ['204' => []],
+            ]]],
+        ])->operation('pets.update');
     }
 
     private function bodyOperation(): Operation
