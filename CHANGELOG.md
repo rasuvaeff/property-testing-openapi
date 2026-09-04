@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Requires `rasuvaeff/openapi-contract` `^0.5` (was `^0.4`), which closes the
+  same review's ten warnings. The oracle is correspondingly stricter and more
+  accurate: header list values lose the whitespace around their separator, a
+  boolean `schema: false` rejects instead of accepting everything, `multipart`
+  honours `encoding.explode`, an OAS 3.1 type union is read as the shape it
+  declares, and parameter diagnostics point at the declaration that carries
+  them. Body values are redacted from rendered diagnostics, which `CheckFailed`
+  passes through — a `CheckFailed` message no longer shows a body's `actual`.
+
 - The negative const witness never collides with the const it contradicts.
   `constMismatch()` used a fixed literal, so a parameter declaring that literal
   as its `const` got an "invalid" value that was in fact valid. `enumMismatch()`
