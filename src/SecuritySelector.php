@@ -9,7 +9,13 @@ use Rasuvaeff\OpenApiContract\Operation;
 /**
  * Selects the first fully satisfiable OpenAPI security alternative.
  *
- * @internal Reach it through {@see ContractSuite::credentials()}.
+ * {@see ContractSuite::credentials()} drives this for a suite; the README
+ * documents calling it directly to materialize a single request outside one,
+ * which is why it is public. Its whole signature already is: it takes an
+ * `Operation` and a {@see CredentialsProviderInterface}, and hands back a
+ * {@see SecurityRequirement} with the {@see Credentials} that satisfy it.
+ *
+ * @api
  */
 final readonly class SecuritySelector
 {

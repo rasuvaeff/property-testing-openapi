@@ -28,16 +28,20 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
  */
 final readonly class RequestMaterializer
 {
+    private ParameterSerializer $parameters;
+
+    private JsonBodyEncoder $json;
+
     public function __construct(
         private RequestFactoryInterface $requests,
         private StreamFactoryInterface $streams,
-        private ParameterSerializer $parameters = new ParameterSerializer(),
         private ?string $baseUri = null,
-        private JsonBodyEncoder $json = new JsonBodyEncoder(),
     ) {
         if ($baseUri !== null) {
             $this->assertBaseUri($baseUri);
         }
+        $this->parameters = new ParameterSerializer();
+        $this->json = new JsonBodyEncoder();
     }
 
     /**
@@ -47,7 +51,7 @@ final readonly class RequestMaterializer
      */
     public function withBaseUri(string $baseUri): self
     {
-        return new self($this->requests, $this->streams, $this->parameters, $baseUri, $this->json);
+        return new self($this->requests, $this->streams, $baseUri);
     }
 
     /**

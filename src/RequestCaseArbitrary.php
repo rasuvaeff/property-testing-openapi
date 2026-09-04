@@ -36,13 +36,15 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
  */
 final readonly class RequestCaseArbitrary
 {
+    private SchemaArbitraryCompiler $schemas;
+
     private ParameterSchemas $parameterSchemas;
 
     private RequestSchemas $requestSchemas;
 
-    public function __construct(
-        private SchemaArbitraryCompiler $schemas = new SchemaArbitraryCompiler(),
-    ) {
+    public function __construct()
+    {
+        $this->schemas = new SchemaArbitraryCompiler();
         $this->parameterSchemas = new ParameterSchemas();
         $this->requestSchemas = new RequestSchemas();
     }
