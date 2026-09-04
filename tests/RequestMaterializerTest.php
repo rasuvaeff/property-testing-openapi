@@ -94,6 +94,122 @@ final class RequestMaterializerTest
     }
 
     /**
+     * A query credential and an exploded object query parameter that admits
+     * undeclared members cannot share a query string: the style claims every
+     * pair a sibling parameter does not, so the credential becomes one of the
+     * parameter's members. The operation was then exercised with a value other
+     * than the case recorded, and where the object is constrained the case
+     * this package called valid came back reported as invalid.
+     *
+     * Every other shape is unambiguous and passes through: only the exploded
+     * form style over an open object claims what it did not declare.
+     *
+     * @param array<string, mixed> $overrides
+     * @param string|list<string>|array<string, string> $value
+     */
+    #[DataProvider('credentialAmbiguityProvider')]
+    public function failsClosedWhenAQueryCredentialCannotBeToldApart(array $overrides, string|array $value, bool $ambiguous): void
+    {
+        $operation = new Operation(
+            key: 'creds.get',
+            operationId: 'creds.get',
+            method: 'GET',
+            path: '/creds',
+            // Three leading parameters, each cleared by a different clause of
+            // the check: the search has to keep looking past every one of them
+            // rather than stop at the first it clears.
+            parameters: [
+                ['name' => 'page', 'in' => 'query', 'required' => true, 'style' => 'form',
+                    'explode' => false, 'allowReserved' => false, 'schema' => ['type' => 'integer']],
+                ['name' => 'q', 'in' => 'query', 'required' => true, 'style' => 'form',
+                    'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string']],
+                ['name' => 'closed', 'in' => 'query', 'required' => true, 'style' => 'form',
+                    'explode' => true, 'allowReserved' => false,
+                    'schema' => ['type' => 'object', 'properties' => ['b' => ['type' => 'string']], 'additionalProperties' => false]],
+                array_merge([
+                    'name' => 'filter', 'in' => 'query', 'required' => true, 'style' => 'form',
+                    'explode' => true, 'allowReserved' => false,
+                    'schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string']]],
+                ], $overrides),
+            ],
+        );
+        $factory = new Psr17Factory();
+        $case = [
+            'operationKey' => 'creds.get', 'path' => [],
+            'query' => ['page' => '1', 'q' => 'x', 'closed' => ['b' => 'y'], 'filter' => $value],
+            'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null,
+        ];
+        $credentials = new Credentials(query: ['api_key' => 'SECRET']);
+
+        if (!$ambiguous) {
+            $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case, $credentials);
+            Assert::string($request->getUri()->getQuery())->contains('api_key=SECRET');
+
+            return;
+        }
+
+        try {
+            (new RequestMaterializer($factory, $factory))->materialize($operation, $case, $credentials);
+        } catch (UnsupportedGeneration $exception) {
+            Assert::string($exception->getMessage())->contains('api_key')->contains('"filter"');
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected the ambiguous credential to fail closed');
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string|list<string>|array<string, string>, bool}> */
+    public static function credentialAmbiguityProvider(): iterable
+    {
+        $object = ['a' => 'x'];
+
+        yield 'exploded form over an open object claims every stray pair' => [[], $object, true];
+        yield 'an object implied by properties alone is still an object' => [
+            ['schema' => ['properties' => ['a' => ['type' => 'string']]]], $object, true,
+        ];
+        yield 'a closed object claims only its own members' => [
+            ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string']], 'additionalProperties' => false]], $object, false,
+        ];
+        yield 'an unexploded object travels under its own name' => [['explode' => false], $object, false];
+        yield 'deepObject claims only its bracketed prefix' => [['style' => 'deepObject'], $object, false];
+        yield 'a scalar parameter claims nothing' => [['schema' => ['type' => 'string']], 'x', false];
+        yield 'a list parameter claims only its own name' => [
+            ['schema' => ['type' => 'array', 'items' => ['type' => 'string']]], ['x'], false,
+        ];
+        yield 'a header parameter shares no query string' => [
+            ['in' => 'header', 'name' => 'X-Filter', 'style' => 'simple'], $object, false,
+        ];
+    }
+
+    /**
+     * A credential in a header or a cookie shares nothing with a query
+     * parameter, whatever the parameter's style.
+     */
+    public function acceptsANonQueryCredentialBesideAnOpenObjectParameter(): void
+    {
+        $operation = new Operation(
+            key: 'creds.get',
+            operationId: 'creds.get',
+            method: 'GET',
+            path: '/creds',
+            parameters: [[
+                'name' => 'filter', 'in' => 'query', 'required' => true, 'style' => 'form',
+                'explode' => true, 'allowReserved' => false,
+                'schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string']]],
+            ]],
+        );
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, [
+            'operationKey' => 'creds.get', 'path' => [], 'query' => ['filter' => ['a' => 'x']],
+            'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null,
+        ], new Credentials(headers: ['X-Api-Key' => 'SECRET']));
+
+        Assert::same($request->getHeaderLine('X-Api-Key'), 'SECRET');
+        Assert::same($request->getUri()->getQuery(), 'a=x');
+    }
+
+    /**
      * The specification defines `allowReserved` for `in: query` only. Honouring
      * it wherever the location was not `path` applied a rule the document never
      * stated for a header or a cookie, and a raw reserved character there is

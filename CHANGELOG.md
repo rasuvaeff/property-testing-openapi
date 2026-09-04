@@ -81,6 +81,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   effect — but the sentence claiming they were identical was not true, and a
   reader following it drew the wrong conclusion.
 
+- **Fixed.** `RedactionPolicy::bodyPaths` applies to form and multipart bodies,
+  not only JSON (#63). It was a silent no-op for two of the three encodings, in
+  a feature whose only job is to keep a secret out of the reproducer: a
+  `password` field of a form body was rendered in full in the curl command.
+- **Fixed.** A redacted parameter keeps its shape (#64). The marker replaced
+  the whole value with a string, so `deepObject` — which requires an object —
+  and the delimited styles — which require a list — could no longer be
+  serialized: `reproduce()` threw, and the caller printed
+  `(no reproducer: …)`. Protecting a secret removed the reproducer for exactly
+  the failure it was needed on. A string is redacted to a string, a list to a
+  single-element list, an object to an object with redacted values.
+
+- **Fixed.** A query credential that an exploded object query parameter would
+  swallow fails closed instead of silently changing the request (#68). The
+  parameter's style claims every pair a sibling parameter does not, so the
+  credential became one of its members: the operation was exercised with a
+  value other than the case recorded, and where the object is constrained the
+  case this package had called valid came back reported as invalid. OpenAPI
+  leaves that ambiguity to the style, so there is nothing to resolve — the
+  honest answer is to name both and stop, rather than send a request that means
+  something else.
+- **Changed.** An anonymous security alternative — the empty requirement object
+  OpenAPI uses for "authentication is optional" — is a fallback rather than the
+  first choice (#69). Taken as soon as it was seen, and it usually is listed
+  first, it meant the suite never exercised the authenticated path of such an
+  operation at all. An alternative the provider can satisfy is preferred; the
+  anonymous one answers only when none can.
+
 **Known limit.** An object whose member names run 0, 1, … without a gap cannot
 be told from a list in a JSON-compatible PHP value, and a list is exactly what
 a negative case sends when it means to violate an object schema. That shape

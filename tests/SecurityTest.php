@@ -83,6 +83,59 @@ final class SecurityTest
         verify(fn() => $provider->provide(Arg::any()), never: true);
     }
 
+    /**
+     * `security: [{}, {apiKey: []}]` says authentication is optional. Taking
+     * the anonymous alternative as soon as it was seen meant the suite never
+     * exercised the authenticated path of such an operation at all — half its
+     * coverage, lost without a word. An alternative the provider can satisfy
+     * is preferred now; the anonymous one is the fallback.
+     */
+    public function prefersASatisfiableAlternativeOverTheAnonymousOne(): void
+    {
+        $operation = new Operation(
+            key: 'pets.list',
+            operationId: 'pets.list',
+            method: 'GET',
+            path: '/pets',
+            security: [[], ['apiKey' => []]],
+        );
+        $provider = Understudy::for(CredentialsProviderInterface::class);
+        expect(fn() => $provider->provide(Arg::any()))->returns(new Credentials(headers: ['X-Api-Key' => 'k']));
+
+        $selected = (new SecuritySelector())->select($operation, $provider);
+
+        if (!is_array($selected)) {
+            throw new \LogicException('Security selector returned no credentials');
+        }
+        Assert::same(array_keys($selected['requirement']->schemes), ['apiKey']);
+        Assert::same($selected['credentials']->headers, ['X-Api-Key' => ['k']]);
+    }
+
+    /**
+     * The anonymous alternative still answers when nothing else can, which is
+     * what makes it a fallback rather than a preference.
+     */
+    public function fallsBackToTheAnonymousAlternative(): void
+    {
+        $operation = new Operation(
+            key: 'pets.list',
+            operationId: 'pets.list',
+            method: 'GET',
+            path: '/pets',
+            security: [[], ['apiKey' => []]],
+        );
+        $provider = Understudy::for(CredentialsProviderInterface::class);
+        expect(fn() => $provider->provide(Arg::any()))->throws(new CredentialsUnavailable('none'));
+
+        $selected = (new SecuritySelector())->select($operation, $provider);
+
+        if (!is_array($selected)) {
+            throw new \LogicException('Security selector returned no credentials');
+        }
+        Assert::same($selected['requirement']->schemes, []);
+        Assert::same($selected['credentials']->headers, []);
+    }
+
     public function failsWhenNoAlternativeCanBeSatisfied(): void
     {
         Expect::exception(CredentialsUnavailable::class);

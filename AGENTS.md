@@ -167,6 +167,26 @@ candidate serves); guard precedence masked by `??` on scalar offsets or by a
 later fail-closed check; and the `64`-item construction budget with its
 redundant int casts.
 
+The 2026-09-05 wave adds: the `true` in the part-name lookup
+`RequestReproducer` builds for `isset()`; the `(string)` cast on a PSR-7 header
+name, which is a string already; the case-level cookie loop, which is
+unobservable in the rendered command because the `Cookie` header is redacted
+wholesale by the default header set (see issue #73); and `??=` versus `=` when
+`SecuritySelector` remembers the anonymous security alternative, since every
+anonymous alternative carries the same empty credentials.
+
+Casts of an array key to `string` are equivalent by the same rule the
+`DocumentExamples` paragraph above states, and are therefore not written:
+`[(string) $k => $v]` and `[$k => $v]` build the same array. The cast belongs
+only where the key becomes a string argument — `ParameterSerializer::encode()`
+is the case that matters, and it is covered.
+
+A guard chain that re-reads the same discriminator is worth reading twice when
+its mutants escape: the second read only repeats what the first decided, so
+every mutation of it is masked. `RequestReproducer::redactCase()` had four such
+guards over `$body['encoding']` and became one `match`; the escapes went with
+them. Masked mutants are a shape, not a fact of life.
+
 ## When you finish
 
 Run `composer build`, `composer rector`, and `git diff --check`. Run mutation

@@ -145,6 +145,123 @@ final class RequestReproducerTest
         Assert::string($curl)->contains('"owner":"Milo"');
     }
 
+    /**
+     * `bodyPaths` used to apply to JSON bodies only, so a declared secret in a
+     * form or multipart body was a silent no-op — in a feature whose only job
+     * is to keep a secret out of the reproducer.
+     */
+    public function redactsBodyPathsInEveryBodyEncoding(): void
+    {
+        $operation = $this->bodyOperation();
+        $policy = new RedactionPolicy(bodyPaths: ['password']);
+
+        $form = $this->reproducer()->curl($operation, [
+            'operationKey' => 'bodies.create', 'path' => [], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/x-www-form-urlencoded', 'encoding' => 'form', 'value' => ['user' => 'ada', 'password' => 'hunter2']],
+            'misuse' => null,
+        ], $policy);
+
+        Assert::false(str_contains($form, 'hunter2'));
+        Assert::string($form)->contains('user=ada')->contains('password=%5Bredacted%5D');
+
+        $multipart = $this->reproducer()->curl($operation, [
+            'operationKey' => 'bodies.create', 'path' => [], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => [
+                'mediaType' => 'multipart/form-data', 'encoding' => 'multipart', 'boundary' => 'X',
+                'parts' => [
+                    ['name' => 'user', 'value' => 'ada', 'encoding' => 'text', 'contentType' => 'text/plain', 'headers' => []],
+                    ['name' => 'password', 'value' => base64_encode('hunter2'), 'encoding' => 'base64', 'contentType' => 'application/octet-stream', 'headers' => []],
+                ],
+            ],
+            'misuse' => null,
+        ], $policy);
+
+        Assert::false(str_contains($multipart, 'hunter2'));
+        Assert::false(str_contains($multipart, base64_encode('hunter2')));
+        Assert::string($multipart)->contains('ada')->contains('[redacted]');
+    }
+
+    /**
+     * A redacted value keeps its shape. Replacing an object or a list with a
+     * bare string made the serializer refuse it — `deepObject` requires an
+     * object, the delimited styles a list — so `reproduce()` threw and the
+     * caller printed "(no reproducer: …)", removing the reproducer for exactly
+     * the failure it is needed on.
+     */
+    public function redactsAParameterWithoutLosingItsShape(): void
+    {
+        $curl = $this->reproducer()->curl($this->shapedOperation(), [
+            'operationKey' => 'shapes.get', 'path' => [], 'headers' => [], 'cookies' => [],
+            'query' => ['filter' => ['token' => 's3cret', 'kind' => 'cat'], 'tags' => ['alpha', 'beta']],
+            'body' => null, 'misuse' => null,
+        ], new RedactionPolicy(queryParameters: ['filter', 'tags']));
+
+        Assert::false(str_contains($curl, 's3cret'));
+        Assert::false(str_contains($curl, 'alpha'));
+        // The whole query, not a substring: a list redacted member-by-member
+        // would still *contain* one marker while carrying as many as the
+        // original had, which is a value the policy never promised to hide.
+        Assert::string($curl)->contains(
+            "curl -X GET '/shapes?filter%5Btoken%5D=%5Bredacted%5D&filter%5Bkind%5D=%5Bredacted%5D&tags=%5Bredacted%5D'",
+        );
+    }
+
+    /**
+     * The three ways `redactCase()` can be handed nothing to do, each pinned
+     * so the early exit stays an exit and not a silent skip of the work.
+     */
+    public function leavesTheCaseAloneWhenThereIsNothingToRedact(): void
+    {
+        $operation = $this->bodyOperation();
+        $case = [
+            'operationKey' => 'bodies.create', 'path' => [], 'query' => [], 'headers' => [], 'cookies' => [],
+            'body' => ['mediaType' => 'application/x-www-form-urlencoded', 'encoding' => 'form', 'value' => ['user' => 'ada']],
+            'misuse' => null,
+        ];
+
+        // A policy with no body paths does not touch the body.
+        Assert::string($this->reproducer()->curl($operation, $case, new RedactionPolicy(headers: ['X-Trace'])))
+            ->contains('user=ada');
+        // A body path with no body is not an error.
+        Assert::string($this->reproducer()->curl($operation, [...$case, 'body' => null], new RedactionPolicy(bodyPaths: ['user'])))
+            ->contains("curl -X POST '/bodies'");
+        // A raw body carries no named members to redact.
+        Assert::string($this->reproducer()->curl($operation, [...$case, 'body' => ['mediaType' => 'text/plain', 'encoding' => 'raw', 'value' => 'ada']], new RedactionPolicy(bodyPaths: ['user'])))
+            ->contains('ada');
+    }
+
+    private function bodyOperation(): Operation
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/bodies' => ['post' => [
+                'operationId' => 'bodies.create',
+                'requestBody' => ['content' => [
+                    'application/x-www-form-urlencoded' => ['schema' => ['type' => 'object', 'properties' => ['user' => ['type' => 'string'], 'password' => ['type' => 'string']]]],
+                    'multipart/form-data' => ['schema' => ['type' => 'object', 'properties' => ['user' => ['type' => 'string'], 'password' => ['type' => 'string']]]],
+                ]],
+                'responses' => ['204' => []],
+            ]]],
+        ])->operation('bodies.create');
+    }
+
+    private function shapedOperation(): Operation
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/shapes' => ['get' => [
+                'operationId' => 'shapes.get',
+                'parameters' => [
+                    ['name' => 'filter', 'in' => 'query', 'style' => 'deepObject', 'explode' => true,
+                        'schema' => ['type' => 'object', 'properties' => ['token' => ['type' => 'string'], 'kind' => ['type' => 'string']]]],
+                    ['name' => 'tags', 'in' => 'query', 'style' => 'spaceDelimited', 'explode' => false,
+                        'schema' => ['type' => 'array', 'items' => ['type' => 'string']]],
+                ],
+                'responses' => ['204' => []],
+            ]]],
+        ])->operation('shapes.get');
+    }
+
     public function leavesBodyAtOrBelowThePreviewLimitUnchanged(): void
     {
         $body = str_repeat('x', 2048);
