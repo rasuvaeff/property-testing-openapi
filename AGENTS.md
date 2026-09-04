@@ -1,15 +1,51 @@
-# AGENTS.md - property-testing-openapi
+# AGENTS.md — property-testing-openapi
+
+Guidance for AI agents working on this package. Read before changing code.
+
+## What this is
 
 This package generates data-only OpenAPI request cases and materializes them
-as PSR-7 requests. It is pre-release work for milestone 3 of the monorepo
-OpenAPI contract plan.
+as PSR-7 requests, in namespace `Rasuvaeff\PropertyTesting\OpenApi`,
+published as `rasuvaeff/property-testing-openapi` (0.x) on top of
+`rasuvaeff/openapi-contract` and `rasuvaeff/property-testing-core`. The
+public surface: `RequestCaseArbitrary` / `NegativeRequestCaseArbitrary` /
+`ResponseCaseArbitrary` / `NegativeResponseCaseArbitrary`, `RequestMaterializer`
+/ `ResponseMaterializer`, `DocumentExamples`, `ContractSuite` with its
+transports and credentials, `OperationProperty`, `OperationCoverage`,
+`RequestReproducer`, `SchemaArbitraryCompiler`.
 
-## Rules
+## Golden rules
+
+1. **Verification is mandatory.** Never claim "done" without a fresh green
+   `composer build`.
+2. **No suppressions.** No `@psalm-suppress`, no baseline. Fix the root cause.
+3. **Unsupported generation and serialization semantics fail closed.** Never
+   use a generic string fallback for a schema assertion that is not
+   implemented — throw `UnsupportedGeneration` instead.
+4. **Preserve the public contract.** Update README EN/RU, `llms.txt`,
+   `examples/`, and tests with any API change.
+
+## Commands
+
+No PHP or Composer on the host. Run through Docker:
+
+```bash
+make install
+make cs-fix
+make build
+make rector
+make mutation
+make release-check
+```
+
+The local `make mutation` needs the `/repo` mount when the contract comes
+from a path repository (`vendor/rasuvaeff/openapi-contract` is a symlink
+into the monorepo) plus `git config --global --add safe.directory "*"`.
+
+## Invariants & gotchas
 
 - Keep `RequestCaseData` JSON-compatible. It must never contain PSR-7 objects,
   credentials, closures, or application DTOs.
-- Unsupported generation and serialization semantics fail closed. Do not use a
-  generic string fallback for a schema assertion that is not implemented.
 - A materialized valid case must pass `Contract::validateRequest()` before a
   transport may observe it.
 - Keep parameter serialization location-aware. A path value must not escape its
@@ -36,12 +72,11 @@ OpenAPI contract plan.
   validate the exchange. Add a zoo operation with every new keyword or
   location rule; a unit test on the compiler alone does not prove the wire.
 - `Psr15Transport` mimics the SAPI (`parse_str()` semantics for query/form/
-  multipart names, `uploadedFiles` only with both PSR-17 factories). The
-  local `make mutation` needs the `/repo` mount when the contract comes from a
-  path repository (`vendor/rasuvaeff/openapi-contract` is a symlink into the
-  monorepo) plus `git config --global --add safe.directory "*"`.
-- Preserve the public documentation in `README.md`, `README.ru.md`,
-  `llms.txt`, and `examples/` with public API changes.
+  multipart names, `uploadedFiles` only with both PSR-17 factories).
+- The suite runs under both test runners: Testo drives the package's own
+  tests, and a PHPUnit fixture (`tests/PhpUnit/`, `composer test:phpunit`,
+  part of `composer build`) pins the runner-integration shape the README
+  documents. Do not remove `phpunit.xml` or the `test:phpunit` script.
 - **No `@internal` type in a public signature.** An `@api` class does not take
   one as a constructor or method parameter, even with a default: the default
   keeps callers from naming it, but the signature still publishes it and
@@ -56,9 +91,9 @@ OpenAPI contract plan.
   signature either. The test is what the docs tell a user to do:
   `SecuritySelector` was `@internal` while the README showed a snippet
   constructing it, and it is `@api` now because that snippet is the contract.
-
-Run `make build`, `make rector`, and `git diff --check` before handoff. Run
-`make mutation` when source behavior changes.
+- `examples/` is part of the public contract; every listed script must run.
+- CI actions stay SHA-pinned with read-only permissions and checkout
+  credentials disabled.
 
 ## Mutation gate: known equivalent classes
 
@@ -131,3 +166,8 @@ the undeclared-status candidate ladder constants (any first undeclared
 candidate serves); guard precedence masked by `??` on scalar offsets or by a
 later fail-closed check; and the `64`-item construction budget with its
 redundant int casts.
+
+## When you finish
+
+Run `composer build`, `composer rector`, and `git diff --check`. Run mutation
+when source behavior changes.
