@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * Compiles the string, integer, and number schema sections.
@@ -17,6 +18,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 final readonly class ScalarArbitraries
 {
     private const int MAX_STRING_LENGTH = 64;
+
+    /** Twice the retry budget of `Gen::filter()`, so the probe dominates it. */
+    private const int PATTERN_PROBES = 200;
+
+    private const int PATTERN_PROBE_SEED = 7;
 
     /**
      * The length band each format generator can produce; a length window
@@ -38,6 +44,41 @@ final readonly class ScalarArbitraries
     public function __construct(
         private SchemaFacts $facts,
     ) {}
+
+    /**
+     * Decimal places the multiple carries, so a product can be rounded back to
+     * a value a strict server recognises. Beyond `PHP_FLOAT_DIG` the digits are
+     * noise rather than precision.
+     */
+    private function decimals(float $multiple): int
+    {
+        $rendered = rtrim(sprintf('%.*F', PHP_FLOAT_DIG, $multiple), '0');
+
+        return strlen(explode('.', $rendered . '.')[1]);
+    }
+
+    /**
+     * Whether a pattern can produce a string inside the length window. The
+     * probe is deterministic and twice the retry budget `Gen::filter()` would
+     * have had, so a window it cannot hit is one the filter would exhaust —
+     * reported here, naming both constraints, instead of as a run-time
+     * `GenerationExhausted` the package's own rules call a defect.
+     *
+     * @param ArbitraryInterface<string> $arbitrary
+     */
+    private function fitsLengthWindow(ArbitraryInterface $arbitrary, int $min, int $max): bool
+    {
+        $random = new Random(self::PATTERN_PROBE_SEED);
+        for ($probe = 0; $probe < self::PATTERN_PROBES; ++$probe) {
+            /** @var mixed $value */
+            $value = $arbitrary->generate($random)->value;
+            if (is_string($value) && mb_strlen($value) >= $min && mb_strlen($value) <= $max) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /** @param array<string, mixed> $schema */
     public function string(array $schema): ArbitraryInterface
@@ -98,6 +139,9 @@ final readonly class ScalarArbitraries
             }
         }
 
+        if ($pattern !== null && !$this->fitsLengthWindow($arbitrary, $min, $max)) {
+            throw UnsupportedGeneration::forSchema(sprintf('pattern cannot satisfy the length window [%d, %d]', $min, $max));
+        }
         if ($format !== null || $pattern !== null) {
             return Gen::filter($arbitrary, static fn(mixed $value): bool => is_string($value)
                 && mb_strlen($value) >= $min
@@ -178,6 +222,15 @@ final readonly class ScalarArbitraries
             throw UnsupportedGeneration::forSchema('number multipleOf leaves no value');
         }
 
-        return Gen::map(Gen::intBetween($first, $last), static fn(mixed $value): float => (float) $value * (float) $multiple);
+        // `3 * 0.1` is `0.30000000000000004`. Our own oracle tolerates that,
+        // but a server checking `fmod` without a tolerance does not, and the
+        // failure would be reported against the user's API. Round back to the
+        // precision the multiple itself carries.
+        $decimals = $this->decimals((float) $multiple);
+
+        return Gen::map(
+            Gen::intBetween($first, $last),
+            static fn(mixed $value): float => round((float) $value * (float) $multiple, $decimals),
+        );
     }
 }

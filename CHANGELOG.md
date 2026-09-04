@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- The negative const witness never collides with the const it contradicts.
+  `constMismatch()` used a fixed literal, so a parameter declaring that literal
+  as its `const` got an "invalid" value that was in fact valid. `enumMismatch()`
+  already walked away from the collision; the const side now agrees.
+- An unsupported media type no longer hides the request-body examples declared
+  after it. `content` is a map, and giving up on the first entry this phase
+  cannot encode lost every JSON example a document happened to list after a
+  multipart body.
+- A decimal `multipleOf` no longer accumulates float error: `3 * 0.1` was
+  emitted as `0.30000000000000004`. Our own oracle tolerates that, but a server
+  checking `fmod` without a tolerance does not, and the resulting failure lands
+  on the user's API rather than on the generator. The product is rounded back to
+  the precision the multiple itself carries.
+- A `pattern` that cannot satisfy its length window fails closed at compile
+  time, naming both constraints, instead of exhausting `Gen::filter()` mid-run.
+  The package's own rules call a run-time `GenerationExhausted` a defect; the
+  probe is deterministic and twice the retry budget the filter would have had,
+  so a window it cannot hit is one the filter would have exhausted anyway.
+
 ## 0.6.0 — 2026-09-04
 
 - `ParameterSerializer` emits the wire format the specification declares for

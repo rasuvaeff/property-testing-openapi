@@ -67,6 +67,36 @@ final class DocumentExamplesTest
         Assert::same($cases['example']['body'] ?? null, ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a' => 1]]);
     }
 
+    /**
+     * `content` is a map, so an entry this phase cannot encode says nothing
+     * about the entries after it. Giving up on the first one lost every JSON
+     * example a document happened to declare after a multipart body.
+     */
+    public function anUnsupportedMediaTypeDoesNotHideALaterJsonExample(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['content' => [
+            'multipart/form-data' => ['schema' => ['type' => 'object'], 'example' => ['a' => 1]],
+            'application/xml' => ['schema' => ['type' => 'object'], 'example' => ['a' => 2]],
+            'application/json' => ['schema' => ['type' => 'object'], 'example' => ['a' => 3]],
+        ]]);
+
+        $cases = (new DocumentExamples())->forOperation($operation);
+
+        Assert::same($cases['example']['body'] ?? null, ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a' => 3]]);
+    }
+
+    public function anExamplelessMediaTypeDoesNotHideALaterOne(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['content' => [
+            'application/x-www-form-urlencoded' => ['schema' => ['type' => 'object']],
+            'application/json' => ['schema' => ['type' => 'object'], 'example' => ['a' => 1]],
+        ]]);
+
+        $cases = (new DocumentExamples())->forOperation($operation);
+
+        Assert::same($cases['example']['body'] ?? null, ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['a' => 1]]);
+    }
+
     public function handBuiltOperationsWithMalformedBodyContentContributeNoBodyExample(): void
     {
         $operation = new Operation(key: 'x', operationId: 'x', method: 'POST', path: '/x', requestBody: ['content' => ['application/json' => 'oops']]);
