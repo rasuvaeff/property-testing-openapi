@@ -170,7 +170,10 @@ final class ResponseCaseArbitraryTest
         Assert::same(array_keys($schema['properties']['a']['items']['properties']), ['x']);
         Assert::same(array_keys($schema['properties']['c']['allOf'][0]['properties']), ['k']);
         Assert::same($schema['properties']['c']['allOf'][1], 'not-a-schema');
-        Assert::same($schema['properties']['d']['oneOf'][0]['properties'], []);
+        // Dropping the last property drops `properties` itself — the same
+        // reading `openapi-contract` applies, so an empty map never forbids
+        // what the document left open.
+        Assert::false(array_key_exists('properties', $schema['properties']['d']['oneOf'][0]));
     }
 
     public function malformedSchemaShapesPassThroughTheResponseView(): void

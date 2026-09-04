@@ -93,7 +93,17 @@ final readonly class SchemaFacts
         return $this->booleanOrSchema($schema['additionalProperties']);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * A JSON object as PHP decodes it.
+     *
+     * The key type says `string` because that is what every caller needs and
+     * what psalm can work with, but PHP normalizes a numeric-string member
+     * name to an integer key — `{"2020": …}` really does arrive as `int 2020`.
+     * Anything that puts such a name back on the wire casts it there, where
+     * the value has passed through a generator and the cast is not redundant.
+     *
+     * @return array<string, mixed>
+     */
     public function schemaObject(mixed $value, string $error): array
     {
         if (!is_array($value) || $value !== [] && array_is_list($value)) {

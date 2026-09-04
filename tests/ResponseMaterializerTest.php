@@ -181,11 +181,34 @@ final class ResponseMaterializerTest
         );
     }
 
-    public function jsonEncoderRejectsNonStringObjectKeys(): void
+    /**
+     * A numeric member name is a name. PHP normalizes the array key `"2020"`
+     * to an integer, and refusing it made a legal document impossible to
+     * generate — with a message about `properties` not being an object, which
+     * it was.
+     */
+    public function jsonEncoderKeepsNumericObjectKeys(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('JSON object keys must be strings');
+        $encoder = new JsonBodyEncoder();
 
-        (new JsonBodyEncoder())->encode([1 => 'x'], ['type' => 'object']);
+        Assert::same($encoder->encode([2020 => 'x'], ['type' => 'object']), '{"2020":"x"}');
+        Assert::same(
+            $encoder->encode(['2020' => ['a' => 1]], ['type' => 'object', 'properties' => ['2020' => ['type' => 'object', 'properties' => ['a' => ['type' => 'integer']]]]]),
+            '{"2020":{"a":1}}',
+        );
+        // Non-sequential numeric names are still an object.
+        Assert::same(
+            $encoder->encode(['5' => 'a', '3' => 'b'], ['type' => 'object', 'properties' => ['5' => ['type' => 'string'], '3' => ['type' => 'string']]]),
+            '{"5":"a","3":"b"}',
+        );
+        // The one shape this cannot represent: names running 0, 1, … without a
+        // gap are a PHP list, and a list is what a negative case sends when it
+        // means to violate an object schema. Pinned so the limit is a decision
+        // and not a surprise.
+        Assert::same(
+            $encoder->encode(['0' => 'a', '1' => 'b'], ['type' => 'object', 'properties' => ['0' => ['type' => 'string'], '1' => ['type' => 'string']]]),
+            '["a","b"]',
+        );
     }
 
     private function materializer(): ResponseMaterializer

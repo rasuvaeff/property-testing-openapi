@@ -41,7 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was selected nowhere, and the property that exercises it aborted before it
   could say why.
 
-## Unreleased
 
 - **Fixed.** A required multipart array property is generated non-empty (#60).
   An empty array became zero parts, and a multipart entity with no parts is not
@@ -59,6 +58,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Internal.** The zoo gains `uploads.create` and `dual.create`, and the
   end-to-end property gates on both media types of the dual body actually being
   chosen.
+
+
+- **Fixed.** A property whose name is numeric is generated, materialized and
+  serialized (#61). PHP normalizes the array key `"2020"` to an integer, and
+  every place that read a member name checked `is_string()`: the compiler
+  dropped such a property from the generated object, and the JSON and form
+  encoders refused the case outright — with a message saying `properties` must
+  be an object, which it was. The name is cast back where it goes on the wire,
+  which is the only place PHP can carry it as a string.
+- **Fixed.** `array_merge($result, [$key => $value])`, the idiom used to quiet
+  psalm's `MixedAssignment`, is replaced by `array_replace` (#65).
+  `array_merge` renumbers integer-like keys, so the very names the fix above
+  restores were the ones the idiom lost: `['5' => 'a', '3' => 'b']` came out as
+  `[0 => 'a', 1 => 'b']`. Where the value's type can be stated instead, it is —
+  a precise return type removes the warning at its source, which is what
+  `openapi-contract` did for the same idiom.
+- **Fixed.** `Internal\DirectionalSchemas` drops the last property together
+  with `properties` itself, as `openapi-contract`'s effective schema does, and
+  its docblock now describes what it does rather than what the contract used to
+  (#67). An empty `properties` forbids nothing, so the two readings agreed in
+  effect — but the sentence claiming they were identical was not true, and a
+  reader following it drew the wrong conclusion.
+
+**Known limit.** An object whose member names run 0, 1, … without a gap cannot
+be told from a list in a JSON-compatible PHP value, and a list is exactly what
+a negative case sends when it means to violate an object schema. That shape
+stays encoded as an array; it is pinned by a test so the limit is a decision
+rather than a surprise.
 
 ## 0.8.0 — 2026-09-04
 

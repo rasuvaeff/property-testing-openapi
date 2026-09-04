@@ -6,11 +6,19 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
 /**
  * One direction of a schema: properties flagged for the other direction
- * (`readOnly` for a request, `writeOnly` for a response) leave `properties`
- * and `required` the way the contract validator drops them before checking
- * a body; nested schemas under `items` and the combinators follow. Malformed
- * members pass through untouched, so the compiler still fails closed on
- * them.
+ * (`readOnly` for a request, `writeOnly` for a response) are dropped, along
+ * with their `required` entries; nested schemas under `items` and the
+ * combinators follow. Malformed members pass through untouched, so the
+ * compiler still fails closed on them.
+ *
+ * Direction is the only reason a property is dropped, which is also how
+ * `openapi-contract` reads its own effective schema — the two used to differ,
+ * because the contract additionally discarded any member shape it did not
+ * recognise, and that silently unchecked part of the document. Dropping the
+ * last property drops `properties` itself rather than leaving an empty map,
+ * for the same reason the contract does: an empty `properties` forbids
+ * nothing, and what the document says about undeclared members keeps saying
+ * it.
  *
  * @internal
  */
@@ -44,7 +52,11 @@ final readonly class DirectionalSchemas
                 /** @var array<string, mixed> $property */
                 $kept += [$name => $this->effective($property, $flag)];
             }
-            $schema['properties'] = $kept;
+            if ($kept === []) {
+                unset($schema['properties']);
+            } else {
+                $schema['properties'] = $kept;
+            }
             if (array_key_exists('required', $schema) && is_array($schema['required'])) {
                 $schema['required'] = array_values(array_filter($schema['required'], static fn(mixed $name): bool => !is_string($name) || !isset($dropped[$name])));
             }

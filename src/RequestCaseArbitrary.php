@@ -259,10 +259,13 @@ final readonly class RequestCaseArbitrary
         }
         $object = [];
         foreach (array_keys($value) as $key) {
-            if (!is_string($key) || !is_string($value[$key])) {
+            if (!is_string($value[$key])) {
                 throw new \LogicException('Included parameter object has an invalid shape');
             }
-            $object[$key] = $value[$key];
+            // A numeric member name arrives as an integer array key and stays
+            // one: it normalizes back wherever it is used as a key, and the
+            // serializer casts it where it becomes a string.
+            $object = array_replace($object, [$key => $value[$key]]);
         }
 
         return $object;
