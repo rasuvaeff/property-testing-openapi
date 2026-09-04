@@ -41,6 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was selected nowhere, and the property that exercises it aborted before it
   could say why.
 
+## Unreleased
+
+- **Fixed.** A required multipart array property is generated non-empty (#60).
+  An empty array became zero parts, and a multipart entity with no parts is not
+  one — RFC 2046 §5.1.1 requires at least one, and `openapi-contract` rejects
+  the payload with `request.body.decode`, as does
+  `league/openapi-psr7-validator`. About 9% of runs therefore broke the
+  invariant this package states about itself: a materialized valid case must
+  pass `Contract::validateRequest()`. Form bodies already forced a required
+  container non-empty; multipart does now too. Measured over 80 runs, empty
+  bodies go from 7 to 0.
+- **Fixed.** Every supported request body media type is generated, not only the
+  first one recognised (#66). A body declaring `application/json` beside
+  `application/x-www-form-urlencoded` was always exercised through one of them,
+  so the other was declared and never sent.
+- **Internal.** The zoo gains `uploads.create` and `dual.create`, and the
+  end-to-end property gates on both media types of the dual body actually being
+  chosen.
+
 ## 0.8.0 — 2026-09-04
 
 - **Breaking.** `RequestMaterializer`, `RequestCaseArbitrary` and

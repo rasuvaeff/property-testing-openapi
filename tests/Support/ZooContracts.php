@@ -26,7 +26,7 @@ final class ZooContracts
     public const array VALID_OPERATIONS = [
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
         'nested.create', 'health.get', 'version.get', 'files.get',
-        'delimited.get', 'reserved.get', 'unions.get',
+        'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
         'search.get', 'narrowed.create',
     ];
 
@@ -177,6 +177,40 @@ final class ZooContracts
                             'schema' => ['type' => 'object', 'minProperties' => 1, 'maxProperties' => 2,
                                 'additionalProperties' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 5]]],
                     ],
+                    'responses' => ['204' => []],
+                ]],
+                // A required multipart container has to be generated non-empty:
+                // an empty array becomes zero parts, and a multipart entity
+                // with no parts is not one.
+                '/uploads' => ['post' => [
+                    'operationId' => 'uploads.create',
+                    'requestBody' => ['required' => true, 'content' => ['multipart/form-data' => [
+                        'schema' => [
+                            'type' => 'object',
+                            'required' => ['tags'],
+                            'additionalProperties' => false,
+                            'properties' => [
+                                'tags' => ['type' => 'array', 'maxItems' => 3, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4]],
+                                'note' => ['type' => 'string', 'maxLength' => 4],
+                            ],
+                        ],
+                    ]]],
+                    'responses' => ['204' => []],
+                ]],
+                // Two supported media types: only the first used to be
+                // generated, so the other was declared and never exercised.
+                '/dual' => ['post' => [
+                    'operationId' => 'dual.create',
+                    'requestBody' => ['required' => true, 'content' => [
+                        'application/json' => ['schema' => [
+                            'type' => 'object', 'required' => ['name'], 'additionalProperties' => false,
+                            'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+                        ]],
+                        'application/x-www-form-urlencoded' => ['schema' => [
+                            'type' => 'object', 'required' => ['name'], 'additionalProperties' => false,
+                            'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+                        ]],
+                    ]],
                     'responses' => ['204' => []],
                 ]],
                 // OAS 3.1 spells the absent branch as a `null` member of a type

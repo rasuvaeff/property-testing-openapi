@@ -1716,4 +1716,90 @@ final class RequestCaseArbitraryTest
         Assert::same($case['body']['parts'] ?? null, []);
         Assert::same($case['body']['encoding'] ?? null, 'multipart');
     }
+
+    /**
+     * A required array property means at least one part. An empty array became
+     * zero parts, and a multipart entity with no parts is not one: RFC 2046
+     * §5.1.1 requires at least one, and the contract rejects the payload this
+     * generator had just called valid. Form bodies already forced a required
+     * container non-empty; multipart did not.
+     */
+    public function generatesARequiredMultipartArrayNonEmpty(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: [
+            'required' => true,
+            'content' => ['multipart/form-data' => ['schema' => [
+                'type' => 'object',
+                'required' => ['tags'],
+                'properties' => ['tags' => ['type' => 'array', 'maxItems' => 3, 'items' => ['type' => 'string', 'maxLength' => 4]]],
+            ]]],
+        ]);
+        $cases = (new RequestCaseArbitrary())->forOperation($operation);
+        $random = new Random(20260905);
+
+        for ($draw = 0; $draw < 80; ++$draw) {
+            $parts = $cases->generate($random)->value['body']['parts'] ?? null;
+            Assert::true(is_array($parts) && $parts !== []);
+        }
+    }
+
+    /**
+     * A body declaring two supported media types used to be generated through
+     * whichever came first, so the other was declared and never sent. Both have
+     * to appear across a run, which is also what pins the weights: a branch
+     * that can never be chosen is not a choice.
+     */
+    public function generatesEveryDeclaredMediaType(): void
+    {
+        $schema = ['type' => 'object', 'required' => ['name'], 'properties' => ['name' => ['type' => 'string', 'maxLength' => 4]]];
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: [
+            'required' => true,
+            'content' => [
+                'application/json' => ['schema' => $schema],
+                'application/x-www-form-urlencoded' => ['schema' => $schema],
+            ],
+        ]);
+        $cases = (new RequestCaseArbitrary())->forOperation($operation);
+        $random = new Random(20260905);
+        $seen = [];
+
+        for ($draw = 0; $draw < 120; ++$draw) {
+            $body = $cases->generate($random)->value['body'] ?? null;
+            Assert::true(is_array($body));
+            $seen[(string) ($body['mediaType'] ?? '')] = true;
+        }
+
+        Assert::true(isset($seen['application/json']));
+        Assert::true(isset($seen['application/x-www-form-urlencoded']));
+        Assert::same(count($seen), 2);
+    }
+
+    /**
+     * A multipart body beside a JSON one is chosen too — it carries parts
+     * rather than a value, so it is the encoding a naive choice drops.
+     */
+    public function generatesAMultipartAlternativeBesideJson(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: [
+            'required' => true,
+            'content' => [
+                'application/json' => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string', 'maxLength' => 3]]]],
+                'multipart/form-data' => ['schema' => [
+                    'type' => 'object',
+                    'required' => ['a'],
+                    'properties' => ['a' => ['type' => 'string', 'maxLength' => 3]],
+                ]],
+            ],
+        ]);
+        $cases = (new RequestCaseArbitrary())->forOperation($operation);
+        $random = new Random(11);
+        $encodings = [];
+
+        for ($draw = 0; $draw < 120; ++$draw) {
+            $encodings[(string) ($cases->generate($random)->value['body']['encoding'] ?? '')] = true;
+        }
+
+        Assert::true(isset($encodings['json']));
+        Assert::true(isset($encodings['multipart']));
+    }
 }

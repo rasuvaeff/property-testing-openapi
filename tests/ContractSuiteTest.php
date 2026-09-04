@@ -501,9 +501,9 @@ final class ContractSuiteTest
      * @param array{key: string, case: array<string, mixed>} $tagged
      */
     // The Classify::cover gates below are sized against a per-operation
-    // sample, so the run count grows with the zoo: 400 runs over 14 operations
+    // sample, so the run count grows with the zoo: 450 runs over 16 operations
     // is the sample 300 gave 11, which is the sample 250 gave 9.
-    #[Property(runs: 400, generators: [ZooContracts::class, 'taggedCase'])]
+    #[Property(runs: 450, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
@@ -525,6 +525,18 @@ final class ContractSuiteTest
             foreach (is_array($tags) ? $tags : [] as $tag) {
                 Assert::true(is_string($tag) && $tag !== '' && !str_contains($tag, '/') && !str_contains($tag, '\\'));
             }
+        }
+        if ($key === 'uploads.create') {
+            $parts = $case['body']['parts'] ?? null;
+            // A required array property means at least one part, and a
+            // multipart entity with no parts at all is not one.
+            Assert::true(is_array($parts) && $parts !== []);
+        }
+        if ($key === 'dual.create') {
+            $mediaType = $case['body']['mediaType'] ?? null;
+            Assert::true($mediaType === 'application/json' || $mediaType === 'application/x-www-form-urlencoded');
+            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 1.0);
+            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 1.0);
         }
         if ($key === 'enum.get') {
             Assert::same($case['path']['mode'], 'ok');
