@@ -122,6 +122,41 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    /**
+     * allOf is an intersection, so `nullable` cannot be merged by last write:
+     * null is admissible only where every branch admits it. Merging it as an
+     * ordinary key made a single nullable branch nullify the whole schema, and
+     * the generated null was then rejected by the contract.
+     */
+    public function allOfAdmitsNullOnlyWhenEveryBranchDoes(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        $mixed = Gen::sample($compiler->compile(['allOf' => [
+            ['type' => 'string', 'nullable' => true],
+            ['type' => 'string', 'minLength' => 3],
+        ]]), count: 40, seed: 5);
+        Assert::false(in_array(null, $mixed, strict: true));
+        foreach ($mixed as $value) {
+            Assert::true(is_string($value) && strlen($value) >= 3);
+        }
+
+        $all = Gen::sample($compiler->compile(['allOf' => [
+            ['type' => 'string', 'nullable' => true],
+            ['type' => 'string', 'nullable' => true, 'minLength' => 3],
+        ]]), count: 40, seed: 5);
+        Assert::true(in_array(null, $all, strict: true));
+
+        // The same rule inside a property merged across branches.
+        $property = Gen::sample($compiler->compile(['allOf' => [
+            ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string', 'nullable' => true]]],
+            ['type' => 'object', 'properties' => ['a' => ['type' => 'string', 'minLength' => 1]]],
+        ]]), count: 40, seed: 5);
+        foreach ($property as $value) {
+            Assert::true(is_array($value) && is_string($value['a'] ?? null));
+        }
+    }
+
     public function honorsPatternAndLengthBounds(): void
     {
         foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([

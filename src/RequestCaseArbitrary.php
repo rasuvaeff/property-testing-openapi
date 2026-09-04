@@ -153,7 +153,11 @@ final readonly class RequestCaseArbitrary
                 return $body;
             }
 
-            return Gen::map($this->optional($body), fn(array $choice): ?array => $this->bodyChoice($choice));
+            // The body arbitrary already carries the exact case shape, so the
+            // optional form picks between it and no body at all rather than
+            // wrapping it and reading the shape back — which is what dropped
+            // multipart, the one encoding that carries parts instead of a value.
+            return Gen::nullable($body);
         }
 
         throw new UnsupportedGeneration('Request body has no supported media type');
@@ -224,36 +228,6 @@ final readonly class RequestCaseArbitrary
         }
 
         return $object;
-    }
-
-    /**
-     * @param array<array-key, mixed> $choice
-     * @return null|array{mediaType: string, encoding: 'json'|'form', value: mixed}|array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}
-     */
-    private function bodyChoice(array $choice): ?array
-    {
-        $included = $choice['included'] ?? null;
-        if (!is_bool($included)) {
-            throw new \LogicException('Generated body choice has an invalid shape');
-        }
-        if (!$included) {
-            return null;
-        }
-        $body = $choice['value'] ?? null;
-        if (!is_array($body)) {
-            throw new \LogicException('Included request body has an invalid shape');
-        }
-        $mediaType = $body['mediaType'] ?? null;
-        $bodyEncoding = $body['encoding'] ?? null;
-        if (!is_string($mediaType) || !is_string($bodyEncoding) || !in_array($bodyEncoding, ['json', 'form'], strict: true) || !array_key_exists('value', $body)) {
-            throw new \LogicException('Included request body has an invalid shape');
-        }
-
-        return [
-            'mediaType' => $mediaType,
-            'encoding' => $bodyEncoding,
-            'value' => $body['value'],
-        ];
     }
 
     /** @param array<string, mixed> $schema */

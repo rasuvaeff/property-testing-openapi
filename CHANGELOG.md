@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- An optional `multipart/form-data` request body generates instead of throwing
+  `LogicException` from inside the arbitrary (#41). The "body present" branch of
+  an optional body wrapped the generated body and read its shape back, and that
+  read accepted the `json` and `form` encodings only — multipart carries `parts`
+  rather than a `value`. The optional form now picks between the body arbitrary
+  and no body at all, so nothing re-reads a shape the generator just built.
+  Every multipart fixture declared `required: true`, which is why the hole was
+  invisible.
+- A negative type-mismatch witness is built only for a parameter with a single
+  declared type (#42). An OAS 3.1 union admits every type it lists, so
+  `not-null` is a valid value for `["string", "null"]` — the "invalid" case was
+  valid and falsified the whole negative phase. `ResponseTargets` already
+  required a single type; the parameter side now agrees.
+- The JSON body encoder reads the `additionalProperties` schema for a key
+  outside `properties` (#43). Losing it encoded a nested empty object as `[]`
+  instead of `{}`, and the contract correctly rejected the result — surfacing as
+  `invalidGeneratedRequest` on a valid contract.
+- `allOf` merges OAS 3.0 `nullable` as an intersection (#44): null is generated
+  only where every branch admits it. Merging it as an ordinary last-write key
+  let `{type: string, nullable: true}` next to `{type: string, minLength: 3}`
+  generate `null`, which the second branch rejects. A branch omitting `nullable`
+  now counts as `nullable: false`, which is what OAS 3.0 means by it. The OAS
+  3.1 spelling of the same shape (`type: [..., "null"]` in one branch only)
+  already failed closed as conflicting types.
+
 ## 0.5.0 — 2026-09-03
 
 - Requires `rasuvaeff/openapi-contract` `^0.3` (was `^0.2.1`, no longer

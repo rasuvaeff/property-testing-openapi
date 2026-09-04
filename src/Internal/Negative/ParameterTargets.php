@@ -45,19 +45,26 @@ final readonly class ParameterTargets
             if (!$parameter['required']) {
                 continue;
             }
+            // A union admits every type it lists, so a witness built for one
+            // member stays valid under the others: ["string", "null"] accepts
+            // the string "not-null". Only a single declared type can be
+            // contradicted, which is also what ResponseTargets requires.
             $types = $this->probe->declaredTypes($parameter['schema']);
-            if (in_array('integer', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-an-integer'];
+            if (count($types) !== 1) {
+                continue;
             }
-            if (in_array('number', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-a-number'];
+            $invalid = match (reset($types)) {
+                'integer' => 'not-an-integer',
+                'number' => 'not-a-number',
+                'boolean' => 'not-a-boolean',
+                'null' => 'not-null',
+                default => null,
+            };
+            if ($invalid === null) {
+                continue;
             }
-            if (in_array('boolean', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-a-boolean'];
-            }
-            if (in_array('null', $types, strict: true)) {
-                return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => 'not-null'];
-            }
+
+            return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
         }
 
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible type mismatch', $operation->key));

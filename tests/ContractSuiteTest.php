@@ -509,7 +509,7 @@ final class ContractSuiteTest
         foreach (ZooContracts::VALID_OPERATIONS as $operation) {
             Classify::when(condition: $key === $operation, label: $operation);
         }
-        $suite = $key === 'search.get' ? ZooContracts::legacySuite() : ZooContracts::suite();
+        $suite = ZooContracts::suiteFor($key);
 
         $suite->checkValid($key, $case);
 
