@@ -167,7 +167,6 @@ final readonly class NegativeRequestCaseArbitrary
 
         return $this->mutate($operation, static function (array $case) use ($name): array {
             $body = $case['body'];
-            /** @var mixed $value */
             $value = $body['value'] ?? null;
             if ($body === null || !is_array($value)) {
                 throw new \LogicException('Required JSON object body expected for an additional property misuse');
