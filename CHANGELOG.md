@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- `ParameterSerializer` emits the wire format the specification declares for
+  `label` and the delimited styles (#45), matching the parser fix in
+  `rasuvaeff/openapi-contract` 0.4.0 — which this package now requires
+  (`^0.4`, was `^0.3`). An unexploded `label` array is comma-separated
+  (`.blue,black,brown`), not dot-separated; `spaceDelimited` emits the
+  separator as `%20`, since a raw space is not a legal URI character. The two
+  packages carried mirror-image bugs, so they agreed with each other and every
+  generated request was accepted by the oracle while no conforming server would
+  have taken it. Generating a list item that contains its own separator now
+  fails closed as `UnsupportedGeneration`: the styles have no escape for one,
+  so such a value has no representation on the wire.
 - An optional `multipart/form-data` request body generates instead of throwing
   `LogicException` from inside the arbitrary (#41). The "body present" branch of
   an optional body wrapped the generated body and read its shape back, and that

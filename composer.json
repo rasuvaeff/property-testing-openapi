@@ -26,7 +26,7 @@
         "psr/http-factory": "^1.1",
         "psr/http-message": "^1.1 || ^2.0",
         "psr/http-server-handler": "^1.0",
-        "rasuvaeff/openapi-contract": "^0.3",
+        "rasuvaeff/openapi-contract": "^0.4",
         "rasuvaeff/property-testing-core": "^0.5 || ^0.6"
     },
     "require-dev": {

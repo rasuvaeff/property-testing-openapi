@@ -38,7 +38,14 @@ final class ParameterSerializerTest
         yield 'simple object compact' => ['value', ['a/b' => 'c d', 'x' => 'y'], 'simple', false, false, 'a%2Fb,c%20d,x,y'];
         yield 'simple object exploded' => ['value', ['a' => 'b', 'x' => 'y'], 'simple', true, false, 'a=b,x=y'];
         yield 'label list' => ['value', ['a', 'b'], 'label', true, false, '.a.b'];
+        // RFC 6570 reserves the repeated dot for the exploded form; an
+        // unexploded label array is comma-separated.
+        yield 'label list without explode' => ['value', ['a', 'b'], 'label', false, false, '.a,b'];
+        yield 'label scalar' => ['value', 'a/b c', 'label', false, false, '.a%2Fb%20c'];
         yield 'label object' => ['value', ['a' => 'b', 'x' => 'y'], 'label', true, false, '.a=b.x=y'];
+        // The object branch is comma-separated in the unexploded form
+        // regardless of the separator the list branch uses.
+        yield 'label object without explode' => ['value', ['a' => 'b', 'x' => 'y'], 'label', false, false, '.a,b,x,y'];
         yield 'matrix scalar' => ['a/b', 'c d', 'matrix', false, false, ';a%2Fb=c%20d'];
         yield 'matrix list compact' => ['id', ['a', 'b'], 'matrix', false, false, ';id=a,b'];
         yield 'matrix list compact encoded' => ['id', ['a/b', 'c d'], 'matrix', false, false, ';id=a%2Fb,c%20d'];
@@ -50,7 +57,9 @@ final class ParameterSerializerTest
         yield 'form list exploded' => ['id', ['a', 'b'], 'form', true, false, 'id=a&id=b'];
         yield 'form object compact' => ['id', ['a' => 'b', 'x' => 'y'], 'form', false, false, 'id=a,b,x,y'];
         yield 'form object exploded' => ['id', ['a' => 'b', 'x' => 'y'], 'form', true, false, 'a=b&x=y'];
-        yield 'space delimited' => ['id', ['a/b', 'c d'], 'spaceDelimited', false, false, 'id=a%2Fb c%20d'];
+        // A raw space is not a legal URI character, so the separator itself
+        // travels encoded; the OpenAPI style table spells the pipe raw.
+        yield 'space delimited' => ['id', ['a/b', 'cd'], 'spaceDelimited', false, false, 'id=a%2Fb%20cd'];
         yield 'pipe delimited' => ['id', ['a/b', 'c d'], 'pipeDelimited', false, false, 'id=a%2Fb|c%20d'];
         yield 'deep object' => ['filter', ['a/b' => 'c d', 'x' => 'y'], 'deepObject', true, false, 'filter%5Ba%2Fb%5D=c%20d&filter%5Bx%5D=y'];
         yield 'empty deep object' => ['filter', [], 'deepObject', true, false, ''];
@@ -70,7 +79,7 @@ final class ParameterSerializerTest
 
         Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'simple', explode: false), 'a%2Fb,c%3Fd');
         Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'form', explode: false), 'value=a%2Fb,c%3Fd');
-        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'spaceDelimited', explode: false), 'value=a%2Fb c%3Fd');
+        Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'spaceDelimited', explode: false), 'value=a%2Fb%20c%3Fd');
         Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'pipeDelimited', explode: false), 'value=a%2Fb|c%3Fd');
         Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'simple', explode: false, allowReserved: true), 'a/b,c?d');
     }
@@ -86,8 +95,28 @@ final class ParameterSerializerTest
     {
         $serializer = new ParameterSerializer();
 
-        Assert::same($serializer->serialize('value', ['a.b', 'c'], 'label', explode: false), '.a%2Eb.c');
+        Assert::same($serializer->serialize('value', ['a.b', 'c'], 'label', explode: false), '.a%2Eb,c');
         Assert::same($serializer->serialize('value', ['a.b' => 'c.d'], 'label', explode: true), '.a%2Eb=c%2Ed');
+    }
+
+    /**
+     * Neither style can escape its own separator: the separator and an encoded
+     * item character are the same octets on the wire, so such a value has no
+     * representation and generating one would emit an ambiguous request.
+     */
+    #[DataProvider('unrepresentableDelimitedCases')]
+    public function refusesDelimitedValuesCarryingTheirOwnSeparator(array $value, string $style, string $message): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+
+        (new ParameterSerializer())->serialize('value', $value, $style, explode: false);
+    }
+
+    /** @return iterable<string, array{list<string>, string, string}> */
+    public static function unrepresentableDelimitedCases(): iterable
+    {
+        yield 'space inside a space-delimited item' => [['a b', 'c'], 'spaceDelimited', 'Delimited query parameter values cannot contain " "'];
+        yield 'pipe inside a pipe-delimited item' => [['a|b', 'c'], 'pipeDelimited', 'Delimited query parameter values cannot contain "|"'];
     }
 
     public function rejectsDelimitedNonListValuesWithoutTypeCoercion(): void
