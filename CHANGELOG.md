@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.9.0 — 2026-09-05
 
 - **Fixed.** `spaceDelimited` and `pipeDelimited` query parameters generate
   again (#58). The serializer refuses a value carrying the style's own
@@ -108,6 +108,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first, it meant the suite never exercised the authenticated path of such an
   operation at all. An alternative the provider can satisfy is preferred; the
   anonymous one answers only when none can.
+
+- **Internal.** The zoo's end-to-end property runs 900 cases rather than 450.
+  Its `Classify::cover` gates are absolute fractions of a mixed population —
+  each names a condition only one zoo operation can satisfy — so every
+  operation added to the zoo dilutes all of them. At 450 over 16 operations one
+  gate landed a tenth of a point under its threshold purely on the draw.
 
 **Known limit.** An object whose member names run 0, 1, … without a gap cannot
 be told from a list in a JSON-compatible PHP value, and a list is exactly what

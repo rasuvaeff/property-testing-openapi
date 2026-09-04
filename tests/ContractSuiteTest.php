@@ -500,10 +500,14 @@ final class ContractSuiteTest
      *
      * @param array{key: string, case: array<string, mixed>} $tagged
      */
-    // The Classify::cover gates below are sized against a per-operation
-    // sample, so the run count grows with the zoo: 450 runs over 16 operations
-    // is the sample 300 gave 11, which is the sample 250 gave 9.
-    #[Property(runs: 450, generators: [ZooContracts::class, 'taggedCase'])]
+    // The Classify::cover gates below are absolute fractions of a mixed
+    // population: each names a condition that only one of the zoo's operations
+    // can satisfy, so every operation added to the zoo dilutes all of them.
+    // The run count therefore has to grow with the zoo, and with margin — at
+    // 450 runs over 16 operations the "history present" gate landed on 4/450,
+    // a tenth of a point under its threshold, purely on the draw. 900 leaves
+    // each gate roughly three times the sample it needs rather than one.
+    #[Property(runs: 900, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
