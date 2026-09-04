@@ -46,8 +46,8 @@ Public API:
 - Security: requests target the document's `servers` (or `baseUri()`); do not
   run untrusted contracts through a networked transport.
 - `SecurityRequirement`, `CredentialsProviderInterface`, `CredentialsUnavailable`,
-  and `SecuritySelector` (`@internal`; reached through
-  `ContractSuite::credentials()`) model OR alternatives and AND schemes
+  and `SecuritySelector` (`select(Operation, CredentialsProviderInterface)`;
+  `ContractSuite::credentials()` drives it for a suite) model OR alternatives and AND schemes
   without putting secrets in generated cases; an empty requirement object
   selects anonymous credentials without calling the provider.
 - `Credentials` accepts string or list<string> values, normalizes its public

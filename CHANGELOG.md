@@ -5,8 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.8.0 — 2026-09-04
 
+- **Breaking.** `RequestMaterializer`, `RequestCaseArbitrary` and
+  `ResponseCaseArbitrary` no longer accept their `@internal` collaborators as
+  constructor parameters (#53). Every one had a default and nothing in the
+  package, its tests, its examples or its documentation ever passed one, so no
+  documented usage changes — but the signature published a type the package
+  does not support overriding. `RequestMaterializer` keeps `$baseUri`, now its
+  third parameter; `withBaseUri()` is the documented way to set it either way.
+- `SecuritySelector` is `@api`. It was marked `@internal` while the README
+  showed a snippet constructing it to materialize a request outside a suite;
+  the snippet is the contract, and the class only ever exposed public types.
 - The seven parameter misuse categories of `NegativeRequestCaseArbitrary` no
   longer restate the path/query/header/cookie handling and the full case shape
   once each: one `parameter()` helper writes the target's value through a

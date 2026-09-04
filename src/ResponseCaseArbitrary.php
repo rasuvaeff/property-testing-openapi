@@ -32,10 +32,15 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
  */
 final readonly class ResponseCaseArbitrary
 {
-    public function __construct(
-        private SchemaArbitraryCompiler $schemas = new SchemaArbitraryCompiler(),
-        private ResponseSchemas $responseSchemas = new ResponseSchemas(),
-    ) {}
+    private SchemaArbitraryCompiler $schemas;
+
+    private ResponseSchemas $responseSchemas;
+
+    public function __construct()
+    {
+        $this->schemas = new SchemaArbitraryCompiler();
+        $this->responseSchemas = new ResponseSchemas();
+    }
 
     /**
      * @return ArbitraryInterface<array{

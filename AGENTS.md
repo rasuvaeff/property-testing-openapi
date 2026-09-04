@@ -42,6 +42,20 @@ OpenAPI contract plan.
   monorepo) plus `git config --global --add safe.directory "*"`.
 - Preserve the public documentation in `README.md`, `README.ru.md`,
   `llms.txt`, and `examples/` with public API changes.
+- **No `@internal` type in a public signature.** An `@api` class does not take
+  one as a constructor or method parameter, even with a default: the default
+  keeps callers from naming it, but the signature still publishes it and
+  invites an override the package does not support. Build the collaborator in
+  the constructor body instead.
+- `SchemaArbitraryCompiler`, `DocumentExamples` and `RequestReproducer` are
+  `@internal` classes that deliberately live at the root of `src/` rather than
+  under `Internal\`: the public docblocks point at them with `{@see}` so a
+  reader can follow the mechanism, and `llms.txt` names each one as the
+  internal form of a public route. That is a considered exception, not an
+  oversight — do not re-file it, and do not let one of them appear in a public
+  signature either. The test is what the docs tell a user to do:
+  `SecuritySelector` was `@internal` while the README showed a snippet
+  constructing it, and it is `@api` now because that snippet is the contract.
 
 Run `make build`, `make rector`, and `git diff --check` before handoff. Run
 `make mutation` when source behavior changes.
