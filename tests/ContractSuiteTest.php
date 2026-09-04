@@ -160,7 +160,7 @@ final class ContractSuiteTest
             '   instancePath: "/name"',
             '   specPointer: "/components/schemas/Pet"',
             '   expected: {"type":"string"}',
-            '   actual: null',
+            '   actual: "[redacted]"',   // openapi-contract 0.5 redacts every body value
             '   message: "bad body"',
         ]));
         Assert::same(strtok($request->getMessage(), "\n"), 'Generated request for operation "pets.get" is invalid before transport');
