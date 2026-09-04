@@ -1,27 +1,18 @@
 # Examples
 
-`valid-request.php` draws one data-only case, materializes it using Nyholm's
-PSR-17 factory, and validates the result with `openapi-contract`.
+| Script | Shows | Needs server? |
+|---|---|---|
+| `valid-request.php` | Drawing one data-only case, materializing it with Nyholm's PSR-17 factory, and validating the result with `openapi-contract` | No |
+| `negative-request.php` | The constructive negative categories on one operation, every misuse case rejected by contract validation before any transport runs | No |
+| `document-examples.php` | The document's `example`/`examples` running as the deterministic example phase of `OperationProperty` — a point fault the document describes, found by name before any random trial | No |
+| `response-cases.php` | A contract-valid provider response and a provably invalid one (`enum` misuse) for the same operation, accepted and rejected by the core validator — the harness for testing an API client without live traffic | No |
+| `suite-check.php` | `ContractSuite` against an in-process PSR-15 handler: valid trials conform without a 5xx, a constructive negative case is rejected without a 5xx, and the `afterRequest` hook counts one state reset per request | No |
+| `coverage-report.php` | `OperationCoverage` on a suite with two selected operations where only one runs, the JSON coverage report, and the opt-in `assertComplete()` gate naming the operation that never ran a trial | No |
 
-`negative-request.php` walks the constructive negative categories on one
-operation and shows that every misuse case is rejected by contract validation
-before any transport would run.
+No script needs a server: the only transport any of them uses is in-process.
 
-`document-examples.php` shows the document's `example`/`examples` running as
-the deterministic example phase of `OperationProperty`: a point fault the
-document describes is found by name on the first run, before any random trial.
+Run from the package root after `make install`:
 
-`response-cases.php` generates a contract-valid provider response and a
-provably invalid one (`enum` misuse) for the same operation and shows the
-core validator accepting the first and rejecting the second — the harness for
-testing an API client without live traffic.
-
-`suite-check.php` runs `ContractSuite` against an in-process PSR-15 handler:
-valid trials must conform without a 5xx, and a constructive negative case must
-be rejected without a 5xx. Its `afterRequest` hook also counts one state reset
-after every in-process request.
-
-`coverage-report.php` attaches an `OperationCoverage` record to a suite with
-two selected operations, exercises only one of them, prints the JSON coverage
-report, and shows the opt-in `assertComplete()` gate naming the operation that
-never ran a trial.
+```bash
+docker run --rm -v "$PWD":/app -w /app composer:2 php examples/valid-request.php
+```

@@ -4,6 +4,7 @@
 [![Total Downloads](https://poser.pugx.org/rasuvaeff/property-testing-openapi/downloads)](https://packagist.org/packages/rasuvaeff/property-testing-openapi)
 [![Build](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/build.yml/badge.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/build.yml)
 [![Static analysis](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml)
+[![Psalm level](https://img.shields.io/badge/psalm-level_1-blue.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE.md)
 
 [English version](README.md)
@@ -15,6 +16,20 @@
 из поддерживаемого подмножества JSON Schema, materialize-ит OpenAPI 3 parameter
 styles и JSON, form-urlencoded или multipart request body, после чего request проверяется contract validator
 до передачи transport.
+
+> Используете AI-ассистента? [llms.txt](llms.txt) — компактный
+> самодостаточный API-справочник пакета.
+
+## Требования
+
+- PHP 8.3 – 8.5
+- `ext-mbstring`
+- `rasuvaeff/openapi-contract` ^0.5 и `rasuvaeff/property-testing-core` ^0.5 || ^0.6
+- реализации `psr/http-message`, `psr/http-factory` и
+  `psr/http-server-handler`: PSR-17 factory материализует запросы, а
+  `ContractSuite` гоняет PSR-15 handler в процессе
+- `ext-redis` или `predis/predis` — только для общего регрессионного корпуса
+  `PROPERTY_DB=redis://…` (suggest, не require)
 
 ## Установка
 
@@ -507,4 +522,26 @@ Gate — opt-in: `assertComplete()` бросает `CoverageIncomplete` (отч�
 worker'ах пишите по одному JSON-отчёту на процесс и сливайте списки вне
 пакета.
 
-Runnable scripts находятся в [examples](examples/README.md).
+## Примеры
+
+Runnable scripts — в [examples](examples/README.md): валидные и негативные
+request-кейсы, собственные examples документа как детерминированная фаза,
+генерация responses, прогон suite в процессе и отчёт о покрытии. Сервер не
+нужен ни одному из них.
+
+## Разработка
+
+```bash
+make install
+make build
+make release-check
+```
+
+Набор гоняется под обоими runner'ами: Testo — собственные property-тесты
+пакета, а PHPUnit-fixture закрепляет ту схему интеграции, которую описывает
+README. `make release-check` добавляет проверку обратной совместимости и
+мутационный гейт.
+
+## Лицензия
+
+BSD-3-Clause. См. [LICENSE.md](LICENSE.md).
