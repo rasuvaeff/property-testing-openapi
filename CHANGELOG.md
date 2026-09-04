@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- README (EN/RU) carries the sections the package conventions require:
+  Requirements, Examples, Development and License, plus the `llms.txt` pointer
+  and a Psalm-level badge.
+- `examples/README.md` lists the scripts as a table and says how to run them.
+
 ## 0.7.0 — 2026-09-04
 
 - Requires `rasuvaeff/openapi-contract` `^0.5` (was `^0.4`), which closes the

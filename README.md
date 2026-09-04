@@ -4,6 +4,7 @@
 [![Total Downloads](https://poser.pugx.org/rasuvaeff/property-testing-openapi/downloads)](https://packagist.org/packages/rasuvaeff/property-testing-openapi)
 [![Build](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/build.yml/badge.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/build.yml)
 [![Static analysis](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml)
+[![Psalm level](https://img.shields.io/badge/psalm-level_1-blue.svg)](https://github.com/rasuvaeff/property-testing-openapi/actions/workflows/static-analysis.yml)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE.md)
 
 [Русская версия](README.ru.md)
@@ -15,6 +16,20 @@ The current pre-release slice generates valid scalar, array, and object values
 from the documented JSON Schema subset, materializes OpenAPI 3 parameter styles
 and JSON, form-urlencoded, or multipart request bodies, then lets the contract validator check the request
 before it reaches a transport.
+
+> Using an AI coding assistant? [llms.txt](llms.txt) is a compact,
+> self-contained API reference for this package.
+
+## Requirements
+
+- PHP 8.3 – 8.5
+- `ext-mbstring`
+- `rasuvaeff/openapi-contract` ^0.5 and `rasuvaeff/property-testing-core` ^0.5 || ^0.6
+- `psr/http-message`, `psr/http-factory` and `psr/http-server-handler`
+  implementations — a PSR-17 factory materializes requests, and `ContractSuite`
+  drives a PSR-15 handler in process
+- `ext-redis` or `predis/predis` only for a shared `PROPERTY_DB=redis://…`
+  regression corpus (suggested, not required)
 
 ## Install
 
@@ -505,4 +520,26 @@ The record is process-local by design; under process isolation or parallel
 workers write one JSON report per process and merge the lists outside the
 package.
 
-See [examples](examples/README.md) for the runnable scripts.
+## Examples
+
+See [examples](examples/README.md) for the runnable scripts: valid and
+negative request cases, the document's own examples as a deterministic phase,
+response generation, an in-process suite run, and a coverage report. None of
+them needs a server.
+
+## Development
+
+```bash
+make install
+make build
+make release-check
+```
+
+The suite runs under both test runners: Testo drives the package's own
+property tests, and a PHPUnit fixture pins the runner-integration shape that
+the README documents. `make release-check` adds the backward-compatibility
+check and the mutation gate.
+
+## License
+
+BSD-3-Clause. See [LICENSE.md](LICENSE.md).
