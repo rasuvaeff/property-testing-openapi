@@ -18,11 +18,11 @@ final readonly class ParameterSerializer
     {
         return match ($style) {
             'simple' => $this->simple($value, $explode, ',', $allowReserved),
-            'label' => '.' . $this->simple($value, $explode, '.', $allowReserved, encodeDots: true),
+            'label' => '.' . $this->simple($value, $explode, $explode ? '.' : ',', $allowReserved, encodeDots: true),
             'matrix' => $this->matrix($name, $value, $explode, $allowReserved),
             'form' => $this->form($name, $value, $explode, $allowReserved),
-            'spaceDelimited' => $this->delimited($name, $value, ' ', $allowReserved),
-            'pipeDelimited' => $this->delimited($name, $value, '|', $allowReserved),
+            'spaceDelimited' => $this->delimited($name, $value, ' ', '%20', $allowReserved),
+            'pipeDelimited' => $this->delimited($name, $value, '|', '|', $allowReserved),
             'deepObject' => $this->deepObject($name, $value, $allowReserved),
             default => throw new UnsupportedGeneration(sprintf('Unsupported parameter style "%s"', $style)),
         };
@@ -98,14 +98,27 @@ final readonly class ParameterSerializer
         return implode('&', $parts);
     }
 
-    /** @param string|list<string>|array<string, string> $value */
-    private function delimited(string $name, string|array $value, string $delimiter, bool $allowReserved): string
+    /**
+     * @param string|list<string>|array<string, string> $value
+     * @param non-empty-string $delimiter the separator as the value reads it
+     * @param non-empty-string $wireDelimiter the separator as it goes on the wire;
+     *        a raw space is not a legal URI character, so it travels encoded
+     */
+    private function delimited(string $name, string|array $value, string $delimiter, string $wireDelimiter, bool $allowReserved): string
     {
         if (is_string($value) || !array_is_list($value)) {
             throw new UnsupportedGeneration('Delimited query parameters require a list value');
         }
+        $items = $this->list($value);
+        foreach ($items as $item) {
+            // The style has no escape for its own separator: an item carrying
+            // one is unrepresentable, not merely awkward to encode.
+            if (str_contains($item, $delimiter)) {
+                throw new UnsupportedGeneration(sprintf('Delimited query parameter values cannot contain "%s"', $delimiter));
+            }
+        }
 
-        return $this->pair($name, implode($delimiter, array_map(fn(string $item): string => $this->encode($item, $allowReserved), $this->list($value))), $allowReserved, valueIsEncoded: true);
+        return $this->pair($name, implode($wireDelimiter, array_map(fn(string $item): string => $this->encode($item, $allowReserved), $items)), $allowReserved, valueIsEncoded: true);
     }
 
     /** @param string|list<string>|array<string, string> $value */
