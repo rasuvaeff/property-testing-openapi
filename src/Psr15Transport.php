@@ -12,6 +12,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\UploadedFileFactoryInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
 
 /**
@@ -79,7 +80,7 @@ final readonly class Psr15Transport implements TransportInterface
     {
         $stream = $request->getBody();
         $contentType = $request->getHeaderLine('Content-Type');
-        $mediaType = strtolower(trim(explode(';', $contentType, 2)[0]));
+        $mediaType = MediaType::normalize($contentType);
         $form = $mediaType === 'application/x-www-form-urlencoded';
         if (!$form && !str_starts_with($mediaType, 'multipart/')) {
             if ($stream->isSeekable()) {

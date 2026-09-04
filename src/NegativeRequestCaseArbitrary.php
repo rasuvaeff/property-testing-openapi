@@ -16,10 +16,33 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
  * The generated value remains corpus-safe; `misuse` identifies the deliberate
  * invalidation and is never interpreted as a secret or a PSR-7 object.
  *
+ * @psalm-import-type RequestCaseData from RequestCaseArbitrary
+ * @psalm-type NegativeRequestCaseData = array{
+ *     operationKey: string,
+ *     path: array<string, string|list<string>|array<string, string>>,
+ *     query: array<string, string|list<string>|array<string, string>>,
+ *     headers: array<string, string|list<string>|array<string, string>>,
+ *     cookies: array<string, string|list<string>|array<string, string>>,
+ *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
+ *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+ * }
+ *
  * @api
  */
 final readonly class NegativeRequestCaseArbitrary
 {
+    /**
+     * The case key each parameter location writes to. Every misuse that
+     * targets a parameter goes through this map, so a location can only be
+     * mishandled in one place.
+     */
+    private const array CASE_KEYS = [
+        'path' => 'path',
+        'query' => 'query',
+        'header' => 'headers',
+        'cookie' => 'cookies',
+    ];
+
     private ParameterTargets $parameterTargets;
 
     private BodyTargets $bodyTargets;
@@ -32,56 +55,23 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
-     * }>
+     * Drops one required parameter, or the whole required body.
+     *
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
         $target = $this->parameterTargets->missingRequired($operation);
+        $location = $target['location'];
+        $name = $target['name'];
 
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'missing-required', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'body') {
+        return $this->mutate($operation, static function (array $case) use ($location, $name): array {
+            if ($location === 'body') {
                 $case['body'] = null;
-            } elseif ($target['location'] === 'path') {
-                unset($case['path'][$target['name']]);
-            } elseif ($target['location'] === 'query') {
-                unset($case['query'][$target['name']]);
-            } elseif ($target['location'] === 'header') {
-                unset($case['headers'][$target['name']]);
             } else {
-                unset($case['cookies'][$target['name']]);
+                unset($case[self::CASE_KEYS[$location]][$name]);
             }
-            $case['misuse'] = [
-                'kind' => 'missing-required',
-                'location' => $target['location'],
-                'name' => $target['name'],
-            ];
+            $case['misuse'] = ['kind' => 'missing-required', 'location' => $location, 'name' => $name];
 
             return $case;
         });
@@ -91,328 +81,66 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one required scalar parameter with a wire value that cannot
      * satisfy its integer, number, boolean, or null schema type.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'type', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function typeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->typeMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'type', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = [
-                'kind' => 'type',
-                'location' => $target['location'],
-                'name' => $target['name'],
-            ];
-
-            return $case;
-        });
+        return $this->parameter('type', $operation, $this->parameterTargets->typeMismatch($operation));
     }
 
     /**
      * Replaces one required scalar parameter with a value absent from its
      * finite enum.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'enum', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function enumMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->enumMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'enum', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = [
-                'kind' => 'enum',
-                'location' => $target['location'],
-                'name' => $target['name'],
-            ];
-
-            return $case;
-        });
+        return $this->parameter('enum', $operation, $this->parameterTargets->enumMismatch($operation));
     }
 
     /**
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'const', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * Replaces one required scalar parameter with a value other than the
+     * single one its `const` admits.
+     *
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function constMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->constMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'const', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = ['kind' => 'const', 'location' => $target['location'], 'name' => $target['name']];
-
-            return $case;
-        });
+        return $this->parameter('const', $operation, $this->parameterTargets->constMismatch($operation));
     }
 
     /**
      * Replaces one required numeric parameter with a wire value just outside
      * its `minimum`/`maximum` bound, honouring boolean exclusive bounds.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'boundary', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function boundaryMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->boundaryMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'boundary', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = ['kind' => 'boundary', 'location' => $target['location'], 'name' => $target['name']];
-
-            return $case;
-        });
+        return $this->parameter('boundary', $operation, $this->parameterTargets->boundaryMismatch($operation));
     }
-
-
-
-
-
 
     /**
      * Replaces one required string parameter with a wire value whose length
      * falls just outside its `minLength`/`maxLength` bound.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'length', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function lengthMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->lengthMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'length', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = ['kind' => 'length', 'location' => $target['location'], 'name' => $target['name']];
-
-            return $case;
-        });
+        return $this->parameter('length', $operation, $this->parameterTargets->lengthMismatch($operation));
     }
 
     /**
      * Replaces one required string parameter with a wire value that provably
      * violates its asserted `format`.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'format', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function formatMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->formatMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'format', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = ['kind' => 'format', 'location' => $target['location'], 'name' => $target['name']];
-
-            return $case;
-        });
+        return $this->parameter('format', $operation, $this->parameterTargets->formatMismatch($operation));
     }
 
     /**
@@ -420,105 +148,33 @@ final readonly class NegativeRequestCaseArbitrary
      * provably fails its `pattern`; the pattern itself is the oracle, and an
      * exhausted search budget fails closed.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: array{kind: 'pattern', location: 'path'|'query'|'header'|'cookie', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function patternMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->patternMismatch($operation);
-
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: array{kind: 'pattern', location: 'path'|'query'|'header'|'cookie', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
-            if ($target['location'] === 'path') {
-                $case['path'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'query') {
-                $case['query'][$target['name']] = $target['invalid'];
-            } elseif ($target['location'] === 'header') {
-                $case['headers'][$target['name']] = $target['invalid'];
-            } else {
-                $case['cookies'][$target['name']] = $target['invalid'];
-            }
-            $case['misuse'] = ['kind' => 'pattern', 'location' => $target['location'], 'name' => $target['name']];
-
-            return $case;
-        });
+        return $this->parameter('pattern', $operation, $this->parameterTargets->patternMismatch($operation));
     }
-
-
-
-
 
     /**
      * Adds one undeclared property to a required JSON object body whose schema
      * sets `additionalProperties: false`.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'additional-properties', location: 'body', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function additionalPropertyForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->bodyTargets->additionalProperty($operation);
+        $name = $this->bodyTargets->additionalProperty($operation)['name'];
 
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: array{mediaType: string, encoding: 'json', value: mixed},
-         *     misuse: array{kind: 'additional-properties', location: 'body', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
+        return $this->mutate($operation, static function (array $case) use ($name): array {
             $body = $case['body'];
+            /** @var mixed $value */
             $value = $body['value'] ?? null;
             if ($body === null || !is_array($value)) {
                 throw new \LogicException('Required JSON object body expected for an additional property misuse');
             }
-            $value[$target['name']] = true;
+            $value[$name] = true;
             $case['body'] = ['mediaType' => $body['mediaType'], 'encoding' => 'json', 'value' => $value];
-            $case['misuse'] = ['kind' => 'additional-properties', 'location' => 'body', 'name' => $target['name']];
+            $case['misuse'] = ['kind' => 'additional-properties', 'location' => 'body', 'name' => $name];
 
             return $case;
         });
@@ -528,45 +184,18 @@ final readonly class NegativeRequestCaseArbitrary
      * Keeps the schema-valid JSON body but sends it under an undeclared
      * Content-Type, so the media type is the only deviation.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: array{mediaType: string, encoding: 'json', value: mixed},
-     *     misuse: array{kind: 'media-type', location: 'body', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function mediaTypeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->bodyTargets->mediaTypeMismatch($operation);
+        $mediaType = $this->bodyTargets->mediaTypeMismatch($operation)['invalid'];
 
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: array{mediaType: string, encoding: 'json', value: mixed},
-         *     misuse: array{kind: 'media-type', location: 'body', name: string},
-         * }
-         */ static function (array $case) use ($target): array {
+        return $this->mutate($operation, static function (array $case) use ($mediaType): array {
             $body = $case['body'];
             if ($body === null) {
                 throw new \LogicException('Required JSON body expected for a media type misuse');
             }
-            $case['body'] = ['mediaType' => $target['invalid'], 'encoding' => 'json', 'value' => $body['value'] ?? null];
+            $case['body'] = ['mediaType' => $mediaType, 'encoding' => 'json', 'value' => $body['value'] ?? null];
             $case['misuse'] = ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'];
 
             return $case;
@@ -577,15 +206,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces the required JSON body with a deliberately malformed raw JSON
      * payload under the declared media type.
      *
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: array{mediaType: string, encoding: 'raw', value: string},
-     *     misuse: array{kind: 'json-syntax', location: 'body', name: string},
-     * }>
+     * @return ArbitraryInterface<NegativeRequestCaseData>
      */
     public function malformedJsonForOperation(Operation $operation): ArbitraryInterface
     {
@@ -595,26 +216,7 @@ final readonly class NegativeRequestCaseArbitrary
         }
         $mediaType = $body['mediaType'];
 
-        return Gen::map($this->valid->forOperation($operation), /**
-         * @param array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * } $case
-         * @return array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: array{mediaType: string, encoding: 'raw', value: string},
-         *     misuse: array{kind: 'json-syntax', location: 'body', name: string},
-         * }
-         */ static function (array $case) use ($mediaType): array {
+        return $this->mutate($operation, static function (array $case) use ($mediaType): array {
             $case['body'] = ['mediaType' => $mediaType, 'encoding' => 'raw', 'value' => '{"malformed":'];
             $case['misuse'] = ['kind' => 'json-syntax', 'location' => 'body', 'name' => 'body'];
 
@@ -622,13 +224,34 @@ final readonly class NegativeRequestCaseArbitrary
         });
     }
 
+    /**
+     * Writes one target's invalid wire value over the parameter it names.
+     * Every parameter misuse differs only in the `kind` it records, so they
+     * all come through here rather than restating the location handling.
+     *
+     * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
+     * @param array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} $target
+     * @return ArbitraryInterface<NegativeRequestCaseData>
+     */
+    private function parameter(string $kind, Operation $operation, array $target): ArbitraryInterface
+    {
+        return $this->mutate($operation, static function (array $case) use ($kind, $target): array {
+            $case[self::CASE_KEYS[$target['location']]][$target['name']] = $target['invalid'];
+            $case['misuse'] = ['kind' => $kind, 'location' => $target['location'], 'name' => $target['name']];
 
+            return $case;
+        });
+    }
 
+    /**
+     * @param \Closure(RequestCaseData): NegativeRequestCaseData $mutation
+     * @return ArbitraryInterface<NegativeRequestCaseData>
+     */
+    private function mutate(Operation $operation, \Closure $mutation): ArbitraryInterface
+    {
+        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        $mutated = Gen::map($this->valid->forOperation($operation), $mutation);
 
-
-
-
-
-
-
+        return $mutated;
+    }
 }

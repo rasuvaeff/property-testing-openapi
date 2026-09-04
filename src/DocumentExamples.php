@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 use Rasuvaeff\PropertyTesting\Random;
 
 /**
@@ -125,10 +127,9 @@ final readonly class DocumentExamples
             if (!is_string($mediaType) || !is_array($definition)) {
                 continue;
             }
-            $normalized = strtolower(trim(explode(';', $mediaType, 2)[0]));
             $encoding = match (true) {
-                $normalized === 'application/json', str_ends_with($normalized, '+json') => 'json',
-                $normalized === 'application/x-www-form-urlencoded' => 'form',
+                MediaType::isJson($mediaType) => 'json',
+                MediaType::normalize($mediaType) === 'application/x-www-form-urlencoded' => 'form',
                 default => null,
             };
             // A media type this phase cannot encode, or one carrying no
@@ -256,12 +257,7 @@ final readonly class DocumentExamples
 
     private function scalar(mixed $value, string $parameter): string
     {
-        return match (true) {
-            is_string($value) => $value,
-            is_int($value), is_float($value) => (string) $value,
-            is_bool($value) => $value ? 'true' : 'false',
-            $value === null => 'null',
-            default => throw new UnsupportedGeneration(sprintf('Example of parameter "%s" must be a scalar, a list of scalars, or a map of scalars', $parameter)),
-        };
+        return WireValue::of($value)
+            ?? throw new UnsupportedGeneration(sprintf('Example of parameter "%s" must be a scalar, a list of scalars, or a map of scalars', $parameter));
     }
 }

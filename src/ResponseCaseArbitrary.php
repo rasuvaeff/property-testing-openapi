@@ -7,7 +7,9 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 
 /**
  * Produces valid, corpus-safe response cases for one compiled operation and
@@ -77,29 +79,10 @@ final readonly class ResponseCaseArbitrary
      */
     public function jsonBody(Operation $operation, int $status): ?array
     {
-        $definition = $this->definition($operation, $status);
-        $content = $definition['content'] ?? null;
-        if (!is_array($content) || $content === []) {
-            return null;
-        }
-        foreach ($content as $mediaType => $mediaDefinition) {
-            if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition)) {
-                continue;
-            }
-            $normalized = strtolower(trim(explode(';', $mediaType, 2)[0]));
-            if ($normalized !== 'application/json' && !str_ends_with($normalized, '+json')) {
-                continue;
-            }
-            $schema = $mediaDefinition['schema'] ?? [];
-            if (!is_array($schema) || array_is_list($schema)) {
-                throw new UnsupportedGeneration(sprintf('Response "%s" JSON schema must be an object', $mediaType));
-            }
-            /** @var array<string, mixed> $schema */
-
-            return ['mediaType' => $mediaType, 'schema' => $this->responseSchemas->effective($schema)];
-        }
-
-        throw new UnsupportedGeneration(sprintf('Response for status %d of operation "%s" declares no JSON media type', $status, $operation->key));
+        return $this->jsonMedia(
+            $this->definition($operation, $status),
+            sprintf('Response for status %d of operation "%s" declares no JSON media type', $status, $operation->key),
+        );
     }
 
     /** @return array<string, mixed> */
@@ -178,28 +161,47 @@ final readonly class ResponseCaseArbitrary
 
     private function scalar(mixed $value, string $name): string
     {
-        return match (true) {
-            is_string($value) => $value,
-            is_int($value), is_float($value) => (string) $value,
-            is_bool($value) => $value ? 'true' : 'false',
-            $value === null => 'null',
-            default => throw new UnsupportedGeneration(sprintf('Response header "%s" must carry scalar values', $name)),
-        };
+        return WireValue::of($value)
+            ?? throw new UnsupportedGeneration(sprintf('Response header "%s" must carry scalar values', $name));
     }
 
     /** @param array<string, mixed> $definition */
     private function body(array $definition): ArbitraryInterface
     {
-        $content = $definition['content'] ?? null;
-        if (!is_array($content) || $content === []) {
+        $media = $this->jsonMedia($definition, 'Response content declares no JSON media type');
+        if ($media === null) {
             return Gen::constant(null);
         }
+        $mediaType = $media['mediaType'];
+
+        return Gen::map($this->schemas->compile($media['schema']), static fn(mixed $value): array => [
+            'mediaType' => $mediaType,
+            'encoding' => 'json',
+            'value' => $value,
+        ]);
+    }
+
+    /**
+     * The first JSON media type a Response Object declares, with its schema
+     * already narrowed to the response direction; `null` when the Response
+     * Object declares no content at all.
+     *
+     * Content that declares no JSON media type is a fail-closed error, and
+     * the caller words it: one of them knows the operation and status, the
+     * other has only the Response Object in hand.
+     *
+     * @param array<string, mixed> $definition
+     * @param non-empty-string $missing
+     * @return null|array{mediaType: non-empty-string, schema: array<string, mixed>}
+     */
+    private function jsonMedia(array $definition, string $missing): ?array
+    {
+        $content = $definition['content'] ?? null;
+        if (!is_array($content) || $content === []) {
+            return null;
+        }
         foreach ($content as $mediaType => $mediaDefinition) {
-            if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition)) {
-                continue;
-            }
-            $normalized = strtolower(trim(explode(';', $mediaType, 2)[0]));
-            if ($normalized !== 'application/json' && !str_ends_with($normalized, '+json')) {
+            if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition) || !MediaType::isJson($mediaType)) {
                 continue;
             }
             $schema = $mediaDefinition['schema'] ?? [];
@@ -208,13 +210,9 @@ final readonly class ResponseCaseArbitrary
             }
             /** @var array<string, mixed> $schema */
 
-            return Gen::map($this->schemas->compile($this->responseSchemas->effective($schema)), static fn(mixed $value): array => [
-                'mediaType' => $mediaType,
-                'encoding' => 'json',
-                'value' => $value,
-            ]);
+            return ['mediaType' => $mediaType, 'schema' => $this->responseSchemas->effective($schema)];
         }
 
-        throw new UnsupportedGeneration('Response content declares no JSON media type');
+        throw new UnsupportedGeneration($missing);
     }
 }

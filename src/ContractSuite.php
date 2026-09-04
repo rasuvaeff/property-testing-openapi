@@ -11,7 +11,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
-use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 
 /**
  * Framework-neutral suite model: explicit operation selection, transport,
@@ -254,18 +254,8 @@ final class ContractSuite
             fn(): ArbitraryInterface => $this->negative->mediaTypeMismatchForOperation($operation),
             fn(): ArbitraryInterface => $this->negative->malformedJsonForOperation($operation),
         ];
-        $pairs = [];
-        foreach ($factories as $factory) {
-            try {
-                $pairs[] = [1, $factory()];
-            } catch (UnsupportedGeneration) {
-            }
-        }
-        if ($pairs === []) {
-            throw new UnsupportedGeneration(sprintf('Operation "%s" supports no constructible negative case category', $operation->key));
-        }
 
-        return Gen::frequency($pairs);
+        return ConstructibleCategories::anyOf($factories, sprintf('Operation "%s" supports no constructible negative case category', $operation->key));
     }
 
     /**

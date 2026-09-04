@@ -11,12 +11,24 @@ use Rasuvaeff\PropertyTesting\Runner\Redis\PredisCorpusClient;
 use Rasuvaeff\PropertyTesting\Runner\RedisCorpus;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 #[Test]
 #[Covers(CorpusFromEnv::class)]
 final class CorpusFromEnvTest
 {
+    /**
+     * The resolver memoizes by DSN. Isolation between these cases rests on
+     * their DSNs differing, which is not a property a new case has to know
+     * about — so the cache is dropped before each one instead.
+     */
+    #[BeforeTest]
+    public function forgetResolvedCorpora(): void
+    {
+        (new \ReflectionProperty(CorpusFromEnv::class, 'cache'))->setValue(null, []);
+    }
+
     public function unsetAndEmptyValuesDisableTheCorpus(): void
     {
         putenv('PROPERTY_DB');

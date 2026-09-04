@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
 use Rasuvaeff\PropertyTesting\Runner\CallableTrialExecutor;
 use Rasuvaeff\PropertyTesting\Runner\Corpus;
@@ -63,7 +64,7 @@ final readonly class OperationProperty
         ContractSuite $suite,
         string $operationKey,
         string $phase,
-        \Rasuvaeff\PropertyTesting\ArbitraryInterface $cases,
+        ArbitraryInterface $cases,
         int $runs,
         ?int $seed,
         ?Corpus $corpus,
@@ -85,7 +86,11 @@ final readonly class OperationProperty
                 throw new \LogicException('Generated request case has an invalid shape');
             }
             /** @var CaseData $case */
-            $phase === 'valid' ? $suite->checkValid($operationKey, $case) : $suite->checkNegative($operationKey, $case);
+            if ($phase === 'valid') {
+                $suite->checkValid($operationKey, $case);
+            } else {
+                $suite->checkNegative($operationKey, $case);
+            }
         });
 
         $result = (new PropertyRunner())->run($definition, $executor, corpus: $corpus);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
 /**
@@ -74,8 +75,7 @@ final readonly class BodyTargets
             if (!is_string($mediaType) || $mediaType === '' || !is_array($definition)) {
                 continue;
             }
-            $name = strtolower(trim(explode(';', $mediaType, 2)[0]));
-            if ($name !== 'application/json' && !str_ends_with($name, '+json')) {
+            if (!MediaType::isJson($mediaType)) {
                 continue;
             }
             $schema = $definition['schema'] ?? [];

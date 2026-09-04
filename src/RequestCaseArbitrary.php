@@ -7,8 +7,11 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 
 /**
  * Produces valid, corpus-safe request cases for one compiled operation.
@@ -18,6 +21,16 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
  * parameter never carries an empty string or a `/`/`\` that would leave its
  * template segment after percent-decoding. Request bodies are generated
  * from the request direction of their schema, without `readOnly` members.
+ *
+ * @psalm-type RequestCaseData = array{
+ *     operationKey: string,
+ *     path: array<string, string|list<string>|array<string, string>>,
+ *     query: array<string, string|list<string>|array<string, string>>,
+ *     headers: array<string, string|list<string>|array<string, string>>,
+ *     cookies: array<string, string|list<string>|array<string, string>>,
+ *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
+ *     misuse: null,
+ * }
  *
  * @api
  */
@@ -34,17 +47,7 @@ final readonly class RequestCaseArbitrary
         $this->requestSchemas = new RequestSchemas();
     }
 
-    /**
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: null,
-     * }>
-     */
+    /** @return ArbitraryInterface<RequestCaseData> */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
         $arbitrary = Gen::map(Gen::record([
@@ -124,9 +127,9 @@ final readonly class RequestCaseArbitrary
                 throw new UnsupportedGeneration('JSON request body schema must be an object');
             }
             /** @var array<string, mixed> $schema */
-            $normalized = strtolower(trim(explode(';', $mediaType, 2)[0]));
+            $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
-            if ($this->isJsonMediaType($mediaType)) {
+            if (MediaType::isJson($mediaType)) {
                 $body = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,
                     'encoding' => 'json',
@@ -283,13 +286,13 @@ final readonly class RequestCaseArbitrary
                 'value' => base64_encode($bytes),
             ]);
         }
-        if ($this->isArraySchema($schema)) {
+        if (SchemaShape::isArray($schema)) {
             $items = $schema['items'] ?? null;
             if (!is_array($items) || array_is_list($items)) {
                 throw new UnsupportedGeneration('Multipart array items must be a schema object');
             }
             /** @var array<string, mixed> $items */
-            if ($this->isArraySchema($items) || $this->isObjectSchema($items)) {
+            if (SchemaShape::isArray($items) || SchemaShape::isObject($items)) {
                 throw new UnsupportedGeneration('Nested multipart array items are not supported');
             }
             $item = $this->multipartProperty($items);
@@ -300,7 +303,7 @@ final readonly class RequestCaseArbitrary
                 ? Gen::uniqueArrayOf($item, $min, $max)
                 : Gen::arrayOf($item, $min, $max);
         }
-        if ($this->isObjectSchema($schema)) {
+        if (SchemaShape::isObject($schema)) {
             throw new UnsupportedGeneration('Nested multipart object properties are not supported');
         }
 
@@ -366,12 +369,12 @@ final readonly class RequestCaseArbitrary
      */
     private function nonEmptyContainer(array $schema): array
     {
-        if ($this->isArraySchema($schema)) {
+        if (SchemaShape::isArray($schema)) {
             $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
 
             return array_merge($schema, ['minItems' => max(1, $min)]);
         }
-        if ($this->isObjectSchema($schema)) {
+        if (SchemaShape::isObject($schema)) {
             $min = is_int($schema['minProperties'] ?? null) ? (int) $schema['minProperties'] : 0;
 
             return array_merge($schema, ['minProperties' => max(1, $min)]);
@@ -461,7 +464,7 @@ final readonly class RequestCaseArbitrary
     /** @param array<string, mixed> $schema */
     private function assertObjectSchema(array $schema, string $message): void
     {
-        if (!$this->isObjectSchema($schema)) {
+        if (!SchemaShape::isObject($schema)) {
             throw new UnsupportedGeneration($message);
         }
     }
@@ -469,14 +472,14 @@ final readonly class RequestCaseArbitrary
     /** @param array<string, mixed> $schema */
     private function wireValue(mixed $value, array $schema): string|array
     {
-        if ($this->isArraySchema($schema)) {
+        if (SchemaShape::isArray($schema)) {
             if (!is_array($value) || !array_is_list($value)) {
                 throw new \LogicException('Array schema arbitrary must produce a list');
             }
 
             return array_map($this->scalar(...), $value);
         }
-        if ($this->isObjectSchema($schema)) {
+        if (SchemaShape::isObject($schema)) {
             if (!is_array($value) || ($value !== [] && array_is_list($value))) {
                 throw new \LogicException('Object schema arbitrary must produce an object map');
             }
@@ -494,31 +497,9 @@ final readonly class RequestCaseArbitrary
 
     private function scalar(mixed $value): string
     {
-        return match (true) {
-            is_string($value) => $value,
-            is_int($value), is_float($value) => (string) $value,
-            is_bool($value) => $value ? 'true' : 'false',
-            $value === null => 'null',
-            default => throw new UnsupportedGeneration('Parameter values must be scalar, arrays, or objects with scalar properties'),
-        };
+        return WireValue::of($value)
+            ?? throw new UnsupportedGeneration('Parameter values must be scalar, arrays, or objects with scalar properties');
     }
 
-    /** @param array<string, mixed> $schema */
-    private function isArraySchema(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'array' || array_key_exists('items', $schema);
-    }
 
-    /** @param array<string, mixed> $schema */
-    private function isObjectSchema(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
-    }
-
-    private function isJsonMediaType(string $mediaType): bool
-    {
-        $mediaType = strtolower(trim(explode(';', $mediaType, 2)[0]));
-
-        return $mediaType === 'application/json' || str_ends_with($mediaType, '+json');
-    }
 }

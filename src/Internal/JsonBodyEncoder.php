@@ -24,12 +24,12 @@ final readonly class JsonBodyEncoder
     /** @param array<string, mixed> $schema */
     public function jsonValue(mixed $value, array $schema): mixed
     {
-        if ($this->isArraySchema($schema) && is_array($value) && array_is_list($value)) {
+        if (SchemaShape::isArray($schema) && is_array($value) && array_is_list($value)) {
             $items = $this->schemaObject($schema['items'] ?? null, 'Array items must be a schema object');
 
             return array_map(fn(mixed $item): mixed => $this->jsonValue($item, $items), $value);
         }
-        if ($this->isObjectSchema($schema) && is_array($value) && ($value === [] || !array_is_list($value))) {
+        if (SchemaShape::isObject($schema) && is_array($value) && ($value === [] || !array_is_list($value))) {
             $properties = $this->schemaObject($schema['properties'] ?? [], 'Object properties must be an object');
             /** @var array<string, mixed> $result */
             $result = [];
@@ -81,15 +81,4 @@ final readonly class JsonBodyEncoder
         return $result;
     }
 
-    /** @param array<string, mixed> $schema */
-    private function isArraySchema(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'array' || array_key_exists('items', $schema);
-    }
-
-    /** @param array<string, mixed> $schema */
-    private function isObjectSchema(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
-    }
 }

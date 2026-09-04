@@ -9,6 +9,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 
 /**
@@ -93,8 +94,7 @@ final readonly class ResponseMaterializer
             if (!is_string($mediaType) || !is_array($definition)) {
                 continue;
             }
-            $name = strtolower(trim(explode(';', $mediaType, 2)[0]));
-            if ($name === 'application/json' || str_ends_with($name, '+json')) {
+            if (MediaType::isJson($mediaType)) {
                 return $definition;
             }
         }

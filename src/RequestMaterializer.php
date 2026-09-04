@@ -9,7 +9,10 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 
 /**
  * Materializes a data-only case as a PSR-7 request immediately before transport.
@@ -181,7 +184,7 @@ final readonly class RequestMaterializer
      */
     private function formBody(mixed $value, array $schema, array $encoding): string
     {
-        if (!is_array($value) || !$this->isObjectSchema($schema)) {
+        if (!is_array($value) || !SchemaShape::isObject($schema)) {
             throw new UnsupportedGeneration('Form request body value must be an object');
         }
         if ($value !== [] && array_is_list($value)) {
@@ -234,7 +237,7 @@ final readonly class RequestMaterializer
      */
     private function formWireValue(mixed $value, array $schema): string|array
     {
-        if ($this->isArraySchema($schema)) {
+        if (SchemaShape::isArray($schema)) {
             if (!is_array($value) || !array_is_list($value)) {
                 throw new UnsupportedGeneration('Form array value must be a list');
             }
@@ -242,7 +245,7 @@ final readonly class RequestMaterializer
 
             return array_map($this->scalarValue(...), $value);
         }
-        if ($this->isObjectSchema($schema)) {
+        if (SchemaShape::isObject($schema)) {
             if (!is_array($value) || ($value !== [] && array_is_list($value))) {
                 throw new UnsupportedGeneration('Form object value must be an object');
             }
@@ -263,20 +266,8 @@ final readonly class RequestMaterializer
 
     private function scalarValue(mixed $value): string
     {
-        if (is_string($value)) {
-            return $value;
-        }
-        if (is_int($value) || is_float($value)) {
-            return (string) $value;
-        }
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-        if ($value === null) {
-            return 'null';
-        }
-
-        throw new UnsupportedGeneration('Form scalar value has an unsupported type');
+        return WireValue::of($value)
+            ?? throw new UnsupportedGeneration('Form scalar value has an unsupported type');
     }
 
     /** @return array<array-key, mixed> */
@@ -367,8 +358,7 @@ final readonly class RequestMaterializer
             if (!is_string($mediaType) || !is_array($definition)) {
                 continue;
             }
-            $name = strtolower(trim(explode(';', $mediaType, 2)[0]));
-            if ($name === 'application/json' || str_ends_with($name, '+json')) {
+            if (MediaType::isJson($mediaType)) {
                 return $definition;
             }
         }
@@ -376,17 +366,6 @@ final readonly class RequestMaterializer
         return null;
     }
 
-    /** @param array<string, mixed> $schema */
-    private function isArraySchema(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'array' || array_key_exists('items', $schema);
-    }
-
-    /** @param array<string, mixed> $schema */
-    private function isObjectSchema(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
-    }
 
     /** @return array<string, mixed> */
     private function schemaObject(mixed $value, string $message): array
@@ -404,18 +383,12 @@ final readonly class RequestMaterializer
             if (!is_string($key)) {
                 throw new UnsupportedGeneration($message);
             }
-            $result = $this->withValue($result, $key, $value[$key]);
+            // array_merge, not `$result[$key] =`: the value is mixed, and the
+            // direct assignment is a psalm MixedAssignment that only a
+            // suppression would quiet.
+            $result = array_merge($result, [$key => $value[$key]]);
         }
 
         return $result;
-    }
-
-    /**
-     * @param array<string, mixed> $result
-     * @return array<string, mixed>
-     */
-    private function withValue(array $result, string $key, mixed $value): array
-    {
-        return array_merge($result, [$key => $value]);
     }
 }
