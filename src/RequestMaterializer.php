@@ -112,6 +112,9 @@ final readonly class RequestMaterializer
         if ($cookies !== []) {
             $request = $request->withHeader('Cookie', implode('; ', $cookies));
         }
+        if ($credentials instanceof Credentials) {
+            $this->assertCredentialsAreDistinguishable($operation, $credentials);
+        }
         if ($case['body'] === null) {
             return $credentials?->apply($request) ?? $request;
         }
@@ -143,6 +146,42 @@ final readonly class RequestMaterializer
             ->withBody($this->streams->createStream($payload));
 
         return $credentials?->apply($request) ?? $request;
+    }
+
+    /**
+     * A query credential and an exploded object query parameter that admits
+     * undeclared members cannot share a query string: the parameter's style
+     * claims every pair a sibling parameter does not, so the credential
+     * becomes one of its members. The operation is then exercised with a value
+     * other than the one the case recorded — and where the object is
+     * constrained, the case this package called valid is reported invalid.
+     *
+     * OpenAPI itself leaves that ambiguity to the style, so there is nothing to
+     * resolve here and the honest answer is to say so rather than send a
+     * request that means something else.
+     */
+    private function assertCredentialsAreDistinguishable(Operation $operation, Credentials $credentials): void
+    {
+        if ($credentials->query === []) {
+            return;
+        }
+        foreach ($operation->parameters as $parameter) {
+            if ($parameter['in'] !== 'query' || !$parameter['explode'] || $parameter['style'] !== 'form') {
+                continue;
+            }
+            if (($parameter['schema']['type'] ?? null) !== 'object' && !array_key_exists('properties', $parameter['schema'])) {
+                continue;
+            }
+            if (($parameter['schema']['additionalProperties'] ?? true) === false) {
+                continue;
+            }
+
+            throw new UnsupportedGeneration(sprintf(
+                'Query credentials (%s) cannot be told apart from the exploded object query parameter "%s", which admits undeclared members',
+                implode(', ', array_keys($credentials->query)),
+                $parameter['name'],
+            ));
+        }
     }
 
     private function requestTarget(Operation $operation, string $path): string

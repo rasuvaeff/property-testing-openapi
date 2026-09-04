@@ -20,6 +20,14 @@ use Rasuvaeff\OpenApiContract\Operation;
 final readonly class SecuritySelector
 {
     /**
+     * The anonymous alternative — an empty requirement object, which OpenAPI
+     * uses to say "authentication is optional" — is kept as a fallback rather
+     * than taken as soon as it is seen. Listed first, as it usually is, it
+     * short-circuited the search and the suite never exercised the
+     * authenticated path of such an operation at all: half its coverage, lost
+     * silently. An alternative the provider can satisfy is preferred; the
+     * anonymous one answers only when none can.
+     *
      * @return null|array{requirement: SecurityRequirement, credentials: Credentials}
      */
     public function select(Operation $operation, CredentialsProviderInterface $provider): ?array
@@ -27,11 +35,14 @@ final readonly class SecuritySelector
         if ($operation->security === []) {
             return null;
         }
+        $anonymous = null;
         foreach ($operation->security as $rawRequirement) {
             $requirement = new SecurityRequirement($rawRequirement);
 
             if ($requirement->schemes === []) {
-                return ['requirement' => $requirement, 'credentials' => new Credentials()];
+                $anonymous ??= ['requirement' => $requirement, 'credentials' => new Credentials()];
+
+                continue;
             }
 
             try {
@@ -41,6 +52,9 @@ final readonly class SecuritySelector
             }
 
             return ['requirement' => $requirement, 'credentials' => $credentials];
+        }
+        if ($anonymous !== null) {
+            return $anonymous;
         }
 
         throw new CredentialsUnavailable(sprintf('No credentials satisfy operation "%s"', $operation->key));
