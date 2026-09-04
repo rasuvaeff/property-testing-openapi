@@ -10,15 +10,23 @@ use Rasuvaeff\OpenApiContract\Operation;
  * Renders one data-only case as a redacted curl command.
  *
  * Credentials are never applied: the reproducer materializes the case alone,
- * so provider secrets cannot leak by construction. The policy additionally
- * redacts user-declared case fields, and a small default header set is
- * redacted defensively.
+ * so provider secrets cannot leak by construction. What remains is the case's
+ * own generated data, and the policy is how a caller says which of it is
+ * sensitive.
+ *
+ * The default header set is redacted on the name alone, because a header
+ * arrives from the case as one opaque string and its name is the only thing
+ * left to judge it by. A cookie is different: it reaches the request through
+ * `$case['cookies']`, where the policy can name one member and leave the rest
+ * readable — so redacting the whole `Cookie` header made
+ * {@see RedactionPolicy::$cookies} unobservable, which is to say inert. It is
+ * not in the default set for that reason.
  *
  * @internal Reach it through {@see ContractSuite::reproduce()}.
  */
 final readonly class RequestReproducer
 {
-    private const array DEFAULT_REDACTED_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'set-cookie'];
+    private const array DEFAULT_REDACTED_HEADERS = ['authorization', 'proxy-authorization', 'set-cookie'];
 
     private const string REDACTED = '[redacted]';
 

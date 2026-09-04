@@ -97,7 +97,9 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
 
 ## Mutation gate: known equivalent classes
 
-`composer mutation` (minMsi 93) leaves a stable set of escaped mutants that
+`composer mutation` (minMsi 92, against a measured 93.05% — see the comment
+in `infection.json5` for why the gate is set below the score and not at it)
+leaves a stable set of escaped mutants that
 are equivalent by analysis — do not chase them, and re-classify anything new:
 `Gen::frequency` weight bumps that scale every pair uniformly, values in
 lookup maps read only through `isset()` (a `true`→`false` flip changes
