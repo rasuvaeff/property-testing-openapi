@@ -91,10 +91,17 @@ final readonly class RequestCaseArbitrary
             if ($parameter['in'] !== $location) {
                 continue;
             }
-            $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location);
-            $compiled = $this->schemas->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
+            $separator = ParameterSchemas::separatorOf($location, $parameter['style']);
+            $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
+            $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
             if ($location === 'path') {
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isPathSafe($value));
+            }
+            if ($separator !== null) {
+                // The rewrite and the narrowed alphabet construct values
+                // without the separator; this only guards what neither can
+                // see, a `pattern`, whose alphabet is the pattern's own.
+                $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isSeparatorSafe($value, $separator));
             }
             $value = Gen::map(
                 $compiled,
@@ -109,6 +116,18 @@ final readonly class RequestCaseArbitrary
         }
 
         return Gen::map(Gen::record($shape), fn(array $values): array => $this->includedValues($values));
+    }
+
+    /**
+     * A delimited style cannot escape its own separator, so no generated
+     * string may carry one — the compiler is built with that character out of
+     * its alphabet rather than the value being filtered afterwards. Built per
+     * parameter: `location()` runs once while the generator is assembled, not
+     * once per case.
+     */
+    private function compilerFor(?string $separator): SchemaArbitraryCompiler
+    {
+        return $separator === null ? $this->schemas : new SchemaArbitraryCompiler($separator);
     }
 
     private function body(Operation $operation): ArbitraryInterface

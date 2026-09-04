@@ -89,7 +89,10 @@ final readonly class RequestMaterializer
                 value: $values[$parameter['name']],
                 style: $parameter['style'],
                 explode: $parameter['explode'],
-                allowReserved: $parameter['in'] !== 'path' && $parameter['allowReserved'],
+                // The specification defines `allowReserved` for `in: query`
+                // only; honouring it on a header or a cookie applied a rule
+                // the document never stated there.
+                allowReserved: $parameter['in'] === 'query' && $parameter['allowReserved'],
             );
             match ($parameter['in']) {
                 'path' => $path = str_replace('{' . $parameter['name'] . '}', $wire, $path),

@@ -93,6 +93,50 @@ final class RequestMaterializerTest
         Assert::true($request->getBody()->isReadable());
     }
 
+    /**
+     * The specification defines `allowReserved` for `in: query` only. Honouring
+     * it wherever the location was not `path` applied a rule the document never
+     * stated for a header or a cookie, and a raw reserved character there is
+     * read by the contract as the separator it looks like.
+     *
+     * @param 'header'|'cookie' $location
+     */
+    #[DataProvider('nonQueryReservedProvider')]
+    public function ignoresAllowReservedOutsideTheQuery(string $location, string $value, string $expected): void
+    {
+        $operation = new Operation(
+            key: 'reserved.elsewhere',
+            operationId: 'reserved.elsewhere',
+            method: 'GET',
+            path: '/items',
+            parameters: [[
+                'name' => $location === 'header' ? 'X-Filter' : 'filter',
+                'in' => $location, 'required' => true, 'style' => $location === 'header' ? 'simple' : 'form',
+                'explode' => false, 'allowReserved' => true, 'schema' => ['type' => 'string'],
+            ]],
+        );
+        $factory = new Psr17Factory();
+        $case = [
+            'operationKey' => 'reserved.elsewhere', 'path' => [], 'query' => [],
+            'headers' => $location === 'header' ? ['X-Filter' => $value] : [],
+            'cookies' => $location === 'cookie' ? ['filter' => $value] : [],
+            'body' => null, 'misuse' => null,
+        ];
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same(
+            $location === 'header' ? $request->getHeaderLine('X-Filter') : $request->getHeaderLine('Cookie'),
+            $expected,
+        );
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function nonQueryReservedProvider(): iterable
+    {
+        yield 'header' => ['header', 'a/b:c', 'a%2Fb%3Ac'];
+        yield 'cookie' => ['cookie', 'a/b:c', 'filter=a%2Fb%3Ac'];
+    }
+
     public function keepsReservedPathSlashInsideTemplateSlot(): void
     {
         $operation = new Operation(

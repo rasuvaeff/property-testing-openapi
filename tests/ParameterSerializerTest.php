@@ -16,6 +16,37 @@ use Testo\Test;
 #[Covers(ParameterSerializer::class)]
 final class ParameterSerializerTest
 {
+    /**
+     * `allowReserved` widens what may travel raw, but it may not hand back a
+     * character the chosen style uses as a separator: the wire would then say
+     * something the value never did, and the contract would read one item as
+     * two. The reserved set is style-aware, not global.
+     *
+     * @param string|list<string>|array<string, string> $value
+     */
+    #[DataProvider('reservedSeparatorCases')]
+    public function keepsStyleSeparatorsEncodedUnderAllowReserved(
+        string|array $value,
+        string $style,
+        bool $explode,
+        string $expected,
+    ): void {
+        Assert::same((new ParameterSerializer())->serialize('p', $value, $style, $explode, allowReserved: true), $expected);
+    }
+
+    /** @return iterable<string, array{string|list<string>|array<string, string>, string, bool, string}> */
+    public static function reservedSeparatorCases(): iterable
+    {
+        yield 'form list joined with a comma' => [['a,b'], 'form', false, 'p=a%2Cb'];
+        yield 'form object joined with a comma' => [['k' => 'a,b'], 'form', false, 'p=k,a%2Cb'];
+        yield 'simple list joined with a comma' => [['a,b'], 'simple', false, 'a%2Cb'];
+        yield 'label list joined with a comma' => [['a,b'], 'label', false, '.a%2Cb'];
+        yield 'matrix scalar carrying a semicolon' => ['a;b', 'matrix', false, ';p=a%3Bb'];
+        yield 'matrix list joined with a comma' => [['a,b'], 'matrix', false, ';p=a%2Cb'];
+        // Everything else reserved still travels raw.
+        yield 'other reserved characters are untouched' => ['a/b?c@d', 'form', true, 'p=a/b?c@d'];
+    }
+
     /** @param string|list<string>|array<string, string> $value */
     #[DataProvider('serializationCases')]
     public function serializesEverySupportedShape(

@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Fixed.** `spaceDelimited` and `pipeDelimited` query parameters generate
+  again (#58). The serializer refuses a value carrying the style's own
+  separator — the style has no escape for it — but nothing constrained the
+  generated strings, and `Gen::stringOf()` draws from printable ASCII, which
+  contains both a space and a `|`. Four materializations in five aborted with
+  an error that cannot shrink and never reaches the corpus. The alphabet is
+  narrowed at compile time instead, an unusable `enum` member is dropped and a
+  `const` fails closed; the run-time filter now only guards a `pattern`, whose
+  alphabet neither can see. Measured over 200 runs, the abort rate goes from
+  163/200 and 144/200 to 0.
+- **Fixed.** `allowReserved` no longer changes what the wire says (#59). The
+  reserved set is style-aware: a character the chosen style uses as a separator
+  stays percent-encoded, so a form list carrying a comma is no longer read back
+  as two items. Across every style, explode and value shape — 212 combinations
+  serialized here and parsed by `openapi-contract` — the round trip went from
+  12 broken to none. The flag is also applied where the specification defines
+  it, `in: query`, rather than everywhere but the path.
+- **Fixed.** A parameter whose type is an OAS 3.1 union containing `null`
+  generates (#62). A parameter travels as text and has no representation for
+  the null branch, which is why 3.0 `nullable` is dropped; the 3.1 spelling was
+  not, so a free-form `type: ["object", "null"]` reached the generator and the
+  wire conversion then rejected the map it produced. `Internal\SchemaShape`
+  reads a type union as membership rather than identity, which is what it
+  exists to decide in one place.
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.6`, which fixes the
+  contract-side halves of this wave — among them OAS 3.0 documents using a
+  boolean `additionalProperties`, and properties that were silently not
+  validated at all.
+- **Internal.** The zoo gains `delimited.get`, `reserved.get` and `unions.get`,
+  and `ZooContracts::suite()` derives its selection from `VALID_OPERATIONS`
+  instead of repeating it — an operation added to one list and not the other
+  was selected nowhere, and the property that exercises it aborted before it
+  could say why.
+
 ## 0.8.0 — 2026-09-04
 
 - **Breaking.** `RequestMaterializer`, `RequestCaseArbitrary` and

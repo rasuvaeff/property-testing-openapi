@@ -26,12 +26,17 @@ final readonly class SchemaArbitraryCompiler
 
     private ContainerArbitraries $containers;
 
-    public function __construct()
+    /**
+     * @param string $excludedCharacters characters no generated plain string
+     *        may contain — the separator of a delimited parameter style, which
+     *        that style has no way to escape
+     */
+    public function __construct(string $excludedCharacters = '')
     {
         $facts = new SchemaFacts();
         $this->facts = $facts;
         $this->composition = new CompositionArbitraries($this, $facts);
-        $this->scalars = new ScalarArbitraries($facts);
+        $this->scalars = new ScalarArbitraries($facts, $excludedCharacters);
         $this->containers = new ContainerArbitraries($this, $facts);
     }
 

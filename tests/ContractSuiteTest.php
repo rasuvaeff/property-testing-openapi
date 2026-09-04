@@ -152,7 +152,7 @@ final class ContractSuiteTest
             '   instancePath: "q"',
             '   specPointer: "/paths/pets"',
             '   expected: "string"',
-            '   actual: "[redacted]"',
+            '   actual: 1',
             '   message: "bad query"',
             '2. code: "response.body.schema"',
             '   operation: "pets.get"',
@@ -160,7 +160,7 @@ final class ContractSuiteTest
             '   instancePath: "/name"',
             '   specPointer: "/components/schemas/Pet"',
             '   expected: {"type":"string"}',
-            '   actual: "[redacted]"',   // openapi-contract 0.5 redacts every body value
+            '   actual: "[redacted]"',   // a body value is redacted wholesale; its member names belong to the application
             '   message: "bad body"',
         ]));
         Assert::same(strtok($request->getMessage(), "\n"), 'Generated request for operation "pets.get" is invalid before transport');
@@ -500,9 +500,10 @@ final class ContractSuiteTest
      *
      * @param array{key: string, case: array<string, mixed>} $tagged
      */
-    // 300 runs keep each of the 11 zoo operations at roughly the sample the
-    // Classify::cover gates below were sized against when the zoo had 9.
-    #[Property(runs: 300, generators: [ZooContracts::class, 'taggedCase'])]
+    // The Classify::cover gates below are sized against a per-operation
+    // sample, so the run count grows with the zoo: 400 runs over 14 operations
+    // is the sample 300 gave 11, which is the sample 250 gave 9.
+    #[Property(runs: 400, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
