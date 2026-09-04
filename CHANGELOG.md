@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- The seven parameter misuse categories of `NegativeRequestCaseArbitrary` no
+  longer restate the path/query/header/cookie handling and the full case shape
+  once each: one `parameter()` helper writes the target's value through a
+  single location map, and one imported psalm type describes the case. A
+  location can now be mishandled in exactly one place.
+- Helpers that were carried verbatim in several classes are shared:
+  `MediaType` (normalization and the JSON test, nine call sites),
+  `SchemaShape` (array/object schema, three copies), `WireValue` (the scalar
+  wire spelling, four copies with four different failure wordings), and
+  `ConstructibleCategories` (drop the misuse categories a document does not
+  admit, then choose uniformly — two copies).
+- `ResponseCaseArbitrary` discovers the JSON media type of a response once
+  instead of once per caller; each caller still words its own "no JSON media
+  type" failure.
+- Removed a re-check of `is_string()` in `ContainerArbitraries` that the loop
+  above already enforced, and the single-use `withValue()` wrapper in
+  `RequestMaterializer`.
 - README (EN/RU) carries the sections the package conventions require:
   Requirements, Examples, Development and License, plus the `llms.txt` pointer
   and a Psalm-level badge.

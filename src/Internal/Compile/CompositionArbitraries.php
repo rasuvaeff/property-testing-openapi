@@ -83,7 +83,7 @@ final readonly class CompositionArbitraries
                 throw UnsupportedGeneration::forSchema(sprintf('not keyword "%s" is outside the supported subset', $keyword));
             }
         }
-        if ($schema === [] || array_key_exists('const', $schema) && array_key_exists('enum', $schema)) {
+        if ($schema === [] || (array_key_exists('const', $schema) && array_key_exists('enum', $schema))) {
             throw UnsupportedGeneration::forSchema('not cannot combine const and enum');
         }
         if (array_key_exists('enum', $schema)
@@ -127,7 +127,7 @@ final readonly class CompositionArbitraries
             return;
         }
         foreach ($sourceTypes as $type) {
-            $covered = in_array($type, $forbiddenTypes, strict: true) || $type === 'integer' && in_array('number', $forbiddenTypes, strict: true);
+            $covered = in_array($type, $forbiddenTypes, strict: true) || ($type === 'integer' && in_array('number', $forbiddenTypes, strict: true));
             if (!$covered) {
                 return;
             }
@@ -169,7 +169,7 @@ final readonly class CompositionArbitraries
             throw new \LogicException('not predicate has no supported assertion');
         }
         foreach ($types as $type) {
-            if ($this->valueType($value) === $type || $type === 'number' && is_int($value)) {
+            if ($this->valueType($value) === $type || ($type === 'number' && is_int($value))) {
                 return true;
             }
         }

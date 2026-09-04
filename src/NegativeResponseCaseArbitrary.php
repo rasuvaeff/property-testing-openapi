@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 
 /**
@@ -53,21 +54,8 @@ final readonly class NegativeResponseCaseArbitrary
             fn(): ArbitraryInterface => $this->mediaTypeMismatchForOperation($operation, $status),
             fn(): ArbitraryInterface => $this->malformedJsonForOperation($operation, $status),
         ];
-        $pairs = [];
-        foreach ($factories as $factory) {
-            try {
-                $pairs[] = [1, $factory()];
-            } catch (UnsupportedGeneration) {
-            }
-        }
-        if ($pairs === []) {
-            throw new UnsupportedGeneration(sprintf('Response for status %d of operation "%s" supports no constructible negative case category', $status, $operation->key));
-        }
 
-        /** @var ArbitraryInterface<ResponseCaseData> $union */
-        $union = Gen::frequency($pairs);
-
-        return $union;
+        return ConstructibleCategories::anyOf($factories, sprintf('Response for status %d of operation "%s" supports no constructible negative case category', $status, $operation->key));
     }
 
     /**

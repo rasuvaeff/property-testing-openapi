@@ -101,8 +101,8 @@ final readonly class ContainerArbitraries
             $compiled = $this->compiler->compile($property);
             $shape[$name] = isset($requiredNames[$name]) ? $compiled : $this->optionalProperty($compiled);
         }
-        foreach (array_keys($required) as $index) {
-            if (!is_string($required[$index]) || !array_key_exists($required[$index], $shape)) {
+        foreach (array_keys($requiredNames) as $name) {
+            if (!array_key_exists($name, $shape)) {
                 throw UnsupportedGeneration::forSchema('required properties without a schema are not supported');
             }
         }
