@@ -112,6 +112,120 @@ final class ParameterSchemasTest
         yield 'null-only enum anywhere' => [['enum' => [null]], 'header', 'a parameter enum needs a non-null member'];
     }
 
+    /**
+     * OAS 3.1 spells the absent branch as a `null` member of a type union,
+     * the way 3.0 spells it `nullable`. Only the 3.0 form was dropped, so a
+     * 3.1 free-form `type: ["object", "null"]` reached the generator, which
+     * produced a map the wire conversion then rejected as a non-scalar.
+     */
+    #[DataProvider('typeUnionCases')]
+    public function dropsTheNullMemberOfATypeUnion(array $schema, mixed $expected): void
+    {
+        Assert::same((new ParameterSchemas())->forLocation($schema, 'query')['type'] ?? null, $expected);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, mixed}> */
+    public static function typeUnionCases(): iterable
+    {
+        yield 'union collapses to one member' => [['type' => ['object', 'null']], 'object'];
+        yield 'union keeps its remaining members' => [['type' => ['string', 'integer', 'null']], ['string', 'integer']];
+        yield 'union without null is untouched' => [['type' => ['string', 'integer']], ['string', 'integer']];
+        yield 'scalar type is untouched' => [['type' => 'string'], 'string'];
+        // Malformed members are not ours to repair: the compiler fails closed
+        // on them with a message about what it actually found.
+        yield 'malformed member passes through' => [['type' => [1, 'null']], [1, 'null']];
+    }
+
+    public function failsClosedOnATypeUnionOfNullAlone(): void
+    {
+        try {
+            (new ParameterSchemas())->forLocation(['type' => ['null']], 'query');
+        } catch (UnsupportedGeneration $exception) {
+            Assert::string($exception->getMessage())->contains('other than null');
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected a union of null alone to fail closed');
+    }
+
+    /**
+     * A delimited style joins its items with a character it cannot escape, so
+     * a value carrying one is unrepresentable rather than merely awkward. What
+     * can be narrowed is narrowed at compile time; a `pattern` is the one form
+     * the rewrite cannot see, and `isSeparatorSafe()` guards it.
+     */
+    #[DataProvider('delimitedNarrowingCases')]
+    public function narrowsWhatADelimitedStyleCannotCarry(string $style, array $schema, array $expected): void
+    {
+        Assert::same((new ParameterSchemas())->forLocation($schema, 'query', $style), $expected);
+    }
+
+    /** @return iterable<string, array{string, array<string, mixed>, array<string, mixed>}> */
+    public static function delimitedNarrowingCases(): iterable
+    {
+        yield 'space delimited drops unusable enum members' => [
+            'spaceDelimited',
+            ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a b', 'c', 'd e', 'f']]],
+            ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['c', 'f']]],
+        ];
+        yield 'pipe delimited drops unusable enum members' => [
+            'pipeDelimited',
+            ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a|b', 'c']]],
+            ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['c']]],
+        ];
+        yield 'the form style narrows nothing' => [
+            'form',
+            ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a b', 'c']]],
+            ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a b', 'c']]],
+        ];
+    }
+
+    #[DataProvider('unsupportedDelimitedSchemas')]
+    public function failsClosedWhenNothingSurvivesTheSeparator(string $style, array $schema, string $message): void
+    {
+        try {
+            (new ParameterSchemas())->forLocation($schema, 'query', $style);
+        } catch (UnsupportedGeneration $exception) {
+            Assert::string($exception->getMessage())->contains($message);
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected the schema to fail closed');
+    }
+
+    /** @return iterable<string, array{string, array<string, mixed>, string}> */
+    public static function unsupportedDelimitedSchemas(): iterable
+    {
+        yield 'const carries the separator' => [
+            'spaceDelimited',
+            ['type' => 'array', 'items' => ['const' => 'a b']],
+            'const cannot contain " "',
+        ];
+        yield 'every enum member carries it' => [
+            'pipeDelimited',
+            ['type' => 'array', 'items' => ['enum' => ['a|b', 'c|d']]],
+            'no delimited parameter enum member can avoid "|"',
+        ];
+    }
+
+    #[DataProvider('separatorProvider')]
+    public function namesTheSeparatorOfEachStyle(string $location, string $style, ?string $expected): void
+    {
+        Assert::same(ParameterSchemas::separatorOf($location, $style), $expected);
+    }
+
+    /** @return iterable<string, array{string, string, null|string}> */
+    public static function separatorProvider(): iterable
+    {
+        yield 'space delimited' => ['query', 'spaceDelimited', ' '];
+        yield 'pipe delimited' => ['query', 'pipeDelimited', '|'];
+        yield 'form' => ['query', 'form', null];
+        yield 'deep object' => ['query', 'deepObject', null];
+        yield 'a path parameter has no delimited style' => ['path', 'spaceDelimited', null];
+    }
+
     public function judgesPathSafetyOfEveryStringInAValue(): void
     {
         $schemas = new ParameterSchemas();

@@ -41,8 +41,18 @@ final readonly class ScalarArbitraries
         'date' => [10, 10],
     ];
 
+    /**
+     * Printable ASCII, the domain {@see Gen::stringOf()} draws from. Spelled
+     * out so a character can be taken out of it: a delimited query parameter
+     * cannot carry its own separator, and narrowing the alphabet is the
+     * constructive way to say so — the alternative is a filter that rejects
+     * four generated strings in five.
+     */
+    private const string PRINTABLE_ASCII = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
+
     public function __construct(
         private SchemaFacts $facts,
+        private string $excludedCharacters = '',
     ) {}
 
     /**
@@ -110,7 +120,7 @@ final readonly class ScalarArbitraries
         /** @var ArbitraryInterface<string> $arbitrary */
         $arbitrary = match ($format) {
             // `password` is a UI-obscuring annotation in OAS, not an assertion.
-            null, 'password' => Gen::stringOf($min, $max),
+            null, 'password' => $this->plainString($min, $max),
             'uuid' => Gen::uuid(),
             'email' => Gen::email(),
             'ipv4' => Gen::ipv4(),
@@ -147,6 +157,27 @@ final readonly class ScalarArbitraries
                 && mb_strlen($value) >= $min
                 && mb_strlen($value) <= $max);
         }
+
+        return $arbitrary;
+    }
+
+    /**
+     * @param int<0, max> $min
+     * @param int<1, max> $max the zero-length window is answered before this
+     * @return ArbitraryInterface<string>
+     */
+    private function plainString(int $min, int $max): ArbitraryInterface
+    {
+        if ($this->excludedCharacters === '') {
+            return Gen::stringOf($min, $max);
+        }
+        $alphabet = str_replace(str_split($this->excludedCharacters), '', self::PRINTABLE_ASCII);
+        if ($alphabet === '') {
+            throw UnsupportedGeneration::forSchema('the excluded characters leave no alphabet');
+        }
+
+        /** @var ArbitraryInterface<string> $arbitrary */
+        $arbitrary = Gen::stringFrom($alphabet, minLength: $min, maxLength: $max);
 
         return $arbitrary;
     }

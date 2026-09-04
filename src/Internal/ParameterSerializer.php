@@ -17,8 +17,8 @@ final readonly class ParameterSerializer
     public function serialize(string $name, string|array $value, string $style, bool $explode, bool $allowReserved = false): string
     {
         return match ($style) {
-            'simple' => $this->simple($value, $explode, ',', $allowReserved),
-            'label' => '.' . $this->simple($value, $explode, $explode ? '.' : ',', $allowReserved, encodeDots: true),
+            'simple' => $this->simple($value, $explode, ',', $allowReserved, keepEncoded: ','),
+            'label' => '.' . $this->simple($value, $explode, $explode ? '.' : ',', $allowReserved, encodeDots: true, keepEncoded: ','),
             'matrix' => $this->matrix($name, $value, $explode, $allowReserved),
             'form' => $this->form($name, $value, $explode, $allowReserved),
             'spaceDelimited' => $this->delimited($name, $value, ' ', '%20', $allowReserved),
@@ -29,44 +29,50 @@ final readonly class ParameterSerializer
     }
 
     /** @param string|list<string>|array<string, string> $value */
-    private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved, bool $encodeDots = false): string
+    private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved, bool $encodeDots = false, string $keepEncoded = ''): string
     {
         if (is_string($value)) {
-            return $this->encode($value, $allowReserved, $encodeDots);
+            return $this->encode($value, $allowReserved, $encodeDots, $keepEncoded);
         }
         if (array_is_list($value)) {
-            return implode($pairSeparator, array_map(fn(string $item): string => $this->encode($item, $allowReserved, $encodeDots), $this->list($value)));
+            return implode($pairSeparator, array_map(fn(string $item): string => $this->encode($item, $allowReserved, $encodeDots, $keepEncoded), $this->list($value)));
         }
 
         $parts = [];
         foreach ($this->object($value) as $key => $item) {
-            $parts[] = $this->encode($key, $allowReserved, $encodeDots) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved, $encodeDots);
+            $parts[] = $this->encode($key, $allowReserved, $encodeDots, $keepEncoded) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved, $encodeDots, $keepEncoded);
         }
 
         return implode($explode ? $pairSeparator : ',', $parts);
     }
 
-    /** @param string|list<string>|array<string, string> $value */
+    /**
+     * Matrix segments are separated by ";" and its unexploded forms join with
+     * ",", so neither may come back raw however permissive `allowReserved` is.
+     *
+     * @param string|list<string>|array<string, string> $value
+     */
     private function matrix(string $name, string|array $value, bool $explode, bool $allowReserved): string
     {
+        $keep = ';,';
         if (is_string($value)) {
-            return ';' . $this->encode($name) . '=' . $this->encode($value, $allowReserved);
+            return ';' . $this->encode($name) . '=' . $this->encode($value, $allowReserved, keepEncoded: $keep);
         }
         if (array_is_list($value)) {
             $values = $this->list($value);
             if (!$explode) {
-                return ';' . $this->encode($name) . '=' . implode(',', array_map(fn(string $item): string => $this->encode($item, $allowReserved), $values));
+                return ';' . $this->encode($name) . '=' . implode(',', array_map(fn(string $item): string => $this->encode($item, $allowReserved, keepEncoded: $keep), $values));
             }
 
-            return implode('', array_map(fn(string $item): string => ';' . $this->encode($name) . '=' . $this->encode($item, $allowReserved), $values));
+            return implode('', array_map(fn(string $item): string => ';' . $this->encode($name) . '=' . $this->encode($item, $allowReserved, keepEncoded: $keep), $values));
         }
         if (!$explode) {
-            return ';' . $this->encode($name) . '=' . $this->simple($this->object($value), explode: false, pairSeparator: ',', allowReserved: $allowReserved);
+            return ';' . $this->encode($name) . '=' . $this->simple($this->object($value), explode: false, pairSeparator: ',', allowReserved: $allowReserved, keepEncoded: $keep);
         }
 
         $parts = [];
         foreach ($this->object($value) as $key => $item) {
-            $parts[] = ';' . $this->encode($key) . '=' . $this->encode($item, $allowReserved);
+            $parts[] = ';' . $this->encode($key) . '=' . $this->encode($item, $allowReserved, keepEncoded: $keep);
         }
 
         return implode('', $parts);
@@ -81,13 +87,17 @@ final readonly class ParameterSerializer
         if (array_is_list($value)) {
             $values = $this->list($value);
             if (!$explode) {
-                return $this->pair($name, implode(',', array_map(fn(string $item): string => $this->encode($item, $allowReserved), $values)), $allowReserved, valueIsEncoded: true);
+                // The items are joined with "," here, so `allowReserved` must
+                // not hand that same "," back raw: the contract would split one
+                // item into two and the case would describe a request the
+                // server never received.
+                return $this->pair($name, implode(',', array_map(fn(string $item): string => $this->encode($item, $allowReserved, keepEncoded: ','), $values)), $allowReserved, valueIsEncoded: true);
             }
 
             return implode('&', array_map(fn(string $item): string => $this->pair($name, $item, $allowReserved), $values));
         }
         if (!$explode) {
-            return $this->pair($name, $this->simple($this->object($value), explode: false, pairSeparator: ',', allowReserved: $allowReserved), $allowReserved, valueIsEncoded: true);
+            return $this->pair($name, $this->simple($this->object($value), explode: false, pairSeparator: ',', allowReserved: $allowReserved, keepEncoded: ','), $allowReserved, valueIsEncoded: true);
         }
 
         $parts = [];
@@ -146,7 +156,19 @@ final readonly class ParameterSerializer
         return $this->encode($name) . '=' . ($valueIsEncoded ? $value : $this->encode($value, $allowReserved));
     }
 
-    private function encode(string $value, bool $allowReserved = false, bool $encodeDots = false): string
+    /** @var list<string> */
+    private const array RESERVED_ENCODED = ['%3A', '%2F', '%3F', '%5B', '%5D', '%40', '%21', '%24', '%27', '%28', '%29', '%2A', '%2B', '%2C', '%3B'];
+
+    /** @var list<string> */
+    private const array RESERVED_RAW = [':', '/', '?', '[', ']', '@', '!', '$', "'", '(', ')', '*', '+', ',', ';'];
+
+    /**
+     * @param string $keepEncoded reserved characters this style uses as a
+     *        separator, which stay percent-encoded however permissive
+     *        `allowReserved` is — leaving one raw would not widen the wire but
+     *        change what it says
+     */
+    private function encode(string $value, bool $allowReserved = false, bool $encodeDots = false, string $keepEncoded = ''): string
     {
         $encoded = rawurlencode($value);
         if ($encodeDots) {
@@ -155,12 +177,17 @@ final readonly class ParameterSerializer
         if (!$allowReserved) {
             return $encoded;
         }
+        $search = [];
+        $replace = [];
+        foreach (self::RESERVED_RAW as $index => $raw) {
+            if (str_contains($keepEncoded, $raw)) {
+                continue;
+            }
+            $search[] = self::RESERVED_ENCODED[$index];
+            $replace[] = $raw;
+        }
 
-        return str_ireplace(
-            ['%3A', '%2F', '%3F', '%5B', '%5D', '%40', '%21', '%24', '%27', '%28', '%29', '%2A', '%2B', '%2C', '%3B'],
-            [':', '/', '?', '[', ']', '@', '!', '$', "'", '(', ')', '*', '+', ',', ';'],
-            $encoded,
-        );
+        return str_ireplace($search, $replace, $encoded);
     }
 
     /** @param array<array-key, mixed> $value

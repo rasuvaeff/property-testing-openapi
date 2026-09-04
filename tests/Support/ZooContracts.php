@@ -26,6 +26,7 @@ final class ZooContracts
     public const array VALID_OPERATIONS = [
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
         'nested.create', 'health.get', 'version.get', 'files.get',
+        'delimited.get', 'reserved.get', 'unions.get',
         'search.get', 'narrowed.create',
     ];
 
@@ -147,6 +148,50 @@ final class ZooContracts
                     'parameters' => [['name' => 'href', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uri']]],
                     'responses' => ['204' => []],
                 ]],
+                // A delimited style has no escape for its own separator, so no
+                // generated value may carry one — the alphabet is narrowed at
+                // compile time rather than the value filtered afterwards.
+                '/delimited' => ['get' => [
+                    'operationId' => 'delimited.get',
+                    'parameters' => [
+                        ['name' => 'spaced', 'in' => 'query', 'required' => true, 'style' => 'spaceDelimited', 'explode' => false,
+                            'schema' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 4, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]]],
+                        ['name' => 'piped', 'in' => 'query', 'required' => true, 'style' => 'pipeDelimited', 'explode' => false,
+                            'schema' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 4, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]]],
+                        ['name' => 'labelled', 'in' => 'query', 'required' => true, 'style' => 'spaceDelimited', 'explode' => false,
+                            'schema' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 3, 'items' => ['type' => 'string', 'enum' => ['red', 'sky blue', 'green']]]],
+                    ],
+                    'responses' => ['204' => []],
+                ]],
+                // `allowReserved` widens what may travel raw, but not into a
+                // character the style uses as a separator: the contract would
+                // then read one item as two.
+                '/reserved' => ['get' => [
+                    'operationId' => 'reserved.get',
+                    'parameters' => [
+                        ['name' => 'path', 'in' => 'query', 'required' => true, 'allowReserved' => true,
+                            'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8]],
+                        ['name' => 'items', 'in' => 'query', 'required' => true, 'allowReserved' => true, 'style' => 'form', 'explode' => false,
+                            'schema' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 3, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]]],
+                        ['name' => 'map', 'in' => 'query', 'required' => true, 'allowReserved' => true, 'style' => 'form', 'explode' => false,
+                            'schema' => ['type' => 'object', 'minProperties' => 1, 'maxProperties' => 2,
+                                'additionalProperties' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 5]]],
+                    ],
+                    'responses' => ['204' => []],
+                ]],
+                // OAS 3.1 spells the absent branch as a `null` member of a type
+                // union. A parameter travels as text and has no representation
+                // for it, the same way it has none for 3.0 `nullable`.
+                '/unions/{id}' => ['get' => [
+                    'operationId' => 'unions.get',
+                    'parameters' => [
+                        ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => ['string', 'null'], 'maxLength' => 6]],
+                        ['name' => 'freeform', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true,
+                            'schema' => ['type' => ['object', 'null'], 'maxProperties' => 2]],
+                        ['name' => 'list', 'in' => 'query', 'schema' => ['type' => ['array', 'null'], 'maxItems' => 2, 'items' => ['type' => 'string', 'maxLength' => 4]]],
+                    ],
+                    'responses' => ['204' => []],
+                ]],
             ],
         ]);
     }
@@ -192,8 +237,11 @@ final class ZooContracts
     {
         $factory = new Psr17Factory();
 
+        // Derived from VALID_OPERATIONS rather than repeated: a zoo operation
+        // added to one list and not the other is selected nowhere, and the
+        // property that exercises it aborts before it can say why.
         return ContractSuite::fromContract(self::contract(), $factory, $factory)
-            ->operations(['strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create', 'nested.create', 'health.get', 'version.get', 'files.get'])
+            ->operations(array_values(array_diff(self::VALID_OPERATIONS, self::LEGACY_OPERATIONS)))
             ->allowUnsafeOperations()
             ->transport(self::transport());
     }
