@@ -500,7 +500,9 @@ final class ContractSuiteTest
      *
      * @param array{key: string, case: array<string, mixed>} $tagged
      */
-    #[Property(runs: 240, generators: [ZooContracts::class, 'taggedCase'])]
+    // 300 runs keep each of the 11 zoo operations at roughly the sample the
+    // Classify::cover gates below were sized against when the zoo had 9.
+    #[Property(runs: 300, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
