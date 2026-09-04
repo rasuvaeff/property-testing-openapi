@@ -90,6 +90,21 @@ filter whose consumer iterates values only, and boundary-read offsets in the
 multipart reader that only move where a malformed payload already ends the
 read.
 
+The 2026-09-04 warning batch adds: the `explode('.')`-based decimal count in
+`ScalarArbitraries::decimals()` (a `%.*F` rendering always carries a `.`, so the
+appended one and the index only matter for a value that cannot reach here); the
+probe budget and loop bounds of `ScalarArbitraries::fitsLengthWindow()` (the
+budget dominates `Gen::filter()`'s 100 retries by design, so shrinking it still
+answers the same question for any window a test can express, and `mb_strlen`
+versus `strlen` agrees on the ASCII alphabets the supported pattern subset
+generates); the `===` in the const-witness collision loop of
+`ParameterTargets::constMismatch()` (the witness is a string and PHP 8 no longer
+compares a string loosely equal to a number, so `==` decides the same); and the
+`continue` guarding an example-less media type in `DocumentExamples::bodyPart()`
+(the next entry is examined either way — only an entry that both fails this
+guard and carries an example would tell them apart, which the guard's own
+condition excludes).
+
 Response generation (`ResponseTargets`, `NegativeResponseCaseArbitrary`,
 `ResponseCaseArbitrary`, `ResponseMaterializer`, `ResponseSchemas`) adds:
 witness-container and witness-value variations that the oracle cannot tell

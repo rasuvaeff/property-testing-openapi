@@ -260,6 +260,118 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    /**
+     * `3 * 0.1` is `0.30000000000000004`. Our oracle tolerates it; a server
+     * checking `fmod` without a tolerance rejects it, and the failure lands on
+     * the user's API rather than on the generator.
+     */
+    public function aDecimalMultipleDoesNotAccumulateFloatError(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => 0.0,
+            'maximum' => 1.0,
+            'multipleOf' => 0.1,
+        ]), count: 60, seed: 13);
+
+        // No double is an exact multiple of 0.1, so `fmod` proves nothing here;
+        // what a server sees is the JSON text, and `0.30000000000000004` is a
+        // different number from `0.3` to a strict reader of it.
+        foreach ($values as $value) {
+            Assert::true(is_float($value));
+            Assert::same(json_encode($value), json_encode(round($value, 1)));
+            Assert::true(strlen(explode('.', json_encode($value) . '.')[1]) <= 1);
+        }
+        Assert::true(in_array(0.3, $values, strict: true));
+    }
+
+    /**
+     * A window the pattern cannot reach is refused where both constraints are
+     * still visible, not as a `GenerationExhausted` mid-run — which this
+     * package's own rules call a defect.
+     */
+    public function aPatternThatCannotSatisfyItsLengthWindowFailsClosed(): void
+    {
+        try {
+            (new SchemaArbitraryCompiler())->compile([
+                'type' => 'string',
+                'pattern' => '^[a-z]{8}$',
+                'minLength' => 2,
+                'maxLength' => 4,
+            ]);
+            Assert::true(actual: false, message: 'Expected an unsatisfiable window');
+        } catch (UnsupportedGeneration $exception) {
+            Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: pattern cannot satisfy the length window [2, 4]');
+        }
+    }
+
+    public function aPatternInsideItsLengthWindowStillCompiles(): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'pattern' => '^[a-z]{3}$',
+            'minLength' => 2,
+            'maxLength' => 4,
+        ]), count: 10, seed: 17) as $value) {
+            Assert::true(is_string($value) && preg_match('/^[a-z]{3}\z/', $value) === 1);
+        }
+    }
+
+    /**
+     * The rounding follows the multiple's own precision, so an integer multiple
+     * keeps none and a three-decimal one keeps three.
+     */
+    #[DataProvider('multiplePrecisionProvider')]
+    public function roundsAProductToThePrecisionOfItsMultiple(int|float $multiple, int $decimals): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => 0.0,
+            'maximum' => 10.0,
+            'multipleOf' => $multiple,
+        ]), count: 40, seed: 23);
+
+        foreach ($values as $value) {
+            Assert::true(is_float($value));
+            Assert::same(json_encode($value), json_encode(round($value, $decimals)));
+        }
+    }
+
+    /** @return iterable<string, array{int|float, int}> */
+    public static function multiplePrecisionProvider(): iterable
+    {
+        yield 'integer multiple' => [2, 0];
+        yield 'one decimal' => [0.1, 1];
+        yield 'two decimals' => [0.25, 2];
+        yield 'three decimals' => [0.125, 3];
+    }
+
+    /**
+     * The window is checked at both ends, and a pattern whose in-window strings
+     * are a minority of its draws still compiles — the probe budget is what
+     * makes that reliable.
+     */
+    #[DataProvider('patternWindowProvider')]
+    public function acceptsAPatternThatOnlySometimesFitsItsWindow(int $min, int $max, int $length): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'pattern' => '^[a-z]{1,10}$',
+            'minLength' => $min,
+            'maxLength' => $max,
+        ]), count: 10, seed: 29) as $value) {
+            Assert::true(is_string($value) && mb_strlen($value) >= $min && mb_strlen($value) <= $max);
+        }
+        Assert::true($length >= $min && $length <= $max);
+    }
+
+    /** @return iterable<string, array{int, int, int}> */
+    public static function patternWindowProvider(): iterable
+    {
+        yield 'only the long end fits' => [9, 10, 9];
+        yield 'only the short end fits' => [1, 2, 1];
+    }
+
     public function honorsNonAlignedIntegerMultipleBounds(): void
     {
         $values = Gen::sample((new SchemaArbitraryCompiler())->compile([

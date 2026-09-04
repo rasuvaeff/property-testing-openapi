@@ -131,18 +131,21 @@ final readonly class DocumentExamples
                 $normalized === 'application/x-www-form-urlencoded' => 'form',
                 default => null,
             };
+            // A media type this phase cannot encode, or one carrying no
+            // example, says nothing about the entries after it: `content` is a
+            // map, and multipart before JSON is an ordering, not a verdict.
             if ($encoding === null) {
-                return null;
+                continue;
             }
             $schema = $definition['schema'] ?? [];
             if (!is_array($schema) || array_is_list($schema)) {
-                return null;
+                continue;
             }
             /** @var array<string, mixed> $schema */
             $unnamed = $this->unnamed($definition, $schema);
             $named = $this->named($definition['examples'] ?? null, sprintf('request body "%s"', $mediaType));
             if ($unnamed === null && $named === []) {
-                return null;
+                continue;
             }
 
             return [

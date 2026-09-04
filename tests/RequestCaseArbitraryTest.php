@@ -301,6 +301,27 @@ final class RequestCaseArbitraryTest
         Assert::false($contract->validateRequest($request)->isValid());
     }
 
+    /**
+     * A const whose value happens to be the witness literal would make the
+     * "invalid" case valid; `enumMismatch` already walks away from that
+     * collision, and the const side now agrees.
+     */
+    public function theConstWitnessNeverCollidesWithTheConstItself(): void
+    {
+        $operation = new Operation(
+            key: 'collide',
+            operationId: 'collide',
+            method: 'GET',
+            path: '/collide',
+            parameters: [$this->queryParameter('v', ['type' => 'string', 'const' => '__openapi_invalid_const__'])],
+        );
+        $case = (new NegativeRequestCaseArbitrary())->constMismatchForOperation($operation)->generate(new Random(3))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::string($request->getUri()->getQuery())->contains('__openapi_invalid_const___');
+    }
+
     public function boundaryMismatchIsInvalidBeforeTransport(): void
     {
         $contract = self::contract();

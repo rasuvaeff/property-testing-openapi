@@ -107,6 +107,12 @@ final readonly class ParameterTargets
             } elseif (is_bool($parameter['schema']['const'])) {
                 $invalid = 'not-a-const-boolean';
             }
+            // A const whose value is the witness itself would make the
+            // "invalid" case valid; enumMismatch already walks away from that
+            // collision the same way.
+            while ($parameter['schema']['const'] === $invalid) {
+                $invalid .= '_';
+            }
 
             return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
         }
