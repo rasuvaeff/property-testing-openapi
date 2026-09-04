@@ -199,12 +199,19 @@ final readonly class CompositionArbitraries
         $merged = [];
         $required = [];
         $properties = [];
+        // allOf is an intersection, so null survives only where every branch
+        // admits it; OAS 3.0 spells a branch's silence as `nullable: false`.
+        // Branch lists reach here non-empty — schemaBranches() rejects `[]`.
+        $nullable = true;
         foreach ($branches as $branch) {
             if (array_key_exists('type', $branch) && array_key_exists('type', $merged) && $branch['type'] !== $merged['type']) {
                 throw UnsupportedGeneration::forSchema('allOf branches have conflicting types');
             }
+            if (($branch['nullable'] ?? false) !== true) {
+                $nullable = false;
+            }
             foreach (array_keys($branch) as $key) {
-                if ($key === 'required' || $key === 'properties') {
+                if (in_array($key, ['required', 'properties', 'nullable'], strict: true)) {
                     continue;
                 }
                 if (array_key_exists($key, $merged) && $merged[$key] !== $branch[$key]) {
@@ -247,6 +254,9 @@ final readonly class CompositionArbitraries
                     }
                 }
             }
+        }
+        if ($nullable) {
+            $merged['nullable'] = true;
         }
         if ($properties !== []) {
             $merged['properties'] = $properties;

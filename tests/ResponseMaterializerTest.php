@@ -160,6 +160,27 @@ final class ResponseMaterializerTest
         Assert::same((new JsonBodyEncoder())->encode(['a' => [], 'b' => []], ['type' => 'object', 'properties' => ['a' => ['type' => 'object'], 'b' => ['type' => 'object']]]), '{"a":{},"b":{}}');
     }
 
+    /**
+     * A key outside `properties` is declared by `additionalProperties`.
+     * Dropping that schema encoded a nested empty object as `[]`, which the
+     * contract then rejected as a generated-request failure.
+     */
+    public function jsonEncoderReadsTheAdditionalPropertiesSchema(): void
+    {
+        $encoder = new JsonBodyEncoder();
+        $objectValued = ['type' => 'object', 'additionalProperties' => ['type' => 'object']];
+
+        Assert::same($encoder->encode(['k' => []], $objectValued), '{"k":{}}');
+        Assert::same($encoder->encode(['k' => ['n' => []]], ['type' => 'object', 'additionalProperties' => ['type' => 'object', 'properties' => ['n' => ['type' => 'object']]]]), '{"k":{"n":{}}}');
+        // A boolean carries no shape, so an empty value stays a list.
+        Assert::same($encoder->encode(['k' => []], ['type' => 'object', 'additionalProperties' => true]), '{"k":[]}');
+        // A declared property still wins over the additional schema.
+        Assert::same(
+            $encoder->encode(['k' => []], ['type' => 'object', 'properties' => ['k' => []], 'additionalProperties' => ['type' => 'object']]),
+            '{"k":[]}',
+        );
+    }
+
     public function jsonEncoderRejectsNonStringObjectKeys(): void
     {
         Expect::exception(UnsupportedGeneration::class)->withMessage('JSON object keys must be strings');

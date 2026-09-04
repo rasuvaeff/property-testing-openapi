@@ -54,6 +54,34 @@ final class BodyContracts
         return ['case' => (new RequestCaseArbitrary())->forOperation(self::multipart()->operation('upload.create'))];
     }
 
+    /**
+     * The same body declared optional. The "body present" branch is the only
+     * path that reads a generated multipart case back, and every other fixture
+     * here declares the body required.
+     */
+    public static function optionalMultipart(): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/maybe-upload' => ['post' => [
+                'operationId' => 'upload.maybe',
+                'requestBody' => ['required' => false, 'content' => ['multipart/form-data' => [
+                    'schema' => ['type' => 'object', 'required' => ['title'], 'properties' => [
+                        'title' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 12],
+                        'count' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 100],
+                    ]],
+                ]]],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function optionalMultipartCase(): array
+    {
+        return ['case' => (new RequestCaseArbitrary())->forOperation(self::optionalMultipart()->operation('upload.maybe'))];
+    }
+
     public static function form(): Contract
     {
         return Contract::fromArray([

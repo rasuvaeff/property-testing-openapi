@@ -25,8 +25,17 @@ final class ZooContracts
     /** @var list<string> */
     public const array VALID_OPERATIONS = [
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
-        'health.get', 'version.get', 'files.get', 'search.get',
+        'nested.create', 'health.get', 'version.get', 'files.get',
+        'search.get', 'narrowed.create',
     ];
+
+    /**
+     * The operations declared by the OAS 3.0 document, where `nullable` is a
+     * keyword rather than a stray annotation.
+     *
+     * @var list<string>
+     */
+    public const array LEGACY_OPERATIONS = ['search.get', 'narrowed.create'];
 
     public static function contract(): Contract
     {
@@ -104,6 +113,17 @@ final class ZooContracts
                     ]]]],
                     'responses' => ['204' => []],
                 ]],
+                '/nested' => ['post' => [
+                    'operationId' => 'nested.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object', 'minProperties' => 1, 'maxProperties' => 2,
+                        'additionalProperties' => [
+                            'type' => 'object', 'maxProperties' => 1,
+                            'properties' => ['n' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
                 '/health' => ['get' => [
                     'operationId' => 'health.get',
                     'responses' => ['200' => ['content' => ['text/plain' => []]]],
@@ -147,8 +167,25 @@ final class ZooContracts
                     ['name' => 'filter', 'in' => 'query', 'style' => 'deepObject', 'schema' => ['type' => 'object', 'properties' => ['age' => ['type' => 'integer', 'nullable' => true, 'minimum' => 0]]]],
                 ],
                 'responses' => ['204' => []],
-            ]]],
+            ]],
+                '/narrowed' => ['post' => [
+                    'operationId' => 'narrowed.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['allOf' => [
+                        ['type' => 'object', 'required' => ['name'], 'properties' => ['name' => ['type' => 'string', 'nullable' => true, 'maxLength' => 6]]],
+                        ['type' => 'object', 'properties' => ['name' => ['type' => 'string', 'minLength' => 1]]],
+                    ]]]]],
+                    'responses' => ['204' => []],
+                ]]],
         ]);
+    }
+
+    /**
+     * The suite that declares the operation, so callers do not repeat the
+     * 3.0/3.1 split.
+     */
+    public static function suiteFor(string $key): ContractSuite
+    {
+        return in_array($key, self::LEGACY_OPERATIONS, strict: true) ? self::legacySuite() : self::suite();
     }
 
     public static function suite(): ContractSuite
@@ -156,7 +193,7 @@ final class ZooContracts
         $factory = new Psr17Factory();
 
         return ContractSuite::fromContract(self::contract(), $factory, $factory)
-            ->operations(['strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create', 'health.get', 'version.get', 'files.get'])
+            ->operations(['strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create', 'nested.create', 'health.get', 'version.get', 'files.get'])
             ->allowUnsafeOperations()
             ->transport(self::transport());
     }
@@ -166,7 +203,8 @@ final class ZooContracts
         $factory = new Psr17Factory();
 
         return ContractSuite::fromContract(self::legacy(), $factory, $factory)
-            ->operations(['search.get'])
+            ->operations(self::LEGACY_OPERATIONS)
+            ->allowUnsafeOperations()
             ->transport(self::transport());
     }
 
@@ -196,11 +234,9 @@ final class ZooContracts
      */
     public static function taggedExamples(): array
     {
-        $suite = self::suite();
-        $legacy = self::legacySuite();
         $examples = [];
         foreach (self::VALID_OPERATIONS as $key) {
-            $cases = $key === 'search.get' ? $legacy->validCases($key) : $suite->validCases($key);
+            $cases = self::suiteFor($key)->validCases($key);
             $examples[$key] = ['key' => $key, 'case' => $cases->generate(new Random(7))->value];
         }
 
@@ -214,14 +250,10 @@ final class ZooContracts
      */
     public static function taggedCase(): array
     {
-        $suite = self::suite();
-        $legacy = self::legacySuite();
-
-        return ['tagged' => Gen::flatMap(Gen::elements(self::VALID_OPERATIONS), static function (mixed $key) use ($suite, $legacy): ArbitraryInterface {
+        return ['tagged' => Gen::flatMap(Gen::elements(self::VALID_OPERATIONS), static function (mixed $key): ArbitraryInterface {
             \assert(is_string($key));
-            $cases = $key === 'search.get' ? $legacy->validCases($key) : $suite->validCases($key);
 
-            return Gen::map($cases, static fn(array $case): array => ['key' => $key, 'case' => $case]);
+            return Gen::map(self::suiteFor($key)->validCases($key), static fn(array $case): array => ['key' => $key, 'case' => $case]);
         })];
     }
 }

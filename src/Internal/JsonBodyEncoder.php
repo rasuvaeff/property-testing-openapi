@@ -37,7 +37,7 @@ final readonly class JsonBodyEncoder
                 if (!is_string($name)) {
                     throw new UnsupportedGeneration('JSON object keys must be strings');
                 }
-                $property = $this->schemaObject($properties[$name] ?? [], 'Object property must be a schema object');
+                $property = $this->schemaObject($properties[$name] ?? $this->additionalSchema($schema), 'Object property must be a schema object');
                 $result = array_merge($result, [$name => $this->jsonValue($value[$name], $property)]);
             }
 
@@ -45,6 +45,18 @@ final readonly class JsonBodyEncoder
         }
 
         return $value;
+    }
+
+    /**
+     * The schema a key outside `properties` is declared by. Losing it encoded a
+     * nested empty object as `[]`, which the contract then rejected.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function additionalSchema(array $schema): mixed
+    {
+        // `true` and `false` carry no shape of their own.
+        return is_array($schema['additionalProperties'] ?? null) ? $schema['additionalProperties'] : [];
     }
 
     /** @return array<string, mixed> */

@@ -158,6 +158,123 @@ final class RequestCaseArbitraryTest
         (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation);
     }
 
+    /**
+     * The "body present" branch of an optional body is the only path that
+     * reads a generated body back; it accepted JSON and form encodings only,
+     * so an optional multipart body threw out of the generator.
+     */
+    #[Property(runs: 120, generators: [BodyContracts::class, 'optionalMultipartCase'])]
+    public function optionalMultipartBodiesGenerateInBothForms(array $case): void
+    {
+        /** @var array{operationKey: string, path: array<string, string>, query: array<string, string>, headers: array<string, string>, cookies: array<string, string>, body: null|array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>}, misuse: null} $case */
+        $contract = BodyContracts::optionalMultipart();
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($contract->operation('upload.maybe'), $case);
+
+        Classify::cover($case['body'] === null, 'body absent', 15.0);
+        Classify::cover($case['body'] !== null, 'body present', 15.0);
+        Assert::true($contract->validateRequest($request)->isValid());
+    }
+
+    /**
+     * Every contradictable type gets its own witness, and the witness has to
+     * reach the wire — a missing arm silently falls through to the next
+     * parameter, or to "no constructible mismatch".
+     */
+    #[DataProvider('typeWitnessProvider')]
+    public function buildsATypeWitnessForEveryContradictableType(string $type, string $witness): void
+    {
+        $operation = new Operation(
+            key: 'typed',
+            operationId: 'typed',
+            method: 'GET',
+            path: '/typed',
+            parameters: [$this->queryParameter('v', ['type' => $type])],
+        );
+        $case = (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation)->generate(new Random(3))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'type', 'location' => 'query', 'name' => 'v']);
+        Assert::string($request->getUri()->getQuery())->contains($witness);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function typeWitnessProvider(): iterable
+    {
+        yield 'integer' => ['integer', 'not-an-integer'];
+        yield 'number' => ['number', 'not-a-number'];
+        yield 'boolean' => ['boolean', 'not-a-boolean'];
+        yield 'null' => ['null', 'not-null'];
+    }
+
+    /**
+     * A union admits every type it lists, so `not-null` is a valid value for
+     * `["string", "null"]`; `string` and `array` have no witness at all. Either
+     * way the search must move on to a parameter that can be contradicted
+     * rather than give up at the first candidate.
+     *
+     * @param array<string, mixed> $schema
+     */
+    #[DataProvider('uncontradictableTypeProvider')]
+    public function skipsParametersWhoseDeclaredTypeCannotBeContradicted(array $schema): void
+    {
+        $operation = new Operation(
+            key: 'mixed',
+            operationId: 'mixed',
+            method: 'GET',
+            path: '/mixed',
+            parameters: [
+                $this->queryParameter('skipped', $schema),
+                $this->queryParameter('count', ['type' => 'integer']),
+            ],
+        );
+
+        $case = (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation)->generate(new Random(11))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'type', 'location' => 'query', 'name' => 'count']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function uncontradictableTypeProvider(): iterable
+    {
+        yield 'union with null' => [['type' => ['string', 'null']]];
+        yield 'union of scalars' => [['type' => ['string', 'integer']]];
+        yield 'string' => [['type' => 'string']];
+        yield 'array' => [['type' => 'array', 'items' => ['type' => 'string', 'maxLength' => 2]]];
+    }
+
+    public function rejectsOperationsWhoseOnlyTypedParameterIsAUnion(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        $operation = new Operation(
+            key: 'union-only',
+            operationId: 'union-only',
+            method: 'GET',
+            path: '/union-only',
+            parameters: [$this->queryParameter('maybe', ['type' => ['string', 'null']])],
+        );
+
+        (new NegativeRequestCaseArbitrary())->typeMismatchForOperation($operation);
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @return array{name: string, in: 'query', required: true, style: string, explode: bool, allowReserved: bool, schema: array<string, mixed>}
+     */
+    private function queryParameter(string $name, array $schema): array
+    {
+        return [
+            'name' => $name,
+            'in' => 'query',
+            'required' => true,
+            'style' => 'form',
+            'explode' => true,
+            'allowReserved' => false,
+            'schema' => $schema,
+        ];
+    }
+
     public function enumMismatchIsInvalidBeforeTransport(): void
     {
         $contract = $this->enumContract();
