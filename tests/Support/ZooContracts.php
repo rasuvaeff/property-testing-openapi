@@ -27,7 +27,8 @@ final class ZooContracts
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
         'nested.create', 'health.get', 'version.get', 'files.get',
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
-        'search.get', 'narrowed.create',
+        'encoded.create', 'numeric.create',
+        'search.get', 'narrowed.create', 'bounded.create',
     ];
 
     /**
@@ -36,9 +37,20 @@ final class ZooContracts
      *
      * @var list<string>
      */
-    public const array LEGACY_OPERATIONS = ['search.get', 'narrowed.create'];
+    public const array LEGACY_OPERATIONS = ['search.get', 'narrowed.create', 'bounded.create'];
 
     public static function contract(): Contract
+    {
+        return Contract::fromArray(self::document());
+    }
+
+    /**
+     * The document behind {@see contract()}, as an array, so it can be
+     * recorded into a portable corpus alongside the cases generated from it.
+     *
+     * @return array<string, mixed>
+     */
+    public static function document(): array
     {
         $user = [
             'type' => 'object',
@@ -68,7 +80,7 @@ final class ZooContracts
             'example' => ['id' => 7, 'name' => 'Ann', 'profile' => ['slug' => 'ann', 'createdAt' => '2024-01-01T00:00:00Z'], 'history' => [['at' => 'x', 'note' => 'hi']]],
         ];
 
-        return Contract::fromArray([
+        return [
             'openapi' => '3.1.0',
             'paths' => [
                 '/strings/{key}/tags/{tag}' => ['get' => [
@@ -213,6 +225,44 @@ final class ZooContracts
                     ]],
                     'responses' => ['204' => []],
                 ]],
+                // `encoding.contentType` names the media type of one part.
+                // It used to be read and then ignored, so a part could carry
+                // any type at all and still validate.
+                '/encoded' => ['post' => [
+                    'operationId' => 'encoded.create',
+                    'requestBody' => ['required' => true, 'content' => ['multipart/form-data' => [
+                        'schema' => [
+                            'type' => 'object',
+                            'required' => ['note'],
+                            'additionalProperties' => false,
+                            'properties' => [
+                                'note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                                'tag' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+                            ],
+                        ],
+                        'encoding' => ['note' => ['contentType' => 'text/plain'], 'tag' => ['contentType' => 'text/plain']],
+                    ]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A property name that is a decimal integer is a string in
+                // JSON and an int key in PHP. The whole property used to be
+                // dropped on the way in, which validated a body nobody
+                // declared. `12` is required so the member map is never a PHP
+                // list — an object whose only member is `0` encodes as a JSON
+                // array, and that is a separate limit pinned on its own.
+                '/numeric' => ['post' => [
+                    'operationId' => 'numeric.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['12'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            '0' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+                            '12' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
                 // OAS 3.1 spells the absent branch as a `null` member of a type
                 // union. A parameter travels as text and has no representation
                 // for it, the same way it has none for 3.0 `nullable`.
@@ -227,7 +277,7 @@ final class ZooContracts
                     'responses' => ['204' => []],
                 ]],
             ],
-        ]);
+        ];
     }
 
     /**
@@ -235,7 +285,13 @@ final class ZooContracts
      */
     public static function legacy(): Contract
     {
-        return Contract::fromArray([
+        return Contract::fromArray(self::legacyDocument());
+    }
+
+    /** @return array<string, mixed> */
+    public static function legacyDocument(): array
+    {
+        return [
             'openapi' => '3.0.3',
             'paths' => ['/search/{scope}' => ['get' => [
                 'operationId' => 'search.get',
@@ -254,8 +310,22 @@ final class ZooContracts
                         ['type' => 'object', 'properties' => ['name' => ['type' => 'string', 'minLength' => 1]]],
                     ]]]]],
                     'responses' => ['204' => []],
+                ]],
+                // A boolean `additionalProperties` is a schema in 3.1 and an
+                // OAS 3.0 Schema Object keyword too, but the 3.0 normalization
+                // path used to reject it — a document every generator writes
+                // was unusable on the older version.
+                '/bounded' => ['post' => [
+                    'operationId' => 'bounded.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['name'],
+                        'additionalProperties' => false,
+                        'properties' => ['name' => ['type' => 'string', 'nullable' => true, 'minLength' => 1, 'maxLength' => 6]],
+                    ]]]],
+                    'responses' => ['204' => []],
                 ]]],
-        ]);
+        ];
     }
 
     /**
