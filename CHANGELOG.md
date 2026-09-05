@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** A test that asks the one question neither package can answer
+  alone: does the application behind the validator receive the value the
+  generator recorded? A case is generated, materialized, validated, and then
+  sent through `Psr15Transport`, which reads it the way `parse_str()` and the
+  SAPI do — and all three readings have to agree. A validator whose reading of
+  the wire is not the server's reading passes requests the application will
+  mishandle, and that is precisely how a `+` in the query stood as a literal
+  plus to the validator and a space to every SAPI for the life of the package.
+  The half of the question a generator cannot ask — wire forms a client sends
+  and a generator never emits, always percent-encoded as it is — is covered by
+  a raw-wire data provider beside it. Verified by reverting the fix in the
+  installed contract: the corresponding case turns red.
+
 - **Fixed.** `RedactionPolicy::cookies` does something (#73). The `Cookie`
   header was redacted wholesale by the default header set, so a policy naming a
   cookie and one that did not produced byte-identical output — the option was
