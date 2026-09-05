@@ -76,7 +76,9 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   and `legacyDocument()` through the generator and freezes the cases as JSON
   in that package, which cannot depend on this one. **Adding a zoo operation
   means re-recording**, or the corpus silently stops covering the feature the
-  operation was added for. It records the generator's intent, never a verdict.
+  operation was added for — `bin/record-openapi-corpus --check` says whether
+  you need to, and names any case that kept its name and changed its intent.
+  It records the generator's intent, never a verdict.
 - Two oracles are external to both packages, and neither is optional.
   `tests/SapiAgreementTest.php` asks whether the application behind the
   validator receives the value the case recorded; `tests/Differential/` asks
