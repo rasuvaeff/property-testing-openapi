@@ -31,6 +31,12 @@ use Rasuvaeff\OpenApiContract\Contract;
  * - A cookie parameter: league reads the `Cookie` header verbatim, without
  *   percent-decoding, so any generated value carrying a reserved character is a
  *   disagreement about cookie encoding rather than about the document.
+ * - The `part-content-type` misuse: league does not read `encoding.contentType`
+ *   at all, so every case in that category would be a disagreement about league
+ *   rather than about the document. The fixture's multipart operation declares
+ *   no `encoding`, which leaves the category unconstructible here rather than
+ *   merely unused — `encoded.create` in {@see ZooContracts} is where it is
+ *   exercised end to end.
  *
  * A header parameter used to be excluded for the same reason and is back: it
  * was the one live disagreement this differential found, and it is settled

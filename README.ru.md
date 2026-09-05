@@ -189,6 +189,16 @@ $credentials = new Credentials(
 отправляет его с необъявленным Content-Type и записывает
 `misuse.kind = 'media-type'`; операции с wildcard media types отвергаются
 fail-closed.
+`partContentTypeMismatchForOperation()` оставляет валидное multipart body, но
+отправляет одну обязательную часть с media type, который её
+`encoding.contentType` не допускает, и записывает
+`misuse.kind = 'part-content-type'` с именем части; часть без объявленного
+`contentType`, необязательная часть и часть с wildcard пропускаются в пользу
+следующей объявленной, а операция, для которой не осталось кандидата,
+отвергается fail-closed — как и body, способное поехать более чем одним media
+type: его список частей определяется выбором генератора, а не документом. Это единственная категория, способная увидеть валидатор, который
+читает `encoding.contentType` и игнорирует его: пренебрежение ключевым словом
+fail-open, поэтому любой валидный кейс проходит в обоих случаях.
 `malformedJsonForOperation()` заменяет обязательное JSON body сырым
 malformed-payload (`encoding: 'raw'`) под объявленным media type и записывает
 `misuse.kind = 'json-syntax'`. Такие request

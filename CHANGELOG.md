@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** `NegativeRequestCaseArbitrary::partContentTypeMismatchForOperation()`
+  (#80): the valid multipart body with one required part sent under a media
+  type its `encoding.contentType` does not allow. It is the only category that
+  can see a validator reading that keyword and ignoring it — neglecting it is
+  fail-open, so every valid case passes either way, and the recorded corpus in
+  `openapi-contract` replayed green against a validator that ignored it. A part
+  without a declared `contentType`, an optional part, and a part declaring a
+  wildcard are skipped for the next declared part, and an operation left with
+  no candidate fails closed — as does a body that can travel as more than one
+  media type, since which one a valid case carries is a generation choice — so
+  the case never claims a contradiction it does not carry.
+
 - **Changed.** A header parameter is written as it will be read: verbatim, not
   percent-encoded, on both the request and the response side
   (openapi-contract#66). Encoding one put a string on the wire that no client

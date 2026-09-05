@@ -91,6 +91,16 @@ Public API:
 - `NegativeRequestCaseArbitrary::mediaTypeMismatchForOperation(Operation)`
   keeps the valid JSON body but sends it under an undeclared Content-Type and
   records `misuse.kind = 'media-type'`; wildcard media types fail closed.
+- `NegativeRequestCaseArbitrary::partContentTypeMismatchForOperation(Operation)`
+  keeps the valid multipart body but sends one required part under a media type
+  its `encoding.contentType` does not allow, and records
+  `misuse.kind = 'part-content-type'` with the part name; a part without a
+  declared `contentType`, an optional one, and one declaring a wildcard are
+  skipped for the next declared part, and an operation left with no candidate
+  fails closed, as does a body that can travel as more than one media type.
+  This is the only category that can see a validator reading
+  `encoding.contentType` and ignoring it — neglecting the keyword is fail-open,
+  so every valid case passes either way.
 - `NegativeRequestCaseArbitrary::malformedJsonForOperation(Operation)` replaces
   the required JSON body with a raw malformed payload (`encoding: 'raw'`) and
   records `misuse.kind = 'json-syntax'`.

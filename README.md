@@ -188,6 +188,15 @@ JSON object body whose schema sets `additionalProperties: false` and records
 `mediaTypeMismatchForOperation()` keeps the schema-valid JSON body but sends it
 under an undeclared Content-Type and records `misuse.kind = 'media-type'`;
 operations declaring wildcard media types fail closed.
+`partContentTypeMismatchForOperation()` keeps the valid multipart body but
+sends one required part under a media type its `encoding.contentType` does not
+allow, recording `misuse.kind = 'part-content-type'` with the part name; a part
+without a declared `contentType`, an optional one, and one declaring a wildcard
+are skipped for the next declared part, and an operation left with no candidate
+fails closed — as does a body that can travel as more than one media type,
+whose part list is a generation choice rather than a document fact. It is the only category that can see a validator reading
+`encoding.contentType` and ignoring it: neglecting the keyword is fail-open, so
+every valid case passes either way.
 `malformedJsonForOperation()` replaces the required JSON body with a raw
 malformed payload (`encoding: 'raw'`) under the declared media type and records
 `misuse.kind = 'json-syntax'`.

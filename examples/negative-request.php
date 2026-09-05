@@ -36,23 +36,47 @@ $contract = Contract::fromArray([
                 'responses' => ['204' => []],
             ],
         ],
+        // `encoding.contentType` is the one body keyword whose neglect is
+        // fail-open, so it needs a part of its own to be contradicted on.
+        '/uploads' => [
+            'post' => [
+                'operationId' => 'uploads.create',
+                'requestBody' => [
+                    'required' => true,
+                    'content' => [
+                        'multipart/form-data' => [
+                            'schema' => [
+                                'type' => 'object',
+                                'required' => ['note'],
+                                'properties' => ['note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8]],
+                                'additionalProperties' => false,
+                            ],
+                            'encoding' => ['note' => ['contentType' => 'text/plain']],
+                        ],
+                    ],
+                ],
+                'responses' => ['204' => []],
+            ],
+        ],
     ],
 ]);
-$operation = $contract->operation('pets.update');
+$update = $contract->operation('pets.update');
+$upload = $contract->operation('uploads.create');
 $factory = new Psr17Factory();
 $materializer = new RequestMaterializer($factory, $factory);
 $negative = new NegativeRequestCaseArbitrary();
 
 $failures = 0;
 foreach ([
-    $negative->forOperation($operation),
-    $negative->typeMismatchForOperation($operation),
-    $negative->boundaryMismatchForOperation($operation),
-    $negative->formatMismatchForOperation($operation),
-    $negative->additionalPropertyForOperation($operation),
-    $negative->mediaTypeMismatchForOperation($operation),
-    $negative->malformedJsonForOperation($operation),
-] as $arbitrary) {
+    [$update, $negative->forOperation($update)],
+    [$update, $negative->typeMismatchForOperation($update)],
+    [$update, $negative->boundaryMismatchForOperation($update)],
+    [$update, $negative->formatMismatchForOperation($update)],
+    [$update, $negative->additionalPropertyForOperation($update)],
+    [$update, $negative->mediaTypeMismatchForOperation($update)],
+    [$update, $negative->malformedJsonForOperation($update)],
+    [$upload, $negative->partContentTypeMismatchForOperation($upload)],
+] as [$operation, $arbitrary]) {
     $case = $arbitrary->generate(new Random(7))->value;
     $request = $materializer->materialize($operation, $case);
     $rejected = !$contract->validateRequest($request)->isValid();
