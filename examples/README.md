@@ -3,7 +3,7 @@
 | Script | Shows | Needs server? |
 |---|---|---|
 | `valid-request.php` | Drawing one data-only case, materializing it with Nyholm's PSR-17 factory, and validating the result with `openapi-contract` | No |
-| `negative-request.php` | The constructive negative categories on one operation, every misuse case rejected by contract validation before any transport runs | No |
+| `negative-request.php` | The constructive negative categories on a JSON operation and the multipart part-media-type category on a second one, every misuse case rejected by contract validation before any transport runs | No |
 | `document-examples.php` | The document's `example`/`examples` running as the deterministic example phase of `OperationProperty` — a point fault the document describes, found by name before any random trial | No |
 | `response-cases.php` | A contract-valid provider response and a provably invalid one (`enum` misuse) for the same operation, accepted and rejected by the core validator — the harness for testing an API client without live traffic | No |
 | `suite-check.php` | `ContractSuite` against an in-process PSR-15 handler: valid trials conform without a 5xx, a constructive negative case is rejected without a 5xx, and the `afterRequest` hook counts one state reset per request | No |

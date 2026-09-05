@@ -24,7 +24,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
  *     headers: array<string, string|list<string>|array<string, string>>,
  *     cookies: array<string, string|list<string>|array<string, string>>,
  *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
- *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
+ *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'part-content-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
  * }
  *
  * @api
@@ -196,6 +196,43 @@ final readonly class NegativeRequestCaseArbitrary
             }
             $case['body'] = ['mediaType' => $mediaType, 'encoding' => 'json', 'value' => $body['value'] ?? null];
             $case['misuse'] = ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'];
+
+            return $case;
+        });
+    }
+
+    /**
+     * Keeps the multipart body valid and sends one part under a media type its
+     * `encoding.contentType` does not allow, so the part's declared type is
+     * the only deviation.
+     *
+     * This is the only misuse that can see a validator reading
+     * `encoding.contentType` and ignoring it: neglecting the keyword is
+     * fail-open, so every valid case passes either way (#80).
+     *
+     * @return ArbitraryInterface<NegativeRequestCaseData>
+     */
+    public function partContentTypeMismatchForOperation(Operation $operation): ArbitraryInterface
+    {
+        $target = $this->bodyTargets->partContentTypeMismatch($operation);
+        $property = $target['property'];
+        $invalid = $target['invalid'];
+
+        return $this->mutate($operation, static function (array $case) use ($property, $invalid): array {
+            $body = $case['body'];
+            if ($body === null || !isset($body['parts'])) {
+                throw new \LogicException('Required multipart body expected for a part content type misuse');
+            }
+            $parts = [];
+            foreach ($body['parts'] as $part) {
+                if ($part['name'] === $property) {
+                    $part['contentType'] = $invalid;
+                }
+                $parts[] = $part;
+            }
+            $body['parts'] = $parts;
+            $case['body'] = $body;
+            $case['misuse'] = ['kind' => 'part-content-type', 'location' => 'body', 'name' => $property];
 
             return $case;
         });

@@ -382,6 +382,29 @@ final class ContractSuiteTest
         Assert::true($missingRequired);
     }
 
+    /**
+     * The weighted union offers the part-content-type category, and the case
+     * it draws is rejected the way every other negative case is. Registration
+     * is what puts a fail-open keyword in front of a transport instead of only
+     * in front of the validator: without it the suite is silent about
+     * `encoding.contentType` even where the document declares one.
+     */
+    public function negativeCasesOfferThePartContentTypeCategory(): void
+    {
+        $suite = ZooContracts::suiteFor('encoded.create');
+        $seen = null;
+        foreach (range(1, 40) as $seed) {
+            $case = $suite->negativeCases('encoded.create')->generate(new Random($seed))->value;
+            if ($case['misuse']['kind'] === 'part-content-type') {
+                $seen = $case;
+                break;
+            }
+        }
+
+        Assert::true($seen !== null);
+        $suite->checkNegative('encoded.create', $seen ?? []);
+    }
+
     public function credentialsAreAppliedToTheMaterializedRequest(): void
     {
         $provider = Understudy::for(CredentialsProviderInterface::class);

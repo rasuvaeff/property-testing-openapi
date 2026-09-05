@@ -687,6 +687,214 @@ final class RequestCaseArbitraryTest
         (new NegativeRequestCaseArbitrary())->mediaTypeMismatchForOperation($operation);
     }
 
+    /**
+     * `encoding.contentType` is the one body keyword whose neglect is
+     * fail-open: a validator that reads it and ignores it accepts every valid
+     * case unchanged, so no amount of valid traffic tells the two apart. Only
+     * a part built to carry the wrong media type can (#80).
+     */
+    public function partContentTypeMismatchIsInvalidBeforeTransport(): void
+    {
+        $contract = $this->encodedPartContract();
+        $operation = $contract->operation('uploads.create');
+        $case = (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation($operation)->generate(new Random(11))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'part-content-type', 'location' => 'body', 'name' => 'note']);
+        // Only the named part's media type moved; everything else the case
+        // recorded is what a valid one would carry.
+        Assert::string((string) $request->getBody())->contains('Content-Type: application/x-openapi-misuse');
+        Assert::string((string) $request->getBody())->contains('name="note"');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    /**
+     * A wildcard would match the substitute media type, so the search moves on
+     * to the next declared part rather than giving up at the first candidate.
+     */
+    public function skipsAPartWhoseDeclaredContentTypeIsAWildcard(): void
+    {
+        $operation = $this->partContract(['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => [
+                'type' => 'object',
+                'required' => ['note', 'tag'],
+                'additionalProperties' => false,
+                'properties' => [
+                    'note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                    'tag' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                ],
+            ],
+            'encoding' => ['note' => ['contentType' => 'text/*'], 'tag' => ['contentType' => 'text/plain']],
+        ]]])->operation('uploads.create');
+
+        $case = (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation($operation)->generate(new Random(11))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'part-content-type', 'location' => 'body', 'name' => 'tag']);
+    }
+
+    /**
+     * A part the misuse cannot be built from does not end the search either:
+     * an optional part is skipped for the required one declared after it.
+     */
+    public function skipsAnOptionalPartDeclaredBeforeARequiredOne(): void
+    {
+        $operation = $this->partContract(['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => [
+                'type' => 'object',
+                'required' => ['note'],
+                'additionalProperties' => false,
+                'properties' => [
+                    'label' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                    'note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                ],
+            ],
+            'encoding' => ['label' => ['contentType' => 'text/plain'], 'note' => ['contentType' => 'text/plain']],
+        ]]])->operation('uploads.create');
+
+        $case = (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation($operation)->generate(new Random(11))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'part-content-type', 'location' => 'body', 'name' => 'note']);
+    }
+
+    /**
+     * An operation whose every declared part is a wildcard has nothing left to
+     * contradict, and says which declaration ended the search.
+     */
+    public function rejectsAPartContentTypeMismatchWhenEveryDeclarationIsAWildcard(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Operation "uploads.create" declares wildcard part content type "text/*"; a contradicting one cannot be promised');
+
+        // Two wildcards, so the message is pinned to the first declaration
+        // rather than to whichever one the search saw last.
+        (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation(
+            $this->partContract(['required' => true, 'content' => ['multipart/form-data' => [
+                'schema' => [
+                    'type' => 'object',
+                    'required' => ['note', 'tag'],
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                        'tag' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6],
+                    ],
+                ],
+                'encoding' => ['note' => ['contentType' => 'text/*'], 'tag' => ['contentType' => 'image/*']],
+            ]]])->operation('uploads.create'),
+        );
+    }
+
+    /**
+     * The substitute media type has to be one the declaration does not allow —
+     * case-folded and trimmed, because a media type list is neither. A
+     * document that declares the substitute verbatim gets a different one
+     * rather than a case that is not a misuse at all.
+     */
+    public function avoidsASubstituteTheDeclarationAllows(): void
+    {
+        $contract = $this->encodedPartContract('TEXT/PLAIN, Application/X-OpenAPI-Misuse');
+        $operation = $contract->operation('uploads.create');
+        $case = (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation($operation)->generate(new Random(11))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::string((string) $request->getBody())->contains('Content-Type: application/x-openapi-misuse-x');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    /**
+     * Every document the category cannot be built from, each named for its
+     * reason. The misuse rewrites a part a valid case already carries, under a
+     * media type the document forbids; a document that leaves either half
+     * unknown fails closed rather than promising a contradiction it does not
+     * carry.
+     *
+     * @param array<string, mixed> $requestBody
+     */
+    #[DataProvider('unconstructiblePartContentTypeProvider')]
+    public function rejectsAPartContentTypeMismatchItCannotConstruct(array $requestBody): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Operation "uploads.create" has no required multipart body declaring a part content type');
+
+        (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation(
+            $this->partContract($requestBody)->operation('uploads.create'),
+        );
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function unconstructiblePartContentTypeProvider(): iterable
+    {
+        $schema = self::notePartSchema();
+        $encoding = ['note' => ['contentType' => 'text/plain']];
+
+        yield 'an optional body' => [['required' => false, 'content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => $encoding]]]];
+        yield 'a body that does not declare it is required' => [['content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => $encoding]]]];
+        // Which media type a valid case carries is a generation choice, so a
+        // body that can travel as more than one has no part list to rewrite.
+        yield 'a body that declares no content' => [['required' => true]];
+        yield 'a body that can travel as more than one media type' => [['required' => true, 'content' => [
+            'application/json' => ['schema' => $schema],
+            'multipart/form-data' => ['schema' => $schema, 'encoding' => $encoding],
+        ]]];
+        yield 'a multipart body that is not the only media type declared' => [['required' => true, 'content' => [
+            'multipart/form-data' => ['schema' => $schema, 'encoding' => $encoding],
+            'application/json' => ['schema' => $schema],
+        ]]];
+        yield 'an encoding outside a multipart media type' => [['required' => true, 'content' => ['application/json' => ['schema' => $schema, 'encoding' => $encoding]]]];
+        yield 'a media type that is not a string' => [['required' => true, 'content' => [0 => ['schema' => $schema, 'encoding' => $encoding]]]];
+        yield 'a media type definition that is not an object' => [['required' => true, 'content' => ['multipart/form-data' => 'text/plain']]];
+        yield 'an encoding that is not an object' => [['required' => true, 'content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => 'text/plain']]]];
+        yield 'a schema that is not an object' => [['required' => true, 'content' => ['multipart/form-data' => ['schema' => 'note', 'encoding' => $encoding]]]];
+        yield 'a required list that is not a list' => [['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => ['type' => 'object', 'required' => 'note', 'properties' => ['note' => ['type' => 'string', 'maxLength' => 6]]],
+            'encoding' => $encoding,
+        ]]]];
+        yield 'an optional part' => [['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => ['type' => 'object', 'required' => [], 'additionalProperties' => false, 'properties' => ['note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]]],
+            'encoding' => $encoding,
+        ]]]];
+        yield 'a part name that is empty' => [['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => ['type' => 'object', 'required' => [''], 'properties' => ['' => ['type' => 'string', 'maxLength' => 6]]],
+            'encoding' => ['' => ['contentType' => 'text/plain']],
+        ]]]];
+        yield 'a part name that is not a string' => [['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => ['type' => 'object', 'required' => [0], 'properties' => [0 => ['type' => 'string', 'maxLength' => 6]]],
+            'encoding' => [0 => ['contentType' => 'text/plain']],
+        ]]]];
+        yield 'an encoding entry that is not an object' => [['required' => true, 'content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => ['note' => 'text/plain']]]]];
+        yield 'a contentType that is not a string' => [['required' => true, 'content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => ['note' => ['contentType' => 123]]]]]];
+        yield 'a contentType that is empty' => [['required' => true, 'content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => ['note' => ['contentType' => '']]]]]];
+        yield 'no declared contentType' => [['required' => true, 'content' => ['multipart/form-data' => ['schema' => $schema, 'encoding' => ['note' => []]]]]];
+    }
+
+    /** @return array<string, mixed> */
+    private static function notePartSchema(): array
+    {
+        return [
+            'type' => 'object',
+            'required' => ['note'],
+            'additionalProperties' => false,
+            'properties' => ['note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+        ];
+    }
+
+    private function encodedPartContract(string $contentType = 'text/plain'): Contract
+    {
+        return $this->partContract(['required' => true, 'content' => ['multipart/form-data' => [
+            'schema' => self::notePartSchema(),
+            'encoding' => ['note' => ['contentType' => $contentType]],
+        ]]]);
+    }
+
+    /** @param array<string, mixed> $requestBody */
+    private function partContract(array $requestBody): Contract
+    {
+        return Contract::fromArray(['openapi' => '3.1.0', 'paths' => ['/uploads' => ['post' => [
+            'operationId' => 'uploads.create',
+            'requestBody' => $requestBody,
+            'responses' => ['204' => []],
+        ]]]]);
+    }
+
     public function malformedJsonBodyIsInvalidBeforeTransport(): void
     {
         $contract = $this->sealedBodyContract(additionalProperties: null);
@@ -865,6 +1073,12 @@ final class RequestCaseArbitraryTest
             'pets.create',
             static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->malformedJsonForOperation($operation),
             ['kind' => 'json-syntax', 'location' => 'body', 'name' => 'body'],
+        ];
+        yield 'part-content-type' => [
+            $this->encodedPartContract(),
+            'uploads.create',
+            static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->partContentTypeMismatchForOperation($operation),
+            ['kind' => 'part-content-type', 'location' => 'body', 'name' => 'note'],
         ];
     }
 

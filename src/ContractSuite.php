@@ -252,6 +252,7 @@ final class ContractSuite
             fn(): ArbitraryInterface => $this->negative->patternMismatchForOperation($operation),
             fn(): ArbitraryInterface => $this->negative->additionalPropertyForOperation($operation),
             fn(): ArbitraryInterface => $this->negative->mediaTypeMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->partContentTypeMismatchForOperation($operation),
             fn(): ArbitraryInterface => $this->negative->malformedJsonForOperation($operation),
         ];
 
