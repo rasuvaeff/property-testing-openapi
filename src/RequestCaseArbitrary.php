@@ -91,15 +91,21 @@ final readonly class RequestCaseArbitrary
             if ($parameter['in'] !== $location) {
                 continue;
             }
-            $separator = ParameterSchemas::separatorOf($location, $parameter['style']);
+            $separator = ParameterSchemas::separatorOf($location, $parameter['style'], $parameter['schema']);
             $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
             $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
             if ($location === 'path') {
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isPathSafe($value));
             }
+            if ($location === 'header') {
+                // Same division of labour as the path: the rewrite narrows the
+                // alphabet, this refuses what a `pattern` or a `format` can
+                // still put outside an HTTP field value.
+                $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
+            }
             if ($separator !== null) {
                 // The rewrite and the narrowed alphabet construct values
-                // without the separator; this only guards what neither can
+                // without those characters; this only guards what neither can
                 // see, a `pattern`, whose alphabet is the pattern's own.
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isSeparatorSafe($value, $separator));
             }

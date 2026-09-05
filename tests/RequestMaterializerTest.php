@@ -249,7 +249,11 @@ final class RequestMaterializerTest
     /** @return iterable<string, array{string, string, string}> */
     public static function nonQueryReservedProvider(): iterable
     {
-        yield 'header' => ['header', 'a/b:c', 'a%2Fb%3Ac'];
+        // A cookie is percent-encoded, so ignoring `allowReserved` there is
+        // visible as an escape that stayed. A header carries no encoding at
+        // all now (openapi-contract#66), so there is nothing for the flag to
+        // permit — which is the same statement reached from the other side.
+        yield 'header' => ['header', 'a/b:c', 'a/b:c'];
         yield 'cookie' => ['cookie', 'a/b:c', 'filter=a%2Fb%3Ac'];
     }
 

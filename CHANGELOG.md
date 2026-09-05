@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** A header parameter is written as it will be read: verbatim, not
+  percent-encoded, on both the request and the response side
+  (openapi-contract#66). Encoding one put a string on the wire that no client
+  sends and that the validator now reads as a different value. Generated
+  header strings stay inside what an HTTP field value may carry — printable
+  characters, no whitespace at either end, and no comma when the style needs
+  it to separate members — because reading a header as sent leaves nothing to
+  escape a delimiter with. A hand-written case carrying a CR or an LF is
+  refused as `UnsupportedGeneration` naming the header, rather than
+  percent-encoded into something harmless or handed to a PSR-7 implementation
+  to reject in its own words.
+- **Added.** `headers.get` in the zoo: a scalar, a list and an exploded object
+  header, so the round trip a validator and a server have to agree on is
+  proven rather than assumed. It could not be proven before — the whole zoo
+  had no header parameter, and both sides percent-encoded, so they agreed with
+  each other and with nobody else. The differential fixture gets its header
+  parameter back for the same reason: the disagreement it was excluded for is
+  settled, not pinned.
+- **Requires** `rasuvaeff/openapi-contract` `^0.7`.
+
 - **Added.** Three zoo operations carrying the document forms last month's
   findings lived in, and a document accessor beside each contract so those
   forms can be recorded into a portable corpus: a 3.0 body with a boolean

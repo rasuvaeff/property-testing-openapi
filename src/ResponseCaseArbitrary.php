@@ -8,6 +8,7 @@ use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 
@@ -36,10 +37,13 @@ final readonly class ResponseCaseArbitrary
 
     private ResponseSchemas $responseSchemas;
 
+    private ParameterSchemas $parameterSchemas;
+
     public function __construct()
     {
         $this->schemas = new SchemaArbitraryCompiler();
         $this->responseSchemas = new ResponseSchemas();
+        $this->parameterSchemas = new ParameterSchemas();
     }
 
     /**
@@ -123,7 +127,14 @@ final readonly class ResponseCaseArbitrary
                 continue;
             }
             /** @var array<string, mixed> $schema */
-            $value = Gen::map($this->schemas->compile($schema), fn(mixed $value): string|array => $this->headerValue($value, $name));
+            // Same wire, same rules as a request header: the rewrite narrows
+            // the alphabet to what a field value may carry, and the filter
+            // refuses what a `pattern` or a `format` can still put outside it.
+            $separator = ParameterSchemas::separatorOf('header', 'simple', $schema);
+            $compiled = (new SchemaArbitraryCompiler($separator ?? ''))
+                ->compile($this->parameterSchemas->forLocation($schema, 'header', 'simple'));
+            $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
+            $value = Gen::map($compiled, fn(mixed $value): string|array => $this->headerValue($value, $name));
             // An optional header takes both branches; `null` stands for "absent"
             // because a present header always carries a string value.
             $shape[$name] = $required ? $value : Gen::nullable($value);

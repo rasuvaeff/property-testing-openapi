@@ -31,10 +31,11 @@ use Rasuvaeff\OpenApiContract\Contract;
  * - A cookie parameter: league reads the `Cookie` header verbatim, without
  *   percent-decoding, so any generated value carrying a reserved character is a
  *   disagreement about cookie encoding rather than about the document.
- * - A header parameter: the same disagreement, and a sharper one, because RFC
- *   6570 does say what `style: simple` means. It is pinned as its own case in
- *   {@see \Rasuvaeff\PropertyTesting\OpenApi\Tests\Differential\LeagueGeneratedDifferentialTest::aPercentEncodedHeaderIsReadByOnlyOneOfThem()}
- *   rather than re-reported by every generated run that happens to draw one.
+ *
+ * A header parameter used to be excluded for the same reason and is back: it
+ * was the one live disagreement this differential found, and it is settled
+ * (openapi-contract#66) rather than pinned. Both readers now read a field value
+ * as sent, so the traffic that used to split them is traffic they agree about.
  */
 final class DifferentialContracts
 {
@@ -49,33 +50,6 @@ final class DifferentialContracts
         // the differential asks both of them for a verdict several hundred
         // times per run.
         return self::$contract ??= Contract::fromArray(self::document());
-    }
-
-    /**
-     * The header parameter the generated traffic stays away from, kept as its
-     * own one-operation document so the pinned divergence is asserted without
-     * putting a header parameter in every generated case.
-     */
-    public static function headerContract(): Contract
-    {
-        return Contract::fromArray(self::headerDocument());
-    }
-
-    /** @return array<string, mixed> */
-    public static function headerDocument(): array
-    {
-        return [
-            'openapi' => '3.0.3',
-            'info' => ['title' => 'differential-header', 'version' => '1'],
-            'paths' => ['/trace' => ['get' => [
-                'operationId' => 'trace.get',
-                'parameters' => [
-                    ['name' => 'X-Trace', 'in' => 'header', 'required' => true,
-                        'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8]],
-                ],
-                'responses' => ['200' => ['description' => 'ok']],
-            ]]],
-        ];
     }
 
     /** @return array<string, mixed> */
@@ -101,6 +75,8 @@ final class DifferentialContracts
                             'schema' => ['type' => 'string', 'enum' => ['cat', 'dog']]],
                         ['name' => 'ref', 'in' => 'query', 'required' => true,
                             'schema' => ['type' => 'string', 'pattern' => '^[a-z]{2,6}$']],
+                        ['name' => 'X-Trace', 'in' => 'header', 'required' => false,
+                            'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8]],
                         // The one container shape a SAPI reads back exactly:
                         // each member arrives under its own name.
                         ['name' => 'filter', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true,

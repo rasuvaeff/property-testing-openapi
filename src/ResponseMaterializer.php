@@ -15,7 +15,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 /**
  * Materializes a data-only response case as a PSR-7 response immediately
  * before it is handed to the client under test: status, headers serialized
- * with the `simple` style like request headers (percent-encoded, a list
+ * with the `simple` style like request headers (read as sent, a list
  * value joined with commas), and a JSON body encoded against the declared
  * schema with its `Content-Type`.
  *
@@ -40,7 +40,18 @@ final readonly class ResponseMaterializer
         }
         $response = $this->responses->createResponse($case['status']);
         foreach ($case['headers'] as $name => $value) {
-            $response = $response->withHeader($name, $this->parameters->serialize(name: $name, value: $value, style: 'simple', explode: false));
+            // A header field value is not percent-encoded, and the validator
+            // reads it as sent (openapi-contract#66) — on this side of the
+            // exchange for exactly the same reason as on the request side.
+            $wire = $this->parameters->serialize(
+                name: $name,
+                value: $value,
+                style: 'simple',
+                explode: false,
+                percentEncoded: false,
+            );
+            ParameterSerializer::assertTransmittableHeader($name, $wire);
+            $response = $response->withHeader($name, $wire);
         }
         $body = $case['body'];
         if ($body === null) {

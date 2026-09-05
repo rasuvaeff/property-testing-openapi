@@ -151,42 +151,6 @@ final class LeagueGeneratedDifferentialTest
         }
     }
 
-    /**
-     * The one disagreement the generated traffic is kept away from, pinned
-     * here so it is a recorded decision rather than a silent exclusion.
-     *
-     * OAS says a header parameter uses `style: simple`, and simple style is
-     * RFC 6570 simple expansion, which percent-encodes everything outside the
-     * unreserved set. We read a header that way, so `%C4%8B` is one character
-     * against `maxLength`. League reads the header value verbatim, so the same
-     * bytes are six. Both readings are defensible — header field values are
-     * opaque octets to HTTP itself, and nothing percent-encodes them in the
-     * wild — and until one of them wins, generating header parameters here
-     * would report the same argument a few dozen times per run.
-     */
-    public function aPercentEncodedHeaderIsReadByOnlyOneOfThem(): void
-    {
-        $factory = new Psr17Factory();
-        // Six characters percent-encoded into thirty-six bytes, against a
-        // maxLength of eight: the two readings cannot both accept it.
-        $request = $this->asServerRequest(
-            $factory->createRequest('GET', '/trace')
-                ->withHeader('X-Trace', str_repeat('%C4%8B', 6)),
-        );
-        $league = (new ValidatorBuilder())
-            ->fromJson(json_encode(DifferentialContracts::headerDocument(), JSON_THROW_ON_ERROR))
-            ->getServerRequestValidator();
-
-        Assert::same($this->ourVerdict($request, DifferentialContracts::headerContract()), null);
-
-        try {
-            $league->validate($request);
-            Assert::fail('League was expected to read the header verbatim and reject it');
-        } catch (\Throwable $exception) {
-            Assert::string($exception->getMessage())->contains('X-Trace');
-        }
-    }
-
     /** @return array<string, ArbitraryInterface> */
     public static function validCase(): array
     {
@@ -272,9 +236,9 @@ final class LeagueGeneratedDifferentialTest
         return $server->withQueryParams($query);
     }
 
-    private function ourVerdict(ServerRequestInterface $request, ?Contract $contract = null): ?string
+    private function ourVerdict(ServerRequestInterface $request): ?string
     {
-        $result = ($contract ?? DifferentialContracts::contract())->validateRequest($request);
+        $result = DifferentialContracts::contract()->validateRequest($request);
         if ($result->isValid()) {
             return null;
         }
