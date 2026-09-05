@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** Three zoo operations carrying the document forms last month's
+  findings lived in, and a document accessor beside each contract so those
+  forms can be recorded into a portable corpus: a 3.0 body with a boolean
+  `additionalProperties`, a JSON body whose property names are decimal integers,
+  and a multipart body with `encoding.contentType`. Verified against the
+  pre-fix validator — replaying the recorded corpus on `openapi-contract`
+  0.5.1 rejects a `bounded.create` document outright and fails a valid
+  `numeric.create` body, which is the point of recording it.
+
 - **Added.** A differential against `league/openapi-psr7-validator` fed by the
   generator. `openapi-contract` has compared verdicts with league from the
   start, but from a hand-written corpus, so it could only disagree about
