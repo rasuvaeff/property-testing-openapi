@@ -93,6 +93,11 @@ final readonly class RequestMaterializer
                 // only; honouring it on a header or a cookie applied a rule
                 // the document never stated there.
                 allowReserved: $parameter['in'] === 'query' && $parameter['allowReserved'],
+                // A header field value is not percent-encoded, and the
+                // validator reads it as sent (openapi-contract#66). Encoding
+                // one here would put a value on the wire that no client sends
+                // and that the server reads as a different string.
+                percentEncoded: $parameter['in'] !== 'header',
             );
             match ($parameter['in']) {
                 'path' => $path = str_replace('{' . $parameter['name'] . '}', $wire, $path),
@@ -107,6 +112,7 @@ final readonly class RequestMaterializer
 
         $request = $this->requests->createRequest($operation->method, $this->requestTarget($operation, $path));
         foreach ($headers as $name => $value) {
+            ParameterSerializer::assertTransmittableHeader($name, $value);
             $request = $request->withHeader($name, $value);
         }
         if ($cookies !== []) {

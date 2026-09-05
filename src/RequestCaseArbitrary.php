@@ -91,15 +91,21 @@ final readonly class RequestCaseArbitrary
             if ($parameter['in'] !== $location) {
                 continue;
             }
-            $separator = ParameterSchemas::separatorOf($location, $parameter['style']);
+            $separator = ParameterSchemas::separatorOf($location, $parameter['style'], $parameter['schema']);
             $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
             $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
             if ($location === 'path') {
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isPathSafe($value));
             }
+            if ($location === 'header') {
+                // Same division of labour as the path: the rewrite narrows the
+                // alphabet, this refuses what a `pattern` or a `format` can
+                // still put outside an HTTP field value.
+                $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
+            }
             if ($separator !== null) {
                 // The rewrite and the narrowed alphabet construct values
-                // without the separator; this only guards what neither can
+                // without those characters; this only guards what neither can
                 // see, a `pattern`, whose alphabet is the pattern's own.
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isSeparatorSafe($value, $separator));
             }
@@ -351,7 +357,18 @@ final readonly class RequestCaseArbitrary
             throw new UnsupportedGeneration('Nested multipart object properties are not supported');
         }
 
-        return $this->schemas->compile($schema);
+        // A text part is written verbatim into a CRLF-delimited body, and the
+        // multipart parsers in the wild trim what they read back: riverline,
+        // the one `league/openapi-psr7-validator` uses, turns a part whose
+        // value is only whitespace into an empty string and silently drops the
+        // padding of any other. The value the handler receives is then not the
+        // value the case recorded — the same failure as the query `+`. The
+        // shape removed here is one no client sends on purpose, and refusing
+        // it costs a percent of draws.
+        return Gen::filter(
+            $this->schemas->compile($schema),
+            static fn(mixed $value): bool => !is_string($value) || trim($value) === $value,
+        );
     }
 
     /** @param array<string, mixed> $definition

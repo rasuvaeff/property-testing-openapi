@@ -89,7 +89,9 @@ final class ResponseCaseArbitraryTest
         Assert::same($response->getStatusCode(), 200);
         Assert::same($response->getHeaderLine('Content-Type'), 'application/json');
         if (isset($case['headers']['X-Tags']) && is_array($case['headers']['X-Tags'])) {
-            Assert::same($response->getHeaderLine('X-Tags'), implode(',', array_map(rawurlencode(...), $case['headers']['X-Tags'])));
+            // Read as sent on both sides now: the comma still separates, and
+            // nothing else is touched (openapi-contract#66).
+            Assert::same($response->getHeaderLine('X-Tags'), implode(',', $case['headers']['X-Tags']));
         }
     }
 

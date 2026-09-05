@@ -210,20 +210,55 @@ final class ParameterSchemasTest
         ];
     }
 
+    /** @param array<string, mixed> $schema */
     #[DataProvider('separatorProvider')]
-    public function namesTheSeparatorOfEachStyle(string $location, string $style, ?string $expected): void
+    public function namesTheSeparatorOfEachStyle(string $location, string $style, array $schema, ?string $expected): void
     {
-        Assert::same(ParameterSchemas::separatorOf($location, $style), $expected);
+        Assert::same(ParameterSchemas::separatorOf($location, $style, $schema), $expected);
     }
 
-    /** @return iterable<string, array{string, string, null|string}> */
+    /** @return iterable<string, array{string, string, array<string, mixed>, null|string}> */
     public static function separatorProvider(): iterable
     {
-        yield 'space delimited' => ['query', 'spaceDelimited', ' '];
-        yield 'pipe delimited' => ['query', 'pipeDelimited', '|'];
-        yield 'form' => ['query', 'form', null];
-        yield 'deep object' => ['query', 'deepObject', null];
-        yield 'a path parameter has no delimited style' => ['path', 'spaceDelimited', null];
+        yield 'space delimited' => ['query', 'spaceDelimited', [], ' '];
+        yield 'pipe delimited' => ['query', 'pipeDelimited', [], '|'];
+        yield 'form' => ['query', 'form', [], null];
+        yield 'deep object' => ['query', 'deepObject', [], null];
+        yield 'a path parameter has no delimited style' => ['path', 'spaceDelimited', [], null];
+        // A header value is read as sent, so the space RFC 9110 allows around
+        // a list separator is stripped from every member and the comma that
+        // separates them has no escape left. A scalar header meets neither
+        // rule — nothing splits it — so it only avoids the space.
+        yield 'a scalar header avoids the whitespace' => ['header', 'simple', ['type' => 'string'], ' '];
+        yield 'an untyped header is treated as a scalar' => ['header', 'simple', [], ' '];
+        yield 'a list header avoids the comma too' => ['header', 'simple', ['type' => 'array', 'items' => ['type' => 'string']], ', '];
+        yield 'an object header avoids the comma too' => ['header', 'simple', ['type' => 'object'], ', '];
+        yield 'a cookie imposes nothing' => ['cookie', 'form', ['type' => 'array'], null];
+    }
+
+    /**
+     * RFC 9110 admits visible characters and interior whitespace in a field
+     * value, and a PSR-7 implementation refuses the rest outright — a newline
+     * in a header is a request smuggling primitive, not a value. Since the
+     * validator reads a header as sent (openapi-contract#66), nothing encodes
+     * such a value away any more.
+     */
+    public function judgesWhetherAValueCanTravelAsAFieldValue(): void
+    {
+        $schemas = new ParameterSchemas();
+
+        Assert::true($schemas->isHeaderSafe('a b'));
+        Assert::true($schemas->isHeaderSafe(''));
+        Assert::true($schemas->isHeaderSafe(42));
+        Assert::true($schemas->isHeaderSafe(null));
+        Assert::true($schemas->isHeaderSafe(['a', 'b c']));
+        Assert::false($schemas->isHeaderSafe("a\r\nb"));
+        Assert::false($schemas->isHeaderSafe("a\tb"));
+        Assert::false($schemas->isHeaderSafe(' a'));
+        Assert::false($schemas->isHeaderSafe('a '));
+        Assert::false($schemas->isHeaderSafe('ć'));
+        Assert::false($schemas->isHeaderSafe(['ok', "bad\n"]));
+        Assert::false($schemas->isHeaderSafe(["bad\n" => 'ok']));
     }
 
     public function judgesPathSafetyOfEveryStringInAValue(): void

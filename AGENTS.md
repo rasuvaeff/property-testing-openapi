@@ -48,6 +48,14 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   credentials, closures, or application DTOs.
 - A materialized valid case must pass `Contract::validateRequest()` before a
   transport may observe it.
+- A header is written verbatim, a path and a query are percent-encoded, and a
+  cookie is percent-encoded. That is not a style question but a wire question:
+  the validator reads a header field value as sent (openapi-contract#66), so
+  encoding one here would put a string on the wire that no client sends.
+  `ParameterSchemas::separatorOf()` narrows the alphabet accordingly and
+  `isHeaderSafe()` guards what a `pattern` or a `format` can still put outside
+  a field value — the same two halves as the path rule below. A CR or an LF
+  reaching a materializer is refused by name, never encoded away.
 - Keep parameter serialization location-aware. A path value must not escape its
   template segment after percent decoding: `Internal\ParameterSchemas` raises
   `minLength` to 1 on every path string, drops unsafe `enum` members, refuses

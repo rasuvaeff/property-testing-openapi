@@ -45,15 +45,34 @@ final readonly class ParameterSchemas
      */
     public function forLocation(array $schema, string $location, string $style = 'form'): array
     {
-        return $this->rewrite($schema, $location === 'path', self::separatorOf($location, $style));
+        return $this->rewrite($schema, $location === 'path', self::separatorOf($location, $style, $schema));
     }
 
     /**
-     * The character a generated value for this parameter may not contain, or
-     * `null` when the style imposes none.
+     * The characters a generated value for this parameter may not contain, or
+     * `null` when nothing about the wire forbids one.
+     *
+     * A header used to impose nothing here, because a value that carried the
+     * style's comma could be percent-encoded past it. It cannot any more: a
+     * header field value is read exactly as sent (openapi-contract#66), so the
+     * comma of a list or an object header separates whatever a member meant by
+     * it, and the optional whitespace RFC 9110 allows around that comma is
+     * stripped from both ends of every member. A scalar header is untouched by
+     * both rules and keeps the whole alphabet.
+     *
+     * @param array<string, mixed> $schema
      */
-    public static function separatorOf(string $location, string $style): ?string
+    public static function separatorOf(string $location, string $style, array $schema = []): ?string
     {
+        if ($location === 'header') {
+            // A space is out whatever the shape: a field value is read with
+            // the optional whitespace stripped from both ends, and a generator
+            // does not control where in a string its space lands. A list or an
+            // object loses the comma too, which is what separates its members
+            // now that nothing escapes it.
+            return SchemaShape::isArray($schema) || SchemaShape::isObject($schema) ? ', ' : ' ';
+        }
+
         return $location === 'query' ? (self::STYLE_SEPARATORS[$style] ?? null) : null;
     }
 
@@ -66,7 +85,10 @@ final readonly class ParameterSchemas
     public function isSeparatorSafe(mixed $value, string $separator): bool
     {
         if (is_string($value)) {
-            return !str_contains($value, $separator);
+            // `$separator` is a set of characters, not one string to look for:
+            // a header excludes both the comma it splits on and the whitespace
+            // trimmed around it.
+            return strcspn($value, $separator) === strlen($value);
         }
         if (!is_array($value)) {
             return true;
@@ -76,6 +98,36 @@ final readonly class ParameterSchemas
                 return false;
             }
             if (!$this->isSeparatorSafe($value[$key], $separator)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether every string of a generated value can travel as an HTTP field
+     * value at all. RFC 9110 admits visible characters and interior
+     * whitespace, and a PSR-7 implementation refuses the rest outright — a
+     * newline in a header is a request smuggling primitive, not a value.
+     *
+     * The schema rewrite already keeps generated strings inside printable
+     * ASCII; this guards what it cannot see, a `pattern` or a `format` whose
+     * alphabet is its own.
+     */
+    public function isHeaderSafe(mixed $value): bool
+    {
+        if (is_string($value)) {
+            return preg_match('/\A[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?\z/', $value) === 1 || $value === '';
+        }
+        if (!is_array($value)) {
+            return true;
+        }
+        foreach (array_keys($value) as $key) {
+            if (is_string($key) && !$this->isHeaderSafe($key)) {
+                return false;
+            }
+            if (!$this->isHeaderSafe($value[$key])) {
                 return false;
             }
         }

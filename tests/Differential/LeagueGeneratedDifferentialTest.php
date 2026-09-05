@@ -152,39 +152,51 @@ final class LeagueGeneratedDifferentialTest
     }
 
     /**
-     * The one disagreement the generated traffic is kept away from, pinned
-     * here so it is a recorded decision rather than a silent exclusion.
+     * The shape the generated traffic is kept away from, pinned here so the
+     * exclusion is a recorded finding rather than a silent narrowing.
      *
-     * OAS says a header parameter uses `style: simple`, and simple style is
-     * RFC 6570 simple expansion, which percent-encodes everything outside the
-     * unreserved set. We read a header that way, so `%C4%8B` is one character
-     * against `maxLength`. League reads the header value verbatim, so the same
-     * bytes are six. Both readings are defensible — header field values are
-     * opaque octets to HTTP itself, and nothing percent-encodes them in the
-     * wild — and until one of them wins, generating header parameters here
-     * would report the same argument a few dozen times per run.
+     * RFC 2046 puts the part body between the blank line and the next
+     * delimiter and says nothing about trimming it. We read those bytes, so a
+     * part carrying a single carriage return is one character and satisfies
+     * `minLength: 1`. Riverline, the parser league uses, changed its mind
+     * about this between minor versions — 2.0.3 reads the bytes, later ones
+     * trim the body — so a part whose value is only whitespace comes back as
+     * the empty string there, and any other value quietly loses its padding.
+     *
+     * League's verdict is therefore not asserted: which way it falls is a
+     * property of a transitive dependency's minor version, and a test that
+     * pinned it would fail on `--prefer-lowest` for saying something true only
+     * of today's lock file. What is asserted is our reading, and that the
+     * shape the generator does emit is one both readers agree about.
+     * {@see \Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary} keeps
+     * generated text parts clear of the edge whitespace for that reason: not
+     * because a verdict differs, but because the value the application
+     * receives would not be the value the case recorded.
      */
-    public function aPercentEncodedHeaderIsReadByOnlyOneOfThem(): void
+    public function aWhitespaceOnlyMultipartPartIsOursToReadExactly(): void
     {
         $factory = new Psr17Factory();
-        // Six characters percent-encoded into thirty-six bytes, against a
-        // maxLength of eight: the two readings cannot both accept it.
-        $request = $this->asServerRequest(
-            $factory->createRequest('GET', '/trace')
-                ->withHeader('X-Trace', str_repeat('%C4%8B', 6)),
+
+        // One carriage return is one character, and the part declares
+        // `minLength: 1`.
+        Assert::same($this->ourVerdict($this->upload($factory, "\r")), null);
+        // The shape the generator does build — no whitespace on either edge —
+        // is agreed by both, whichever parser is installed.
+        Assert::same($this->ourVerdict($this->upload($factory, 'note')), null);
+        Assert::same($this->leagueVerdict($this->upload($factory, 'note')), null);
+    }
+
+    private function upload(Psr17Factory $factory, string $value): ServerRequestInterface
+    {
+        $boundary = 'openapi-pinned';
+        $body = '--' . $boundary . "\r\nContent-Disposition: form-data; name=\"note\"\r\n"
+            . "Content-Type: text/plain\r\n\r\n" . $value . "\r\n--" . $boundary . "--\r\n";
+
+        return $this->asServerRequest(
+            $factory->createRequest('POST', '/uploads')
+                ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $boundary)
+                ->withBody($factory->createStream($body)),
         );
-        $league = (new ValidatorBuilder())
-            ->fromJson(json_encode(DifferentialContracts::headerDocument(), JSON_THROW_ON_ERROR))
-            ->getServerRequestValidator();
-
-        Assert::same($this->ourVerdict($request, DifferentialContracts::headerContract()), null);
-
-        try {
-            $league->validate($request);
-            Assert::fail('League was expected to read the header verbatim and reject it');
-        } catch (\Throwable $exception) {
-            Assert::string($exception->getMessage())->contains('X-Trace');
-        }
     }
 
     /** @return array<string, ArbitraryInterface> */
@@ -272,9 +284,9 @@ final class LeagueGeneratedDifferentialTest
         return $server->withQueryParams($query);
     }
 
-    private function ourVerdict(ServerRequestInterface $request, ?Contract $contract = null): ?string
+    private function ourVerdict(ServerRequestInterface $request): ?string
     {
-        $result = ($contract ?? DifferentialContracts::contract())->validateRequest($request);
+        $result = DifferentialContracts::contract()->validateRequest($request);
         if ($result->isValid()) {
             return null;
         }

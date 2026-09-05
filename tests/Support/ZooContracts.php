@@ -27,7 +27,7 @@ final class ZooContracts
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
         'nested.create', 'health.get', 'version.get', 'files.get',
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
-        'encoded.create', 'numeric.create',
+        'encoded.create', 'numeric.create', 'headers.get',
         'search.get', 'narrowed.create', 'bounded.create',
     ];
 
@@ -261,6 +261,23 @@ final class ZooContracts
                             '12' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9],
                         ],
                     ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A header field value is read exactly as sent, so what the
+                // generator writes is what the validator reads and what the
+                // server receives — the round trip that used to be hidden
+                // behind percent-encoding on both sides
+                // (openapi-contract#66).
+                '/headers' => ['get' => [
+                    'operationId' => 'headers.get',
+                    'parameters' => [
+                        ['name' => 'X-Trace', 'in' => 'header', 'required' => true,
+                            'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8]],
+                        ['name' => 'X-Tags', 'in' => 'header', 'style' => 'simple', 'explode' => false,
+                            'schema' => ['type' => 'array', 'maxItems' => 3, 'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4]]],
+                        ['name' => 'X-Filter', 'in' => 'header', 'style' => 'simple', 'explode' => true,
+                            'schema' => ['type' => 'object', 'maxProperties' => 2, 'additionalProperties' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4]]],
+                    ],
                     'responses' => ['204' => []],
                 ]],
                 // OAS 3.1 spells the absent branch as a `null` member of a type

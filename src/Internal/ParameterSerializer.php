@@ -13,11 +13,22 @@ final readonly class ParameterSerializer
 {
     /**
      * @param string|list<string>|array<string, string> $value
+     * @param bool $percentEncoded whether this wire escapes a value at all. A
+     *        path and a query do; a header does not — HTTP reads a field value
+     *        as opaque octets, and the validator reads it as sent
+     *        (openapi-contract#66), so encoding one here would put a string on
+     *        the wire that no client sends. OpenAPI gives a header only the
+     *        `simple` style, and anything else asking to skip the encoding is
+     *        a document this generator will not guess at.
      */
-    public function serialize(string $name, string|array $value, string $style, bool $explode, bool $allowReserved = false): string
+    public function serialize(string $name, string|array $value, string $style, bool $explode, bool $allowReserved = false, bool $percentEncoded = true): string
     {
+        if (!$percentEncoded && $style !== 'simple') {
+            throw new UnsupportedGeneration(sprintf('Only the simple style is emitted verbatim, not "%s"', $style));
+        }
+
         return match ($style) {
-            'simple' => $this->simple($value, $explode, ',', $allowReserved, keepEncoded: ','),
+            'simple' => $this->simple($value, $explode, ',', $allowReserved, keepEncoded: ',', percentEncoded: $percentEncoded),
             'label' => '.' . $this->simple($value, $explode, $explode ? '.' : ',', $allowReserved, encodeDots: true, keepEncoded: ','),
             'matrix' => $this->matrix($name, $value, $explode, $allowReserved),
             'form' => $this->form($name, $value, $explode, $allowReserved),
@@ -29,8 +40,11 @@ final readonly class ParameterSerializer
     }
 
     /** @param string|list<string>|array<array-key, string> $value */
-    private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved, bool $encodeDots = false, string $keepEncoded = ''): string
+    private function simple(string|array $value, bool $explode, string $pairSeparator, bool $allowReserved, bool $encodeDots = false, string $keepEncoded = '', bool $percentEncoded = true): string
     {
+        if (!$percentEncoded) {
+            return $this->verbatimSimple($value, $explode, $pairSeparator);
+        }
         if (is_string($value)) {
             return $this->encode($value, $allowReserved, $encodeDots, $keepEncoded);
         }
@@ -44,6 +58,50 @@ final readonly class ParameterSerializer
         // was built.
         foreach ($this->object($value) as $key => $item) {
             $parts[] = $this->encode((string) $key, $allowReserved, $encodeDots, $keepEncoded) . ($explode ? '=' : ',') . $this->encode($item, $allowReserved, $encodeDots, $keepEncoded);
+        }
+
+        return implode($explode ? $pairSeparator : ',', $parts);
+    }
+
+    /**
+     * Refuses a header value that no HTTP field can carry.
+     *
+     * Percent-encoding used to make this unreachable: a CR or an LF in a case
+     * came out as `%0D%0A` and travelled harmlessly. A header is written as
+     * sent now (openapi-contract#66), so a case carrying one would be a
+     * request-splitting payload if a PSR-7 implementation let it through, and
+     * a raw `InvalidArgumentException` from whichever one is installed if it
+     * did not. Generated values never reach here — the alphabet and
+     * {@see ParameterSchemas::isHeaderSafe()} keep them inside a field value —
+     * so this speaks to a hand-written case, in this package's own vocabulary.
+     */
+    public static function assertTransmittableHeader(string $name, string $value): void
+    {
+        if ($value !== '' && preg_match('/\A[\x21-\x7e\x80-\xff](?:[\x20-\x7e\x80-\xff]*[\x21-\x7e\x80-\xff])?\z/', $value) !== 1) {
+            throw new UnsupportedGeneration(sprintf('Header "%s" carries a value no HTTP field can', $name));
+        }
+    }
+
+    /**
+     * The same shape as {@see simple()} with nothing escaped. The generated
+     * value has already been kept clear of the delimiter and of the optional
+     * whitespace around it ({@see ParameterSchemas::separatorOf()}), because
+     * without an escape that is the only way a member survives the wire.
+     *
+     * @param string|list<string>|array<array-key, string> $value
+     */
+    private function verbatimSimple(string|array $value, bool $explode, string $pairSeparator): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+        if (array_is_list($value)) {
+            return implode($pairSeparator, $this->list($value));
+        }
+
+        $parts = [];
+        foreach ($this->object($value) as $key => $item) {
+            $parts[] = $key . ($explode ? '=' : ',') . $item;
         }
 
         return implode($explode ? $pairSeparator : ',', $parts);

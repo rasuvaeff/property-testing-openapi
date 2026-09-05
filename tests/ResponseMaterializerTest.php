@@ -49,15 +49,41 @@ final class ResponseMaterializerTest
         $response = $this->materializer()->materialize($operation, [
             'operationKey' => 'op',
             'status' => 204,
-            'headers' => ['X-Trace' => "a\r\nb, c", 'X-Tags' => ['a,b', 'c d', 'é'], 'X-Plain' => '42'],
+            'headers' => ['X-Trace' => 'a b, c', 'X-Tags' => ['a', 'c d', 'é'], 'X-Plain' => '42'],
             'body' => null,
             'misuse' => null,
         ]);
 
-        Assert::same($response->getHeaderLine('X-Trace'), 'a%0D%0Ab%2C%20c');
-        Assert::same($response->getHeaderLine('X-Tags'), 'a%2Cb,c%20d,%C3%A9');
-        Assert::same($response->getHeader('X-Tags'), ['a%2Cb,c%20d,%C3%A9']);
+        // Written as sent: the comma of a list still separates, and nothing
+        // else is escaped (openapi-contract#66). A member that carries the
+        // comma has no spelling any more, which is why the generator does not
+        // build one.
+        Assert::same($response->getHeaderLine('X-Trace'), 'a b, c');
+        Assert::same($response->getHeaderLine('X-Tags'), 'a,c d,é');
+        Assert::same($response->getHeader('X-Tags'), ['a,c d,é']);
         Assert::same($response->getHeaderLine('X-Plain'), '42');
+    }
+
+    /**
+     * Percent-encoding used to make this unreachable: a CR or an LF came out
+     * as `%0D%0A` and travelled harmlessly. Written as sent, the same case
+     * would be a response-splitting payload, so it is refused here — in this
+     * package's vocabulary rather than as whatever a PSR-7 implementation
+     * happens to throw. No generated case reaches it.
+     */
+    public function refusesAHeaderValueNoHttpFieldCanCarry(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['204' => []]);
+
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
+
+        $this->materializer()->materialize($operation, [
+            'operationKey' => 'op',
+            'status' => 204,
+            'headers' => ['X-Trace' => "a\r\nb"],
+            'body' => null,
+            'misuse' => null,
+        ]);
     }
 
     public function writesARawBodyVerbatim(): void
