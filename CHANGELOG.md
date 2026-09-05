@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** A differential against `league/openapi-psr7-validator` fed by the
+  generator. `openapi-contract` has compared verdicts with league from the
+  start, but from a hand-written corpus, so it could only disagree about
+  requests someone thought to write down; this package produces requests nobody
+  thought of. Both readers are handed the same document and the same bytes: a
+  generated valid case both must accept, and a case built to violate exactly
+  one thing that neither may let through. The document is deliberately narrower
+  than the zoo — a differential is informative only on the intersection of what
+  two implementations claim to support, and outside it degenerates into a list
+  of the other library's limitations. What is left out is recorded with its
+  reason, including the one live disagreement it found: a header parameter is
+  RFC 6570 simple expansion to us and opaque bytes to league, so `%C4%8B` is one
+  character against `maxLength` on one side and six on the other. That case is
+  pinned rather than generated. Verified by reverting the query decoder in the
+  installed contract: the property turns red and names the parameter.
+
 - **Added.** A test that asks the one question neither package can answer
   alone: does the application behind the validator receive the value the
   generator recorded? A case is generated, materialized, validated, and then

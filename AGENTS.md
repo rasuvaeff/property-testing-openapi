@@ -71,6 +71,20 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   schema feature, checked through materialize → validate → transport →
   validate the exchange. Add a zoo operation with every new keyword or
   location rule; a unit test on the compiler alone does not prove the wire.
+- Two oracles are external to both packages, and neither is optional.
+  `tests/SapiAgreementTest.php` asks whether the application behind the
+  validator receives the value the case recorded; `tests/Differential/` asks
+  whether an independent reader of the same document reaches the same verdict
+  on generated traffic. A suite in which the generator and the validator only
+  agree with each other proves nothing — that is exactly the state in which a
+  query `+` was a literal plus to both for the life of the package.
+- Keep the differential fixture inside the intersection of what both readers
+  claim to support, and record every exclusion with its reason in
+  `tests/Support/DifferentialContracts.php`. Widening it past that intersection
+  does not find bugs; it accumulates pinned limitations of the other library,
+  which is the hand-written corpus the generator exists to escape. A genuine
+  disagreement gets pinned as its own deterministic case, never generated a few
+  hundred times per run.
 - `Psr15Transport` mimics the SAPI (`parse_str()` semantics for query/form/
   multipart names, `uploadedFiles` only with both PSR-17 factories).
 - The suite runs under both test runners: Testo drives the package's own
