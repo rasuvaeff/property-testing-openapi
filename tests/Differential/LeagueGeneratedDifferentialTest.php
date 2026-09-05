@@ -151,6 +151,40 @@ final class LeagueGeneratedDifferentialTest
         }
     }
 
+    /**
+     * The disagreement the generated traffic is kept away from, pinned here so
+     * it is a recorded finding rather than a silent exclusion.
+     *
+     * RFC 2046 puts the part body between the blank line and the next
+     * delimiter, and says nothing about trimming it. We read those bytes.
+     * Riverline, the parser league uses, trims them — a part whose value is
+     * only whitespace comes back as the empty string, and any other value
+     * quietly loses its padding. So a `minLength: 1` part carrying a single
+     * carriage return is valid to one reader and empty to the other, and the
+     * application behind either gets a value the client did not send.
+     *
+     * {@see \Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary} keeps
+     * generated text parts clear of the shape rather than re-reporting it a
+     * few times per thousand runs.
+     */
+    public function aWhitespaceOnlyMultipartPartIsReadByOnlyOneOfThem(): void
+    {
+        $boundary = 'openapi-pinned';
+        $body = '--' . $boundary . "\r\nContent-Disposition: form-data; name=\"note\"\r\n"
+            . "Content-Type: text/plain\r\n\r\n\r\r\n--" . $boundary . "--\r\n";
+        $factory = new Psr17Factory();
+        $request = $this->asServerRequest(
+            $factory->createRequest('POST', '/uploads')
+                ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $boundary)
+                ->withBody($factory->createStream($body)),
+        );
+
+        // One carriage return is one character, and the part declares
+        // `minLength: 1`.
+        Assert::same($this->ourVerdict($request), null);
+        Assert::string($this->leagueVerdict($request) ?? '')->contains('must be longer or equal to 1');
+    }
+
     /** @return array<string, ArbitraryInterface> */
     public static function validCase(): array
     {

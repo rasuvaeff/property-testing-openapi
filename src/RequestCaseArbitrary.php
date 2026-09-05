@@ -357,7 +357,18 @@ final readonly class RequestCaseArbitrary
             throw new UnsupportedGeneration('Nested multipart object properties are not supported');
         }
 
-        return $this->schemas->compile($schema);
+        // A text part is written verbatim into a CRLF-delimited body, and the
+        // multipart parsers in the wild trim what they read back: riverline,
+        // the one `league/openapi-psr7-validator` uses, turns a part whose
+        // value is only whitespace into an empty string and silently drops the
+        // padding of any other. The value the handler receives is then not the
+        // value the case recorded — the same failure as the query `+`. The
+        // shape removed here is one no client sends on purpose, and refusing
+        // it costs a percent of draws.
+        return Gen::filter(
+            $this->schemas->compile($schema),
+            static fn(mixed $value): bool => !is_string($value) || trim($value) === $value,
+        );
     }
 
     /** @param array<string, mixed> $definition

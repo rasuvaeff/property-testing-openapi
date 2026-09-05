@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each other and with nobody else. The differential fixture gets its header
   parameter back for the same reason: the disagreement it was excluded for is
   settled, not pinned.
+- **Fixed.** A generated multipart text part no longer carries leading or
+  trailing whitespace. RFC 2046 puts the part body between the blank line and
+  the next delimiter and says nothing about trimming it; the parsers in the
+  wild trim anyway, so a part whose value is only a carriage return came back
+  as the empty string and any other value quietly lost its padding — the
+  handler receiving a value the client did not send, which is the same failure
+  as the query `+`. Found by the league differential on a seed the local runs
+  had not drawn, four times in six thousand; the divergence itself is pinned as
+  its own case rather than removed from sight.
 - **Requires** `rasuvaeff/openapi-contract` `^0.7`.
 
 - **Added.** Three zoo operations carrying the document forms last month's
