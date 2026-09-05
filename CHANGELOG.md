@@ -32,8 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the empty string and any other value quietly lost its padding — the
   handler receiving a value the client did not send, which is the same failure
   as the query `+`. Found by the league differential on a seed the local runs
-  had not drawn, four times in six thousand; the divergence itself is pinned as
-  its own case rather than removed from sight.
+  had not drawn, four times in six thousand; the shape itself is pinned as its
+  own case rather than removed from sight. Which way league falls on it is a
+  property of its parser's minor version — riverline 2.0.3 reads the bytes,
+  later ones trim — so the pin asserts our reading and the agreement on the
+  shape the generator does emit, not a verdict that is true only of today's
+  lock file.
 - **Requires** `rasuvaeff/openapi-contract` `^0.7`.
 
 - **Added.** Three zoo operations carrying the document forms last month's

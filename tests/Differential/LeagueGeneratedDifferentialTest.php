@@ -152,37 +152,51 @@ final class LeagueGeneratedDifferentialTest
     }
 
     /**
-     * The disagreement the generated traffic is kept away from, pinned here so
-     * it is a recorded finding rather than a silent exclusion.
+     * The shape the generated traffic is kept away from, pinned here so the
+     * exclusion is a recorded finding rather than a silent narrowing.
      *
      * RFC 2046 puts the part body between the blank line and the next
-     * delimiter, and says nothing about trimming it. We read those bytes.
-     * Riverline, the parser league uses, trims them — a part whose value is
-     * only whitespace comes back as the empty string, and any other value
-     * quietly loses its padding. So a `minLength: 1` part carrying a single
-     * carriage return is valid to one reader and empty to the other, and the
-     * application behind either gets a value the client did not send.
+     * delimiter and says nothing about trimming it. We read those bytes, so a
+     * part carrying a single carriage return is one character and satisfies
+     * `minLength: 1`. Riverline, the parser league uses, changed its mind
+     * about this between minor versions — 2.0.3 reads the bytes, later ones
+     * trim the body — so a part whose value is only whitespace comes back as
+     * the empty string there, and any other value quietly loses its padding.
      *
+     * League's verdict is therefore not asserted: which way it falls is a
+     * property of a transitive dependency's minor version, and a test that
+     * pinned it would fail on `--prefer-lowest` for saying something true only
+     * of today's lock file. What is asserted is our reading, and that the
+     * shape the generator does emit is one both readers agree about.
      * {@see \Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary} keeps
-     * generated text parts clear of the shape rather than re-reporting it a
-     * few times per thousand runs.
+     * generated text parts clear of the edge whitespace for that reason: not
+     * because a verdict differs, but because the value the application
+     * receives would not be the value the case recorded.
      */
-    public function aWhitespaceOnlyMultipartPartIsReadByOnlyOneOfThem(): void
+    public function aWhitespaceOnlyMultipartPartIsOursToReadExactly(): void
+    {
+        $factory = new Psr17Factory();
+
+        // One carriage return is one character, and the part declares
+        // `minLength: 1`.
+        Assert::same($this->ourVerdict($this->upload($factory, "\r")), null);
+        // The shape the generator does build — no whitespace on either edge —
+        // is agreed by both, whichever parser is installed.
+        Assert::same($this->ourVerdict($this->upload($factory, 'note')), null);
+        Assert::same($this->leagueVerdict($this->upload($factory, 'note')), null);
+    }
+
+    private function upload(Psr17Factory $factory, string $value): ServerRequestInterface
     {
         $boundary = 'openapi-pinned';
         $body = '--' . $boundary . "\r\nContent-Disposition: form-data; name=\"note\"\r\n"
-            . "Content-Type: text/plain\r\n\r\n\r\r\n--" . $boundary . "--\r\n";
-        $factory = new Psr17Factory();
-        $request = $this->asServerRequest(
+            . "Content-Type: text/plain\r\n\r\n" . $value . "\r\n--" . $boundary . "--\r\n";
+
+        return $this->asServerRequest(
             $factory->createRequest('POST', '/uploads')
                 ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $boundary)
                 ->withBody($factory->createStream($body)),
         );
-
-        // One carriage return is one character, and the part declares
-        // `minLength: 1`.
-        Assert::same($this->ourVerdict($request), null);
-        Assert::string($this->leagueVerdict($request) ?? '')->contains('must be longer or equal to 1');
     }
 
     /** @return array<string, ArbitraryInterface> */
