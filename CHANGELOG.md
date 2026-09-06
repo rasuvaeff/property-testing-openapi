@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** Accepts `rasuvaeff/openapi-contract` `^0.10` alongside `^0.8`
+  and `^0.9`. 0.10 bounds what a document expands into (`Limits::$documentNodes`,
+  which the generator never builds documents large enough to reach) and finds
+  operations through a route index instead of a scan; neither changes how a
+  document compiles or how a message is judged, and this suite is green against
+  every line it declares.
+
 - **Changed.** Accepts `rasuvaeff/openapi-contract` `^0.9` alongside `^0.8`.
   0.9 narrows the contract's public surface — `Operation::__construct()` is
   `@internal` and the byte budgets moved from `Contract::MAX_*` constants to a
