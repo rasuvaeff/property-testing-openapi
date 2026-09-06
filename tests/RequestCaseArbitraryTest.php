@@ -802,6 +802,46 @@ final class RequestCaseArbitraryTest
     }
 
     /**
+     * A part header declaration this generator cannot read — a value that is
+     * not an object, a name that is not a string — is skipped rather than
+     * generated from.
+     *
+     * The shape used to live in the shared multipart fixture. It cannot: since
+     * openapi-contract 0.8 such a document does not compile at all, and the
+     * only way the shape still reaches a generator is an `Operation` built by
+     * hand, which `forOperation()` accepts by signature.
+     */
+    public function skipsPartHeaderDeclarationsItCannotRead(): void
+    {
+        $operation = new Operation(
+            key: 'upload.create',
+            operationId: 'upload.create',
+            method: 'POST',
+            path: '/upload',
+            requestBody: ['required' => true, 'content' => ['multipart/form-data' => [
+                'schema' => [
+                    'type' => 'object',
+                    'required' => ['title'],
+                    'additionalProperties' => false,
+                    'properties' => ['title' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 12]],
+                ],
+                'encoding' => ['title' => ['contentType' => 'text/plain', 'headers' => [
+                    'X-Malformed' => 'ignored',
+                    7 => ['required' => true, 'example' => 'seven'],
+                    'X-Kept' => ['required' => true, 'example' => 'yes'],
+                ]]],
+            ]]],
+            responses: ['201' => []],
+        );
+
+        $case = (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(11))->value;
+        $parts = $case['body']['parts'] ?? [];
+
+        Assert::same(count($parts), 1);
+        Assert::same($parts[0]['headers'], ['X-Kept' => 'yes']);
+    }
+
+    /**
      * Every document the category cannot be built from, each named for its
      * reason. The misuse rewrites a part a valid case already carries, under a
      * media type the document forbids; a document that leaves either half
@@ -816,7 +856,7 @@ final class RequestCaseArbitraryTest
         Expect::exception(UnsupportedGeneration::class)->withMessage('Operation "uploads.create" has no required multipart body declaring a part content type');
 
         (new NegativeRequestCaseArbitrary())->partContentTypeMismatchForOperation(
-            $this->partContract($requestBody)->operation('uploads.create'),
+            $this->partOperation($requestBody),
         );
     }
 
@@ -886,6 +926,27 @@ final class RequestCaseArbitraryTest
     }
 
     /** @param array<string, mixed> $requestBody */
+    /**
+     * Built by hand rather than compiled: several of the bodies above are
+     * shapes `Contract::fromArray()` refuses outright since openapi-contract
+     * 0.8, and the refusal under test is this package's. A hand-built
+     * `Operation` is also the only way such a shape can still reach the
+     * generator at all, so it is the path worth pinning.
+     *
+     * @param array<string, mixed> $requestBody
+     */
+    private function partOperation(array $requestBody): Operation
+    {
+        return new Operation(
+            key: 'uploads.create',
+            operationId: 'uploads.create',
+            method: 'POST',
+            path: '/uploads',
+            requestBody: $requestBody,
+            responses: ['204' => []],
+        );
+    }
+
     private function partContract(array $requestBody): Contract
     {
         return Contract::fromArray(['openapi' => '3.1.0', 'paths' => ['/uploads' => ['post' => [

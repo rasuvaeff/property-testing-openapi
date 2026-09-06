@@ -219,6 +219,31 @@ every mutation of it is masked. `RequestReproducer::redactCase()` had four such
 guards over `$body['encoding']` and became one `match`; the escapes went with
 them. Masked mutants are a shape, not a fact of life.
 
+## The contract package is the other half of the oracle
+
+`rasuvaeff/openapi-contract` depends on nothing here, and this package depends
+on it — but the two are one oracle: generated traffic is recorded into the
+contract's corpus, so a change *here* shows up *there*. The reverse does not
+hold, and it has already cost a day: the contract tightened its compiler and
+ten tests of this suite went red without anything noticing until someone ran
+them by hand.
+
+Two habits close it:
+
+- the `Contract dev-master` job in `build.yml` runs this suite against the
+  contract's development branch on every relevant PR. It is `continue-on-error`
+  on purpose — the contract's master may legitimately be ahead of what this
+  package supports — so read it, do not ignore it;
+- before releasing either package, run the suite of the other. From the
+  monorepo root:
+  `docker run --rm -v "$PWD/property-testing-openapi":/app -v "$PWD":/repo -v "$PWD/docs/reviews/probe-openapi-contract-2026-09-06":/s -w /app composer:2 sh /s/pto-against-master.sh`
+
+A document this package builds only to prove a refusal must not go through
+`Contract::fromArray()` when the contract already refuses it: hand-build the
+`Operation`. `forOperation()` and `partContentTypeMismatchForOperation()` take
+one by signature, and that is the only path such a shape can still travel in
+production.
+
 ## When you finish
 
 Run `composer build`, `composer rector`, and `git diff --check`. Run mutation

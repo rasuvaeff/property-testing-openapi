@@ -31,9 +31,12 @@ final class BodyContracts
                         'flag' => ['type' => 'boolean'],
                     ]],
                     'encoding' => [
+                        // Only declarations a document may legally carry: the
+                        // shapes `Contract::fromArray()` refuses live in
+                        // RequestCaseArbitraryTest, on an Operation built by
+                        // hand, which is where they can still reach the
+                        // generator.
                         'title' => ['contentType' => 'text/markdown', 'headers' => [
-                            'X-Malformed' => 'ignored',
-                            7 => ['required' => true, 'example' => 'seven'],
                             'X-Unspecified' => ['example' => 'u'],
                             'X-Optional' => ['required' => false, 'example' => 'no'],
                             'X-Example' => ['required' => true, 'example' => 'yes'],
