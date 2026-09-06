@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** Accepts `rasuvaeff/openapi-contract` `^0.9` alongside `^0.8`.
+  0.9 narrows the contract's public surface — `Operation::__construct()` is
+  `@internal` and the byte budgets moved from `Contract::MAX_*` constants to a
+  `Limits` object — without changing how documents compile or how messages are
+  judged, so this suite passes against both lines and both stay supported.
 - **Changed.** Requires `rasuvaeff/openapi-contract` `^0.8`. That release
   refuses documents 0.7 accepted — an unreadable subschema, a parameter
   declared twice, a boolean written as a string — and reads several things
