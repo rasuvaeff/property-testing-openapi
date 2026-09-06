@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Internal.** Two tests built documents `rasuvaeff/openapi-contract` no
+  longer accepts, so this suite went red against its development branch while
+  staying green against the release. The shared multipart fixture is a document
+  that compiles again, and the malformed header declarations it carried — a
+  value that is not an object, a name that is not a string — moved to a test
+  that hands the generator an `Operation` built by hand, which is the only way
+  such a shape can still reach it. `rejectsAPartContentTypeMismatchItCannotConstruct`
+  builds its operation the same way, so every dataset reaches the refusal it
+  is named for.
+
+- **Internal.** A `Contract dev-master` job runs this suite against the
+  contract's development branch on every relevant pull request. It does not
+  gate the build — that master may legitimately be ahead of what this package
+  supports — but the day it goes red is the day to look, instead of finding out
+  at release time.
+
 ## 0.10.0 — 2026-09-05
 
 - **Added.** `NegativeRequestCaseArbitrary::partContentTypeMismatchForOperation()`
