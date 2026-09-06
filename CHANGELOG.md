@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.8`. That release
+  refuses documents 0.7 accepted — an unreadable subschema, a parameter
+  declared twice, a boolean written as a string — and reads several things
+  differently: `$ref` siblings by dialect, a `content` map by specificity, a
+  trailing slash as part of the path, a repeated parameter as a violation. The
+  generator builds documents this package controls, so nothing here changed
+  with it; the constraint moves so that `--prefer-lowest` exercises the
+  compiler this suite is written against.
+
 - **Internal.** Two tests built documents `rasuvaeff/openapi-contract` no
   longer accepts, so this suite went red against its development branch while
   staying green against the release. The shared multipart fixture is a document
