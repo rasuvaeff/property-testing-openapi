@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** Accepts `rasuvaeff/property-testing-core` `^0.7`, `^0.8` and
+  `^0.9` alongside `^0.5` and `^0.6`, and develops against
+  `rasuvaeff/property-testing-testo` `^0.9`. None of the engine's breaks on
+  that stretch reach this package: it passes no generator into
+  `Gen::oneOf()`/`Gen::elements()` (0.9), no delimited pattern into
+  `Gen::regex()`/`Gen::stringMatching()` (0.9), builds no `CounterExample`
+  argument that 0.10 renames, and reads none of the counters 0.8–0.9
+  redefined. The suite is green against every line it declares.
+
 - **Changed.** Accepts `rasuvaeff/openapi-contract` `^0.10` alongside `^0.8`
   and `^0.9`. 0.10 bounds what a document expands into (`Limits::$documentNodes`,
   which the generator never builds documents large enough to reach) and finds
