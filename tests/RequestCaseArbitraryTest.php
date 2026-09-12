@@ -104,12 +104,24 @@ final class RequestCaseArbitraryTest
     {
         $contract = self::contract();
         $operation = $contract->operation('pets.update');
-        $case = (new NegativeRequestCaseArbitrary())->forOperation($operation)->generate(new Random(11))->value;
+        $arbitrary = (new NegativeRequestCaseArbitrary())->forOperation($operation);
         $factory = new Psr17Factory();
-        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+        $materializer = new RequestMaterializer($factory, $factory);
+        $seen = [];
 
-        Assert::same($case['misuse'], ['kind' => 'missing-required', 'location' => 'path', 'name' => 'id']);
-        Assert::false($contract->validateRequest($request)->isValid());
+        foreach (range(1, 40) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+
+            Assert::same($case['misuse']['kind'], 'missing-required');
+            Assert::false($contract->validateRequest($materializer->materialize($operation, $case))->isValid());
+            $seen[$case['misuse']['location'] . ':' . $case['misuse']['name']] = true;
+        }
+        $dropped = array_keys($seen);
+        sort($dropped);
+
+        // Every required component is dropped across draws, not only the one
+        // declared first (#99).
+        Assert::same($dropped, ['cookie:session', 'header:X-Tenant', 'path:id']);
     }
 
     public function typeMismatchIsInvalidBeforeTransport(): void
@@ -389,14 +401,30 @@ final class RequestCaseArbitraryTest
     {
         $contract = self::contract();
         $operation = $contract->operation('pets.update');
-        $case = (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation)->generate(new Random(47))->value;
+        $arbitrary = (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation);
         $factory = new Psr17Factory();
-        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+        $materializer = new RequestMaterializer($factory, $factory);
+        $seen = [];
 
-        Assert::same($case['misuse'], ['kind' => 'length', 'location' => 'header', 'name' => 'X-Tenant']);
-        Assert::same($case['headers']['X-Tenant'], 'aaaaaa');
-        Assert::same($request->getHeaderLine('X-Tenant'), 'aaaaaa');
-        Assert::false($contract->validateRequest($request)->isValid());
+        foreach (range(1, 40) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $request = $materializer->materialize($operation, $case);
+            $location = $case['misuse']['location'];
+            $name = $case['misuse']['name'];
+            $bucket = ['header' => 'headers', 'cookie' => 'cookies', 'query' => 'query', 'path' => 'path'][$location];
+
+            Assert::same($case['misuse']['kind'], 'length');
+            Assert::same($case[$bucket][$name], 'aaaaaa');
+            Assert::false($contract->validateRequest($request)->isValid());
+            $seen[$location . ':' . $name] = true;
+        }
+
+        $names = array_keys($seen);
+        sort($names);
+
+        // Both length-constrained parameters are exercised, not only the one
+        // declared first (#99).
+        Assert::same($names, ['cookie:session', 'header:X-Tenant']);
     }
 
     public function lengthMismatchPrefersAStringBelowMinimumLength(): void
@@ -1037,12 +1065,16 @@ final class RequestCaseArbitraryTest
             $operation = $contract->operation($operationKey);
             $root = $arbitrary($negative, $operation)->generate(new Random($seed));
 
-            Assert::same($root->value['misuse'], $expectedMisuse);
+            // The target is drawn per case and shrinks toward the first
+            // eligible one (#99), so the name may differ from the pinned
+            // expectation; the category, the location and the invalidity are
+            // what every candidate must keep.
+            Assert::same($root->value['misuse']['kind'], $expectedMisuse['kind']);
             Assert::false($contract->validateRequest($materializer->materialize($operation, $root->value))->isValid());
 
             foreach ($this->shrinkCandidates($root, budget: 10) as $candidate) {
                 ++$observed;
-                Assert::same($candidate['misuse'], $expectedMisuse);
+                Assert::same($candidate['misuse']['kind'], $expectedMisuse['kind']);
                 Assert::false($contract->validateRequest($materializer->materialize($operation, $candidate))->isValid());
             }
         }
@@ -1517,7 +1549,7 @@ final class RequestCaseArbitraryTest
      * before a required one with the same constructible mismatch is the one
      * targeted, the way pagination is usually declared ahead of a filter.
      */
-    public function optionalParametersAreTargetedInDeclarationOrder(): void
+    public function everyBoundedParameterIsTargetedAcrossDraws(): void
     {
         $operation = new Operation(
             key: 'pages',
@@ -1530,10 +1562,45 @@ final class RequestCaseArbitraryTest
             ],
         );
 
-        $case = (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation)->generate(new Random(93))->value;
+        $arbitrary = (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation);
+        $seen = [];
+        foreach (range(1, 60) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $name = $case['misuse']['name'];
 
-        Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'query', 'name' => 'per_page']);
-        Assert::same($case['query']['per_page'], '0');
+            Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'query', 'name' => $name]);
+            Assert::same($case['query'][$name], '0');
+            $seen[$name] = true;
+        }
+        $names = array_keys($seen);
+        sort($names);
+
+        // Both bounds are checked, not just the one declared first: every
+        // case used to land on `per_page`, and swapping the two entries in
+        // the document swapped which bound was ever exercised (#99).
+        Assert::same($names, ['page', 'per_page']);
+
+        // Shrinking still converges on the first eligible target, so the
+        // minimal counterexample is the one the first-match search returned.
+        $minimal = [];
+        foreach (range(1, 20) as $seed) {
+            $shrinkable = $arbitrary->generate(new Random($seed));
+            for ($step = 0; $step < 20; ++$step) {
+                $next = null;
+                foreach ($shrinkable->shrinks() as $candidate) {
+                    $next = $candidate;
+
+                    break;
+                }
+                if ($next === null) {
+                    break;
+                }
+                $shrinkable = $next;
+            }
+            $minimal[$shrinkable->value['misuse']['name']] = true;
+        }
+
+        Assert::same(array_keys($minimal), ['per_page']);
     }
 
     /** @param array<string, mixed> $schema */
@@ -1557,7 +1624,7 @@ final class RequestCaseArbitraryTest
      * so a witness written over it would be judged valid (#94).
      */
     #[DataProvider('bodyCategoryProvider')]
-    public function everyBodyValueCategoryIsInvalidBeforeTransport(string $method, string $kind, string $name): void
+    public function everyBodyValueCategoryIsInvalidBeforeTransport(string $method, string $kind, array $names): void
     {
         $contract = $this->bodyWitnessContract();
         $operation = $contract->operation('profiles.create');
@@ -1573,7 +1640,13 @@ final class RequestCaseArbitraryTest
             $members = is_array($case['body']) && is_array($case['body']['value']) ? $case['body']['value'] : null;
             $base = $valid->generate(new Random($seed))->value['body']['value'] ?? null;
 
-            Assert::same($case['misuse'], ['kind' => $kind, 'location' => 'body', 'name' => $name]);
+            $name = $case['misuse']['name'];
+
+            Assert::same($case['misuse']['kind'], $kind);
+            Assert::same($case['misuse']['location'], 'body');
+            // The property is drawn among every one this category can
+            // contradict (#99), so the case names which it landed on.
+            Assert::true(in_array($name, $names, strict: true));
             Assert::true(is_array($members) && array_key_exists($name, $members));
             // Exactly one thing changes: the witness lands beside every member
             // the same-seed valid body carries, never in place of them.
@@ -1585,13 +1658,13 @@ final class RequestCaseArbitraryTest
 
     public static function bodyCategoryProvider(): iterable
     {
-        yield 'type' => ['bodyTypeMismatchForOperation', 'type', 'count'];
-        yield 'enum' => ['bodyEnumMismatchForOperation', 'enum', 'kind'];
-        yield 'const' => ['bodyConstMismatchForOperation', 'const', 'version'];
-        yield 'boundary' => ['bodyBoundaryMismatchForOperation', 'boundary', 'count'];
-        yield 'length' => ['bodyLengthMismatchForOperation', 'length', 'name'];
-        yield 'format' => ['bodyFormatMismatchForOperation', 'format', 'email'];
-        yield 'pattern' => ['bodyPatternMismatchForOperation', 'pattern', 'token'];
+        yield 'type' => ['bodyTypeMismatchForOperation', 'type', ['count', 'name', 'email', 'token', 'version', 'kind']];
+        yield 'enum' => ['bodyEnumMismatchForOperation', 'enum', ['kind']];
+        yield 'const' => ['bodyConstMismatchForOperation', 'const', ['version']];
+        yield 'boundary' => ['bodyBoundaryMismatchForOperation', 'boundary', ['count']];
+        yield 'length' => ['bodyLengthMismatchForOperation', 'length', ['name']];
+        yield 'format' => ['bodyFormatMismatchForOperation', 'format', ['email']];
+        yield 'pattern' => ['bodyPatternMismatchForOperation', 'pattern', ['token']];
     }
 
     /**
@@ -1604,19 +1677,21 @@ final class RequestCaseArbitraryTest
         $targets = new BodyTargets();
         $operation = $this->bodyWitnessContract()->operation('profiles.create');
 
-        Assert::same($targets->bodyWitness($operation, 'type'), ['mediaType' => 'application/json', 'name' => 'count', 'invalid' => 'not-a-integer']);
-        Assert::same($targets->bodyWitness($operation, 'enum'), ['mediaType' => 'application/json', 'name' => 'kind', 'invalid' => '__openapi_misuse__']);
-        Assert::same($targets->bodyWitness($operation, 'const'), ['mediaType' => 'application/json', 'name' => 'version', 'invalid' => 'v1__openapi_misuse__']);
-        Assert::same($targets->bodyWitness($operation, 'boundary'), ['mediaType' => 'application/json', 'name' => 'count', 'invalid' => -1]);
-        Assert::same($targets->bodyWitness($operation, 'length'), ['mediaType' => 'application/json', 'name' => 'name', 'invalid' => 'aaaaaaaaa']);
-        Assert::same($targets->bodyWitness($operation, 'format'), ['mediaType' => 'application/json', 'name' => 'email', 'invalid' => 'not-an-email']);
+        Assert::same($targets->bodyWitness($operation, 'enum'), ['mediaType' => 'application/json', 'targets' => [['name' => 'kind', 'invalid' => '__openapi_misuse__']]]);
+        Assert::same($targets->bodyWitness($operation, 'const'), ['mediaType' => 'application/json', 'targets' => [['name' => 'version', 'invalid' => 'v1__openapi_misuse__']]]);
+        Assert::same($targets->bodyWitness($operation, 'boundary'), ['mediaType' => 'application/json', 'targets' => [['name' => 'count', 'invalid' => -1]]]);
+        Assert::same($targets->bodyWitness($operation, 'length'), ['mediaType' => 'application/json', 'targets' => [['name' => 'name', 'invalid' => 'aaaaaaaaa']]]);
+        Assert::same($targets->bodyWitness($operation, 'format'), ['mediaType' => 'application/json', 'targets' => [['name' => 'email', 'invalid' => 'not-an-email']]]);
+        // `type` contradicts every single-typed property, so the search finds
+        // them all and the head is the one the first-match search returned.
+        Assert::same($targets->bodyWitness($operation, 'type')['targets'][0], ['name' => 'count', 'invalid' => 'not-a-integer']);
 
-        $pattern = $targets->bodyWitness($operation, 'pattern');
+        $pattern = $targets->bodyWitness($operation, 'pattern')['targets'][0];
         Assert::same($pattern['name'], 'token');
         Assert::true(is_string($pattern['invalid']) && preg_match('/^[0-9a-f]{8}$/', $pattern['invalid']) === 0);
 
         $root = $targets->bodyWitness($this->bodyOperation(['application/vnd.api+json' => ['schema' => ['type' => 'integer', 'minimum' => 1]]]), 'boundary');
-        Assert::same($root, ['mediaType' => 'application/vnd.api+json', 'name' => '$', 'invalid' => 0]);
+        Assert::same($root, ['mediaType' => 'application/vnd.api+json', 'targets' => [['name' => '$', 'invalid' => 0]]]);
     }
 
     public function aScalarRootBodyIsReplacedWhole(): void
@@ -1708,7 +1783,7 @@ final class RequestCaseArbitraryTest
             ],
         ]]]);
 
-        Assert::same((new BodyTargets())->bodyWitness($operation, 'boundary'), ['mediaType' => 'application/json', 'name' => 'n', 'invalid' => 4]);
+        Assert::same((new BodyTargets())->bodyWitness($operation, 'boundary'), ['mediaType' => 'application/json', 'targets' => [['name' => 'n', 'invalid' => 4]]]);
     }
 
     public function bodyWitnessesFailClosedWithoutAConstructibleOne(): void

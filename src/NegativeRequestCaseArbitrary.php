@@ -19,6 +19,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
  *
  * @psalm-import-type RequestCaseData from RequestCaseArbitrary
  * @psalm-import-type Kind from JsonBodyWitness
+ * @psalm-import-type Witness from JsonBodyWitness
  * @psalm-type NegativeRequestCaseData = array{
  *     operationKey: string,
  *     path: array<string, string|list<string>|array<string, string>>,
@@ -63,19 +64,24 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
-        $target = $this->parameterTargets->missingRequired($operation);
-        $location = $target['location'];
-        $name = $target['name'];
+        $targets = $this->parameterTargets->missingRequired($operation);
 
-        return $this->mutate($operation, static function (array $case) use ($location, $name): array {
-            if ($location === 'body') {
-                $case['body'] = null;
-            } else {
-                unset($case[self::CASE_KEYS[$location]][$name]);
-            }
-            $case['misuse'] = ['kind' => 'missing-required', 'location' => $location, 'name' => $name];
+        return $this->overTargets($this->valid->forOperation($operation), $targets, static function (array $target): \Closure {
+            /** @var array{location: 'path'|'query'|'header'|'cookie'|'body', name: string} $target */
+            $location = $target['location'];
+            $name = $target['name'];
 
-            return $case;
+            return static function (array $case) use ($location, $name): array {
+                /** @var RequestCaseData $case */
+                if ($location === 'body') {
+                    $case['body'] = null;
+                } else {
+                    unset($case[self::CASE_KEYS[$location]][$name]);
+                }
+                $case['misuse'] = ['kind' => 'missing-required', 'location' => $location, 'name' => $name];
+
+                return $case;
+            };
         });
     }
 
@@ -363,39 +369,41 @@ final readonly class NegativeRequestCaseArbitrary
      */
     private function bodyWitness(string $kind, Operation $operation): ArbitraryInterface
     {
-        $target = $this->bodyTargets->bodyWitness($operation, $kind);
-        $mediaType = $target['mediaType'];
-        $name = $target['name'];
-        $invalid = $target['invalid'];
+        $found = $this->bodyTargets->bodyWitness($operation, $kind);
+        $mediaType = $found['mediaType'];
 
-        $mutation = static function (array $case) use ($kind, $name, $invalid): array {
-            /** @var RequestCaseData $case */
-            $body = $case['body'];
-            $members = $body['value'] ?? null;
-            if ($body === null) {
-                throw new \LogicException('Required JSON body expected for a body witness misuse');
-            }
-            if ($name === JsonBodyWitness::ROOT) {
-                $value = $invalid;
-            } else {
-                if (!is_array($members)) {
-                    throw new \LogicException('Required JSON body value expected for a property misuse');
+        return $this->overTargets($this->jsonCases($operation, $mediaType), $found['targets'], static function (array $target) use ($kind): \Closure {
+            /** @var array{name: string, invalid: Witness} $target */
+            $name = $target['name'];
+            $invalid = $target['invalid'];
+
+            return static function (array $case) use ($kind, $name, $invalid): array {
+                /** @var RequestCaseData $case */
+                $body = $case['body'];
+                $members = $body['value'] ?? null;
+                if ($body === null) {
+                    throw new \LogicException('Required JSON body expected for a body witness misuse');
                 }
-                if (array_is_list($members) && $members !== []) {
-                    throw new \LogicException('Required JSON object body expected for a property misuse');
+                if ($name === JsonBodyWitness::ROOT) {
+                    $value = $invalid;
+                } else {
+                    if (!is_array($members)) {
+                        throw new \LogicException('Required JSON body value expected for a property misuse');
+                    }
+                    if (array_is_list($members) && $members !== []) {
+                        throw new \LogicException('Required JSON object body expected for a property misuse');
+                    }
+                    // `array_replace()` rather than an element write: it keeps
+                    // a numeric-string property name (`'12'`) the int key PHP
+                    // gave it, in the position the valid case put it.
+                    $value = array_replace($members, [$name => $invalid]);
                 }
-                // `array_replace()` rather than an element write: it keeps a
-                // numeric-string property name (`'12'`) the int key PHP gave
-                // it, in the position the valid case put it.
-                $value = array_replace($members, [$name => $invalid]);
-            }
-            $case['body'] = ['mediaType' => $body['mediaType'], 'encoding' => 'json', 'value' => $value];
-            $case['misuse'] = ['kind' => $kind, 'location' => 'body', 'name' => $name];
+                $case['body'] = ['mediaType' => $body['mediaType'], 'encoding' => 'json', 'value' => $value];
+                $case['misuse'] = ['kind' => $kind, 'location' => 'body', 'name' => $name];
 
-            return $case;
-        };
-
-        return $this->mutateJsonBody($operation, $mediaType, $mutation);
+                return $case;
+            };
+        });
     }
 
     /**
@@ -408,17 +416,51 @@ final readonly class NegativeRequestCaseArbitrary
      * lets every category target optional parameters at all (#93).
      *
      * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
-     * @param array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} $target
+     * @param non-empty-list<array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}> $targets
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
-    private function parameter(string $kind, Operation $operation, array $target): ArbitraryInterface
+    private function parameter(string $kind, Operation $operation, array $targets): ArbitraryInterface
     {
-        return $this->mutate($operation, static function (array $case) use ($kind, $target): array {
-            $case[self::CASE_KEYS[$target['location']]][$target['name']] = $target['invalid'];
-            $case['misuse'] = ['kind' => $kind, 'location' => $target['location'], 'name' => $target['name']];
+        return $this->overTargets($this->valid->forOperation($operation), $targets, static function (array $target) use ($kind): \Closure {
+            /** @var array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} $target */
+            return static function (array $case) use ($kind, $target): array {
+                /** @var RequestCaseData $case */
+                $case[self::CASE_KEYS[$target['location']]][$target['name']] = $target['invalid'];
+                $case['misuse'] = ['kind' => $kind, 'location' => $target['location'], 'name' => $target['name']];
 
-            return $case;
+                return $case;
+            };
         });
+    }
+
+    /**
+     * Draws a target alongside the valid case, so repeated draws of one
+     * category spread across every parameter the document declares that way
+     * rather than landing on the first eligible one forever (#99).
+     *
+     * `Gen::elements()` shrinks toward the head of the list, which is
+     * declaration order, so the minimal counterexample is the target the
+     * first-match search used to return.
+     *
+     * @param ArbitraryInterface<RequestCaseData> $valid
+     * @param non-empty-list<array<string, mixed>> $targets
+     * @param \Closure(array<string, mixed>): \Closure(RequestCaseData): NegativeRequestCaseData $mutationFor
+     * @return ArbitraryInterface<NegativeRequestCaseData>
+     */
+    private function overTargets(ArbitraryInterface $valid, array $targets, \Closure $mutationFor): ArbitraryInterface
+    {
+        // The valid case is drawn first and the target second, so a case
+        // carries the same body its seed produces on its own — the mutation
+        // lands beside what the valid draw built, never in place of it.
+        $drawn = Gen::record(['case' => $valid, 'target' => Gen::elements($targets)]);
+
+        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        $mutated = Gen::map($drawn, static function (array $draw) use ($mutationFor): array {
+            /** @var array{case: RequestCaseData, target: array<string, mixed>} $draw */
+            return $mutationFor($draw['target'])($draw['case']);
+        });
+
+        return $mutated;
     }
 
     /**
@@ -437,6 +479,20 @@ final readonly class NegativeRequestCaseArbitrary
      */
     private function mutateJsonBody(Operation $operation, string $mediaType, \Closure $mutation): ArbitraryInterface
     {
+        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        $mutated = Gen::map($this->jsonCases($operation, $mediaType), $mutation);
+
+        return $mutated;
+    }
+
+    /**
+     * The valid cases of this operation that carry one JSON media type.
+     *
+     * @param non-empty-string $mediaType
+     * @return ArbitraryInterface<RequestCaseData>
+     */
+    private function jsonCases(Operation $operation, string $mediaType): ArbitraryInterface
+    {
         $carriesJson = static function (array $case) use ($mediaType): bool {
             /** @var RequestCaseData $case */
             $body = $case['body'];
@@ -444,10 +500,7 @@ final readonly class NegativeRequestCaseArbitrary
             return $body !== null && $body['encoding'] === 'json' && $body['mediaType'] === $mediaType;
         };
 
-        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
-        $mutated = Gen::map(Gen::filter($this->valid->forOperation($operation), $carriesJson), $mutation);
-
-        return $mutated;
+        return Gen::filter($this->valid->forOperation($operation), $carriesJson);
     }
 
     /**

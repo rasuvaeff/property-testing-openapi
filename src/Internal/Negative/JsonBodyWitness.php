@@ -30,26 +30,32 @@ final readonly class JsonBodyWitness
     ) {}
 
     /**
-     * The first top-level property (or the scalar root) with a constructible
-     * witness for the kind, in declaration order; `null` when none has one.
+     * Every top-level property (or the scalar root) with a constructible
+     * witness for the kind, in declaration order; empty when none has one.
+     *
+     * All of them, not the first: returning one made the choice deterministic
+     * and position-based, so a body declaring two properties constrained the
+     * same way had one absorb every case of that category while the other was
+     * never exercised (#99).
      *
      * @param array<string, mixed> $schema
      * @param Kind $kind
-     * @return array{name: string, invalid: Witness}|null
+     * @return list<array{name: string, invalid: Witness}>
      */
-    public function find(array $schema, string $kind): ?array
+    public function findAll(array $schema, string $kind): array
     {
+        $targets = [];
         foreach ($this->candidates($schema) as $name => $candidate) {
             $invalid = $this->witness($candidate, $kind);
             if ($invalid !== null) {
                 // The name is cast back: PHP stores a decimal-integer
                 // property name (`"12"`) as an `int` key, and the misuse
                 // records what the document declares (#98).
-                return ['name' => (string) $name, 'invalid' => $invalid['value']];
+                $targets[] = ['name' => (string) $name, 'invalid' => $invalid['value']];
             }
         }
 
-        return null;
+        return $targets;
     }
 
     /**

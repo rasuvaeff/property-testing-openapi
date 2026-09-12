@@ -128,14 +128,14 @@ final readonly class ResponseTargets
 
     /**
      * @param 'type'|'enum'|'const'|'boundary'|'length'|'pattern' $kind
-     * @return Target
+     * @return non-empty-list<Target>
      */
     public function bodyWitness(Operation $operation, int $status, string $kind): array
     {
         $schema = $this->requireJsonBody($operation, $status, $kind . ' mismatch')['schema'];
-        $target = $this->witnesses->find($schema, $kind);
-        if ($target !== null) {
-            return $target;
+        $targets = $this->witnesses->findAll($schema, $kind);
+        if ($targets !== []) {
+            return $targets;
         }
 
         throw new UnsupportedGeneration(sprintf('Response for status %d of operation "%s" has no body value with a constructible %s mismatch', $status, $operation->key, $kind));

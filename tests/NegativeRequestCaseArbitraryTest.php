@@ -107,7 +107,7 @@ final class NegativeRequestCaseArbitraryTest
      * (#98).
      */
     #[DataProvider('numericPropertyProvider')]
-    public function aNumericPropertyNameIsABodyWitnessCandidate(string $method, string $expectedName): void
+    public function aNumericPropertyNameIsABodyWitnessCandidate(string $method, array $expectedNames): void
     {
         $contract = ZooContracts::contract();
         $operation = $contract->operation('numeric.create');
@@ -118,8 +118,11 @@ final class NegativeRequestCaseArbitraryTest
         foreach (range(1, 20) as $seed) {
             $case = $arbitrary->{$method}($operation)->generate(new Random($seed))->value;
 
-            Assert::same($case['misuse'], ['kind' => $case['misuse']['kind'], 'location' => 'body', 'name' => $expectedName]);
-            Assert::true(array_key_exists($expectedName, (array) $case['body']['value']));
+            $name = $case['misuse']['name'];
+
+            Assert::same($case['misuse']['location'], 'body');
+            Assert::true(in_array($name, $expectedNames, strict: true));
+            Assert::true(array_key_exists($name, (array) $case['body']['value']));
 
             $result = $contract->validateRequest($materializer->materialize($operation, $case));
             Assert::false($result->isValid());
@@ -129,9 +132,9 @@ final class NegativeRequestCaseArbitraryTest
 
     public static function numericPropertyProvider(): iterable
     {
-        yield 'boundary on "12"' => ['bodyBoundaryMismatchForOperation', '12'];
-        yield 'length on "0"' => ['bodyLengthMismatchForOperation', '0'];
-        yield 'type on "0"' => ['bodyTypeMismatchForOperation', '0'];
+        yield 'boundary on "12"' => ['bodyBoundaryMismatchForOperation', ['12']];
+        yield 'length on "0"' => ['bodyLengthMismatchForOperation', ['0']];
+        yield 'type on both numeric names' => ['bodyTypeMismatchForOperation', ['0', '12']];
     }
 
     /**
@@ -142,7 +145,7 @@ final class NegativeRequestCaseArbitraryTest
      */
     public function theResponseSideKeepsANumericPropertyInPlace(): void
     {
-        $contract = self::numericResponseContract();
+        $contract = $this->numericResponseContract();
         $operation = $contract->operation('numeric.get');
         $factory = new Psr17Factory();
         $materializer = new ResponseMaterializer($factory, $factory);
@@ -162,7 +165,7 @@ final class NegativeRequestCaseArbitraryTest
         }
     }
 
-    private static function numericResponseContract(): Contract
+    private function numericResponseContract(): Contract
     {
         return Contract::fromArray([
             'openapi' => '3.1.0',
