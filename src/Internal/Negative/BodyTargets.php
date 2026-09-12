@@ -36,15 +36,15 @@ final readonly class BodyTargets
      * valid (#94).
      *
      * @param Kind $kind
-     * @return array{mediaType: non-empty-string, name: string, invalid: Witness}
+     * @return array{mediaType: non-empty-string, targets: non-empty-list<array{name: string, invalid: Witness}>}
      */
     public function bodyWitness(Operation $operation, string $kind): array
     {
         $body = $this->jsonBody($operation);
         if ($body !== null) {
-            $target = $this->witnesses->find($this->schemas->effective($body['schema']), $kind);
-            if ($target !== null) {
-                return ['mediaType' => $body['mediaType'], 'name' => $target['name'], 'invalid' => $target['invalid']];
+            $targets = $this->witnesses->findAll($this->schemas->effective($body['schema']), $kind);
+            if ($targets !== []) {
+                return ['mediaType' => $body['mediaType'], 'targets' => $targets];
             }
         }
 

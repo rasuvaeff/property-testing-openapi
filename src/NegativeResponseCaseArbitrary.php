@@ -21,6 +21,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
  * @api
  *
  * @psalm-import-type ResponseCaseData from ResponseCaseArbitrary
+ * @psalm-import-type Witness from \Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness
  */
 final readonly class NegativeResponseCaseArbitrary
 {
@@ -186,19 +187,34 @@ final readonly class NegativeResponseCaseArbitrary
      */
     private function witness(Operation $operation, int $status, string $kind): ArbitraryInterface
     {
-        $target = $this->targets->bodyWitness($operation, $status, $kind);
-        $name = $target['name'];
+        $targets = $this->targets->bodyWitness($operation, $status, $kind);
 
-        return $this->mutateBody($operation, $status, $kind, $name, static function (array $value) use ($name, $target): mixed {
-            if ($name === '$') {
-                return $target['invalid'];
-            }
+        // The valid case is drawn first and the target second, so a case
+        // carries the same body its seed produces on its own (#99).
+        $drawn = Gen::record([
+            'case' => $this->valid->forOperation($operation, $status),
+            'target' => Gen::elements($targets),
+        ]);
 
-            // `array_replace()` rather than `array_merge()`: merging
-            // renumbers integer keys, and a numeric-string property name
-            // (`'12'`) is an integer key in PHP (#98).
-            return array_replace($value, [$name => $target['invalid']]);
-        }, root: $name === '$');
+        /** @var ArbitraryInterface<ResponseCaseData> $mutated */
+        $mutated = Gen::map($drawn, function (array $draw) use ($kind): array {
+            /** @var array{case: ResponseCaseData, target: array{name: string, invalid: Witness}} $draw */
+            $name = $draw['target']['name'];
+            $invalid = $draw['target']['invalid'];
+
+            return $this->writeBody($draw['case'], $kind, $name, static function (array $value) use ($name, $invalid): mixed {
+                if ($name === '$') {
+                    return $invalid;
+                }
+
+                // `array_replace()` rather than `array_merge()`: merging
+                // renumbers integer keys, and a numeric-string property name
+                // (`'12'`) is an integer key in PHP (#98).
+                return array_replace($value, [$name => $invalid]);
+            }, root: $name === '$');
+        });
+
+        return $mutated;
     }
 
     /**
@@ -208,21 +224,33 @@ final readonly class NegativeResponseCaseArbitrary
      */
     private function mutateBody(Operation $operation, int $status, string $kind, string $name, \Closure $mutation, bool $root = false): ArbitraryInterface
     {
-        return $this->mutate($operation, $status, static function (array $case) use ($kind, $name, $mutation, $root): array {
-            $body = $case['body'];
-            if ($body === null) {
-                throw new \LogicException('JSON response body expected for a body misuse');
-            }
-            if (!$root && (!is_array($body['value']) || (array_is_list($body['value']) && $body['value'] !== []))) {
-                throw new \LogicException('JSON object response body expected for a property misuse');
-            }
-            /** @var array<string, mixed> $input */
-            $input = $root || !is_array($body['value']) ? [] : $body['value'];
-            $case['body'] = array_merge($body, ['value' => $mutation($input)]);
-            $case['misuse'] = ['kind' => $kind, 'location' => 'body', 'name' => $name];
+        return $this->mutate($operation, $status, fn(array $case): array => $this->writeBody($case, $kind, $name, $mutation, $root));
+    }
 
-            return $case;
-        });
+    /**
+     * Writes the mutated value over the drawn case's JSON body and records
+     * the misuse.
+     *
+     * @param ResponseCaseData $case
+     * @param non-empty-string $kind
+     * @param \Closure(array<string, mixed>): mixed $mutation
+     * @return ResponseCaseData
+     */
+    private function writeBody(array $case, string $kind, string $name, \Closure $mutation, bool $root = false): array
+    {
+        $body = $case['body'];
+        if ($body === null) {
+            throw new \LogicException('JSON response body expected for a body misuse');
+        }
+        if (!$root && (!is_array($body['value']) || (array_is_list($body['value']) && $body['value'] !== []))) {
+            throw new \LogicException('JSON object response body expected for a property misuse');
+        }
+        /** @var array<string, mixed> $input */
+        $input = $root || !is_array($body['value']) ? [] : $body['value'];
+        $case['body'] = array_merge($body, ['value' => $mutation($input)]);
+        $case['misuse'] = ['kind' => $kind, 'location' => 'body', 'name' => $name];
+
+        return $case;
     }
 
     /**

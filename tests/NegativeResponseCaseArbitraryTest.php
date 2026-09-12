@@ -46,7 +46,11 @@ final class NegativeResponseCaseArbitraryTest
             $case = $arbitrary->generate(new Random($seed))->value;
             $result = $contract->validateResponse($operationKey, $materializer->materialize($operation, $case));
 
-            Assert::same($case['misuse'], $misuse);
+            // The body property is drawn among every one the category can
+            // contradict (#99), so the expectation names the eligible set.
+            Assert::same($case['misuse']['kind'], $misuse['kind']);
+            Assert::same($case['misuse']['location'], $misuse['location']);
+            Assert::true(in_array($case['misuse']['name'], (array) $misuse['name'], strict: true));
             Assert::false($result->isValid());
             Assert::same($result->violations[0]->code, $code);
         }
@@ -57,11 +61,11 @@ final class NegativeResponseCaseArbitraryTest
         yield 'undeclared status' => ['undeclaredStatusForOperation', 'pets.get', 200, ['kind' => 'undeclared-status', 'location' => 'status', 'name' => '599'], 'response.status.mismatch'];
         yield 'missing required header' => ['missingRequiredHeaderForOperation', 'pets.get', 200, ['kind' => 'missing-required', 'location' => 'header', 'name' => 'X-Rate-Limit'], 'response.header.missing'];
         yield 'missing required property' => ['missingRequiredForOperation', 'pets.get', 200, ['kind' => 'missing-required', 'location' => 'body', 'name' => 'id'], 'response.body.schema'];
-        yield 'type' => ['typeMismatchForOperation', 'pets.get', 200, ['kind' => 'type', 'location' => 'body', 'name' => 'id'], 'response.body.schema'];
+        yield 'type' => ['typeMismatchForOperation', 'pets.get', 200, ['kind' => 'type', 'location' => 'body', 'name' => ['id', 'name', 'slug', 'tags', 'owner']], 'response.body.schema'];
         yield 'enum' => ['enumMismatchForOperation', 'pets.get', 200, ['kind' => 'enum', 'location' => 'body', 'name' => 'status'], 'response.body.schema'];
         yield 'const' => ['constMismatchForOperation', 'pets.get', 200, ['kind' => 'const', 'location' => 'body', 'name' => 'kind'], 'response.body.schema'];
         yield 'boundary' => ['boundaryMismatchForOperation', 'pets.get', 200, ['kind' => 'boundary', 'location' => 'body', 'name' => 'id'], 'response.body.schema'];
-        yield 'length' => ['lengthMismatchForOperation', 'pets.get', 200, ['kind' => 'length', 'location' => 'body', 'name' => 'name'], 'response.body.schema'];
+        yield 'length' => ['lengthMismatchForOperation', 'pets.get', 200, ['kind' => 'length', 'location' => 'body', 'name' => ['name', 'tags']], 'response.body.schema'];
         yield 'pattern' => ['patternMismatchForOperation', 'pets.get', 200, ['kind' => 'pattern', 'location' => 'body', 'name' => 'slug'], 'response.body.schema'];
         yield 'additional property' => ['additionalPropertyForOperation', 'pets.get', 200, ['kind' => 'additional-properties', 'location' => 'body', 'name' => '__openapi_extra_property__'], 'response.body.schema'];
         yield 'media type' => ['mediaTypeMismatchForOperation', 'pets.get', 200, ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'], 'response.body.media_type'];
@@ -344,18 +348,18 @@ final class NegativeResponseCaseArbitraryTest
         $targets = new ResponseTargets();
         $body = static fn(array $properties, array $required = []): Operation => new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['type' => 'object', 'required' => $required, 'properties' => $properties]]]]]);
 
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'type'), ['name' => 'p', 'invalid' => 'not-a-number']);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string']]), 200, 'type'), ['name' => 'p', 'invalid' => 4096]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'minimum' => 5, 'maximum' => 5]]), 200, 'boundary'), ['name' => 'p', 'invalid' => 4]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'boundary'), ['name' => 'p', 'invalid' => 6.0]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'maxLength' => 3]]), 200, 'length'), ['name' => 'p', 'invalid' => 'aaaa']);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'integer']]]), 200, 'length'), ['name' => 'p', 'invalid' => []]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 0, 'items' => ['type' => 'integer']]]), 200, 'length'), ['name' => 'p', 'invalid' => [null]]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'integer']]]), 200, 'length'), ['name' => 'p', 'invalid' => [null, null, null]]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'enum' => ['a']]]), 200, 'enum'), ['name' => 'p', 'invalid' => '__openapi_misuse__']);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'const' => 7]]), 200, 'const'), ['name' => 'p', 'invalid' => '__openapi_misuse__']);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'type'), [['name' => 'p', 'invalid' => 'not-a-number']]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string']]), 200, 'type'), [['name' => 'p', 'invalid' => 4096]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'minimum' => 5, 'maximum' => 5]]), 200, 'boundary'), [['name' => 'p', 'invalid' => 4]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'boundary'), [['name' => 'p', 'invalid' => 6.0]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'maxLength' => 3]]), 200, 'length'), [['name' => 'p', 'invalid' => 'aaaa']]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => []]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 0, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => [null]]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => [null, null, null]]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'enum' => ['a']]]), 200, 'enum'), [['name' => 'p', 'invalid' => '__openapi_misuse__']]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'const' => 7]]), 200, 'const'), [['name' => 'p', 'invalid' => '__openapi_misuse__']]);
 
-        $pattern = $targets->bodyWitness($body(['p' => ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']]), 200, 'pattern');
+        $pattern = $targets->bodyWitness($body(['p' => ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']]), 200, 'pattern')[0];
         Assert::same($pattern['name'], 'p');
         Assert::true(is_string($pattern['invalid']) && preg_match('/^[a-z]{2,4}$/', $pattern['invalid']) === 0);
 

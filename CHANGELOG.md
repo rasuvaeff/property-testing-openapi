@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** Every negative category draws its target among all the
+  eligible ones instead of always taking the first. Selection used to be
+  deterministic and position-based: an operation declaring `per_page` and
+  `page`, both bounded, had all of its `boundary` cases land on `per_page`,
+  and swapping the two entries in the document swapped which bound was ever
+  checked — drawing more did not help, because it re-drew the same target. The
+  count stayed healthy, so only a per-name breakdown revealed that one
+  parameter absorbed the whole category. The same applied to `missing-required`
+  across required components and to every body value category across a body's
+  properties. Targets are listed in declaration order and drawn with
+  `Gen::elements()`, so shrinking converges on the first eligible one and the
+  minimal counterexample is what the first-match search used to return.
+
 - **Fixed.** A JSON body property whose name is a decimal integer — `"12"` —
   is a witness candidate on both sides. PHP stores such a name as an `int`
   array key, and `JsonBodyWitness::candidates()` kept only string keys, so the
