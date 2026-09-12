@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.14.0 — 2026-09-12
+
+- **Changed.** Accepts `rasuvaeff/property-testing-core` `^0.10` alongside
+  `^0.5`–`^0.9`, and develops against `rasuvaeff/property-testing-testo`
+  `^0.10` as well. None of the 0.10 contract freeze reaches this package: it
+  never called `FilesystemCorpus::fromEnv()`, reads no `CounterExample::$skips`,
+  names neither `GenerationExhausted` nor `PostconditionViolation` in code
+  (two comments mention the former by its old name), and types every
+  generator as `ArbitraryInterface` — which is exactly what `Gen::*` returns
+  from 0.10 on. The suite (866 tests) is green against core 0.10.0 and the
+  adapter 0.10.0.
+- **Docs.** The requirements line in both READMEs names the constraints
+  `composer.json` actually declares: `openapi-contract` `^0.11` (it said
+  `^0.8 / ^0.9 / ^0.10` since 0.13.0 moved on) and `property-testing-core`
+  `^0.5`–`^0.10`.
+
 ## 0.13.1 — 2026-09-12
 
 - **Fixed.** A JSON body property declaring OAS 3.0 `nullable: true` beside

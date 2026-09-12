@@ -24,7 +24,7 @@ before it reaches a transport.
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.8 / ^0.9 / ^0.10 and `rasuvaeff/property-testing-core` ^0.5–^0.9
+- `rasuvaeff/openapi-contract` ^0.11 and `rasuvaeff/property-testing-core` ^0.5–^0.10
 - `psr/http-message`, `psr/http-factory` and `psr/http-server-handler`
   implementations — a PSR-17 factory materializes requests, and `ContractSuite`
   drives a PSR-15 handler in process
