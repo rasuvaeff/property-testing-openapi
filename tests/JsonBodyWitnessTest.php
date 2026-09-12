@@ -30,9 +30,32 @@ final class JsonBodyWitnessTest
     }
 
     /** @return list<array{name: string, invalid: mixed}> */
-    private function find(array $schema, string $kind): array
+    private function find(array $schema, string $kind, SchemaDialect $dialect = SchemaDialect::OpenApi31): array
     {
-        return $this->witnesses->findAll($schema, $kind, SchemaDialect::OpenApi31, SchemaDirection::Request);
+        return $this->witnesses->findAll($schema, $kind, $dialect, SchemaDirection::Request);
+    }
+
+    /**
+     * `null` is admitted in addition to the declared type, not instead of its
+     * bounds: the witness the check approves must not be withheld from it
+     * (#112).
+     */
+    #[DataProvider('nullableProvider')]
+    public function aNullablePropertyKeepsItsBoundsUnder30(array $property, string $kind, mixed $expected): void
+    {
+        $found = $this->find(['type' => 'object', 'properties' => ['a' => $property]], $kind, SchemaDialect::OpenApi30);
+
+        Assert::same($found, [['name' => 'a', 'invalid' => $expected]]);
+    }
+
+    public static function nullableProvider(): iterable
+    {
+        yield 'length' => [['type' => 'string', 'maxLength' => 2000, 'nullable' => true], 'length', str_repeat('a', 2001)];
+        yield 'boundary' => [['type' => 'integer', 'nullable' => true, 'maximum' => 9], 'boundary', 10];
+        yield 'type' => [['type' => 'string', 'nullable' => true], 'type', 4096];
+        yield 'enum' => [['type' => 'string', 'nullable' => true, 'enum' => ['x', null]], 'enum', '__openapi_misuse__'];
+        yield 'format' => [['type' => 'string', 'nullable' => true, 'format' => 'email'], 'format', 'not-an-email'];
+        yield 'pattern' => [['type' => 'string', 'nullable' => true, 'pattern' => '^[a-z]+$'], 'pattern', ''];
     }
 
     #[DataProvider('objectBodyProvider')]
@@ -48,14 +71,19 @@ final class JsonBodyWitnessTest
             'boundary',
             [['name' => 'a', 'invalid' => 10], ['name' => 'b', 'invalid' => 0]],
         ];
-        // A nullable property admits `null`, so nothing written over it can be
-        // promised; a negated one is judged by a schema this search does not
-        // read.
-        yield 'a nullable property is skipped' => [
+        // `nullable` is not a keyword in OAS 3.1: the contract refuses the
+        // schema and the check fails closed. A type union is the 3.1 spelling.
+        yield 'a nullable property is unreadable under 3.1 and skipped' => [
             ['a' => ['type' => 'integer', 'nullable' => true, 'maximum' => 9], 'b' => ['type' => 'integer', 'maximum' => 9]],
             'boundary',
             [['name' => 'b', 'invalid' => 10]],
         ];
+        yield 'a type union with null keeps its bound' => [
+            ['a' => ['type' => ['integer', 'null'], 'maximum' => 9]],
+            'boundary',
+            [['name' => 'a', 'invalid' => 10]],
+        ];
+        // A negated property is judged by a schema this search does not read.
         yield 'a negated property is skipped' => [
             ['a' => ['type' => 'integer', 'maximum' => 9, 'not' => ['const' => 1]], 'b' => ['type' => 'integer', 'maximum' => 9]],
             'boundary',

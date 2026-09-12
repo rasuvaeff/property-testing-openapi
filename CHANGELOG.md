@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Fixed.** A JSON body property declaring OAS 3.0 `nullable: true` beside
+  a bound yielded no body case for any category: `JsonBodyWitness` withheld
+  its candidates from the check, on the reasoning that a schema admitting
+  `null` promises nothing about what is written over it — but `null` is
+  admitted in addition to the declared keywords, and a string longer than
+  `maxLength` is no more valid for it. The candidates now go to
+  `WitnessCheck` like every other property's, which already approved them.
+  Under OAS 3.1 nothing changes: `nullable` is not a keyword there, the
+  contract refuses the schema and the check fails closed — spell it as a
+  type union containing `null` (#112).
+
 ## 0.13.0 — 2026-09-12
 
 - **Added.** `ContractSuite::negativeCoverage()` answers, per selected

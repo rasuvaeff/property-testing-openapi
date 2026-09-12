@@ -129,8 +129,9 @@ Public API:
   `length`, `format`, `pattern`) with `misuse.location = 'body'` and
   `misuse.name` = the property (or `$`). The request-direction schema is
   searched (a `readOnly` property is never targeted), properties are
-  considered in declaration order, `nullable`/`not` schemas and type unions
-  are skipped, and a body declared under several media types is mutated on
+  considered in declaration order, `not` schemas and type unions are
+  skipped (an OAS 3.0 `nullable` property keeps its other keywords' cases),
+  and a body declared under several media types is mutated on
   its JSON alternative only. Nested properties are not reached.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 - `ContractSuite::fromContract(Contract, RequestFactoryInterface, StreamFactoryInterface)`

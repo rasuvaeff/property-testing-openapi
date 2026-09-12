@@ -233,7 +233,9 @@ witnesses as the parameter categories above (plus `minItems`/`maxItems` for
 arrays), and record the parameter kind with `misuse.location = 'body'` and
 the property name in `misuse.name`. The request-direction schema is searched,
 so a `readOnly` property is never targeted; properties are considered in
-declaration order; `nullable`/`not` schemas and type unions are skipped; and a
+declaration order; `not` schemas and type unions are skipped (an OAS 3.0
+`nullable` property keeps the cases its other keywords earn — `null` is
+admitted in addition to them, not instead); and a
 body declared under several media types is mutated on its JSON alternative
 only. Nested properties are not reached yet.
 Resulting requests are expected to
