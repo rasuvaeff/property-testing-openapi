@@ -23,6 +23,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   constrained parameter optional, one per value category, which gives the
   recorded corpus the `const`, `format` and `pattern` kinds it had no source
   for.
+- **Added.** Seven body value categories on `NegativeRequestCaseArbitrary` —
+  `bodyTypeMismatchForOperation()`, `bodyEnumMismatchForOperation()`,
+  `bodyConstMismatchForOperation()`, `bodyBoundaryMismatchForOperation()`,
+  `bodyLengthMismatchForOperation()`, `bodyFormatMismatchForOperation()` and
+  `bodyPatternMismatchForOperation()` — overwrite one top-level property of
+  the required JSON body (or its scalar root, `$`) with the witness its schema
+  provably rejects and record the parameter kind with
+  `misuse.location = 'body'`. A `format: email` or a `pattern` on a body
+  property had no negative case at all before: only the body as a whole did.
+  The request-direction schema is searched, so a `readOnly` property is never
+  targeted; a body declared under several media types is mutated on its JSON
+  alternative only. `ContractSuite::negativeCases()` weights the seven
+  alongside the existing categories, so an operation whose only constraints
+  live in its body now runs the negative phase of `OperationProperty` (#94).
+- **Added.** `profiles.create` in the zoo: one constrained top-level body
+  property per value category, which puts the body kinds into the recorded
+  corpus.
+- **Internal.** The response side's body witness search moved out of
+  `ResponseTargets` into `JsonBodyWitness`, shared with the request side; the
+  response categories are unchanged.
 
 ## 0.11.0 — 2026-09-12
 

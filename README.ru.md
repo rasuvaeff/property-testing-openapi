@@ -206,7 +206,21 @@ type: его список частей определяется выбором �
 fail-open, поэтому любой валидный кейс проходит в обоих случаях.
 `malformedJsonForOperation()` заменяет обязательное JSON body сырым
 malformed-payload (`encoding: 'raw'`) под объявленным media type и записывает
-`misuse.kind = 'json-syntax'`. Такие request
+`misuse.kind = 'json-syntax'`.
+Семь категорий значений тела — `bodyTypeMismatchForOperation()`,
+`bodyEnumMismatchForOperation()`, `bodyConstMismatchForOperation()`,
+`bodyBoundaryMismatchForOperation()`, `bodyLengthMismatchForOperation()`,
+`bodyFormatMismatchForOperation()` и `bodyPatternMismatchForOperation()` —
+перезаписывают одно верхнеуровневое свойство обязательного JSON body (или
+его скалярный корень, названный `$`) значением, которое его схема доказуемо
+отвергает, теми же witness'ами, что и параметрические категории выше (плюс
+`minItems`/`maxItems` для массивов), и записывают kind параметра с
+`misuse.location = 'body'` и именем свойства в `misuse.name`. Ищется схема
+в направлении запроса, поэтому `readOnly`-свойство никогда не выбирается;
+свойства перебираются в порядке объявления; `nullable`/`not`-схемы и
+объединения типов пропускаются; body, объявленное под несколькими media
+type, мутируется только в JSON-варианте. Вложенные свойства пока не
+достигаются. Такие request
 должны отвергаться contract validation до
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.

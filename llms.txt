@@ -108,6 +108,20 @@ Public API:
 - `NegativeRequestCaseArbitrary::malformedJsonForOperation(Operation)` replaces
   the required JSON body with a raw malformed payload (`encoding: 'raw'`) and
   records `misuse.kind = 'json-syntax'`.
+- `NegativeRequestCaseArbitrary::bodyTypeMismatchForOperation(Operation)`,
+  `bodyEnumMismatchForOperation`, `bodyConstMismatchForOperation`,
+  `bodyBoundaryMismatchForOperation`, `bodyLengthMismatchForOperation`,
+  `bodyFormatMismatchForOperation` and `bodyPatternMismatchForOperation`
+  overwrite one top-level property of the required JSON body (or its scalar
+  root, named `$`) with the witness its schema provably rejects — the same
+  witnesses the parameter categories use, plus `minItems`/`maxItems` for
+  arrays — and record the parameter kind (`type`, `enum`, `const`, `boundary`,
+  `length`, `format`, `pattern`) with `misuse.location = 'body'` and
+  `misuse.name` = the property (or `$`). The request-direction schema is
+  searched (a `readOnly` property is never targeted), properties are
+  considered in declaration order, `nullable`/`not` schemas and type unions
+  are skipped, and a body declared under several media types is mutated on
+  its JSON alternative only. Nested properties are not reached.
 - `UnsupportedGeneration` for unsupported schema/body/parameter input.
 - `ContractSuite::fromContract(Contract, RequestFactoryInterface, StreamFactoryInterface)`
   builds the framework-neutral suite model. Fluent configuration:

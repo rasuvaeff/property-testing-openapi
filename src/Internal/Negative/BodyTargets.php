@@ -6,20 +6,50 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
 /**
  * Finds the required body the body-side misuse categories invalidate: the JSON
- * body itself, or the multipart part whose declared media type one of them
- * contradicts.
+ * body itself, one of its top-level values, or the multipart part whose
+ * declared media type one of them contradicts.
  *
  * @internal
+ *
+ * @psalm-import-type Kind from JsonBodyWitness
+ * @psalm-import-type Witness from JsonBodyWitness
  */
 final readonly class BodyTargets
 {
     public function __construct(
         private SchemaProbe $probe = new SchemaProbe(),
+        private JsonBodyWitness $witnesses = new JsonBodyWitness(),
+        private RequestSchemas $schemas = new RequestSchemas(),
     ) {}
+
+    /**
+     * The top-level property of the required JSON body (or its scalar root,
+     * named `$`) with a constructible witness for the kind, and the media
+     * type the body travels under. The request-direction schema is searched:
+     * a `readOnly` property is not part of a request, and the contract drops
+     * it before judging one, so a witness written over it would be judged
+     * valid (#94).
+     *
+     * @param Kind $kind
+     * @return array{mediaType: non-empty-string, name: string, invalid: Witness}
+     */
+    public function bodyWitness(Operation $operation, string $kind): array
+    {
+        $body = $this->jsonBody($operation);
+        if ($body !== null) {
+            $target = $this->witnesses->find($this->schemas->effective($body['schema']), $kind);
+            if ($target !== null) {
+                return ['mediaType' => $body['mediaType'], 'name' => $target['name'], 'invalid' => $target['invalid']];
+            }
+        }
+
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body value with a constructible %s mismatch', $operation->key, $kind));
+    }
 
     /** @return array{name: non-empty-string} */
     public function additionalProperty(Operation $operation): array

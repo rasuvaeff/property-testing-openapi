@@ -28,7 +28,7 @@ final class ZooContracts
         'nested.create', 'health.get', 'version.get', 'files.get',
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
         'encoded.create', 'numeric.create', 'headers.get',
-        'search.get', 'narrowed.create', 'bounded.create', 'pages.get',
+        'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
     ];
 
     /**
@@ -299,6 +299,27 @@ final class ZooContracts
                         ['name' => 'since', 'in' => 'query', 'schema' => ['type' => 'string', 'format' => 'date']],
                         ['name' => 'code', 'in' => 'query', 'schema' => ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']],
                     ],
+                    'responses' => ['204' => []],
+                ]],
+                // The body-side twin of `pages.get`: one constrained
+                // top-level property per value category. No body property
+                // constraint had a negative case before #94 — only the body
+                // as a whole did (media type, syntax, an extra property).
+                '/profiles' => ['post' => [
+                    'operationId' => 'profiles.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['email', 'token'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'count' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9],
+                            'kind' => ['type' => 'string', 'enum' => ['person', 'bot']],
+                            'version' => ['type' => 'string', 'const' => 'v1'],
+                            'name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8],
+                            'email' => ['type' => 'string', 'format' => 'email'],
+                            'token' => ['type' => 'string', 'pattern' => '^[0-9a-f]{8}$'],
+                        ],
+                    ]]]],
                     'responses' => ['204' => []],
                 ]],
                 '/unions/{id}' => ['get' => [

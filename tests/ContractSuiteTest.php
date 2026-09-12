@@ -389,6 +389,29 @@ final class ContractSuiteTest
      * in front of the validator: without it the suite is silent about
      * `encoding.contentType` even where the document declares one.
      */
+    /**
+     * The weighted union offers every body value category for a body that
+     * declares one constrained property per category, and each case it draws
+     * is rejected the way every other negative case is (#94).
+     */
+    public function negativeCasesOfferTheBodyValueCategories(): void
+    {
+        $suite = ZooContracts::suiteFor('profiles.create');
+        $cases = $suite->negativeCases('profiles.create');
+        $seen = [];
+        foreach (range(1, 200) as $seed) {
+            $case = $cases->generate(new Random($seed))->value;
+            if ($case['misuse']['location'] === 'body') {
+                $seen[$case['misuse']['kind']] ??= $case;
+            }
+        }
+
+        foreach (['type', 'enum', 'const', 'boundary', 'length', 'format', 'pattern'] as $kind) {
+            Assert::true(isset($seen[$kind]), 'kind "' . $kind . '" was never drawn');
+            $suite->checkNegative('profiles.create', $seen[$kind]);
+        }
+    }
+
     public function negativeCasesOfferThePartContentTypeCategory(): void
     {
         $suite = ZooContracts::suiteFor('encoded.create');

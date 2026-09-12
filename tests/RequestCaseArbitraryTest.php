@@ -12,6 +12,7 @@ use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
@@ -35,6 +36,7 @@ use Testo\Test;
 #[Covers(ParameterTargets::class)]
 #[Covers(PatternWitness::class)]
 #[Covers(BodyTargets::class)]
+#[Covers(JsonBodyWitness::class)]
 #[Covers(SchemaProbe::class)]
 #[Covers(RequestMaterializer::class)]
 final class RequestCaseArbitraryTest
@@ -1141,6 +1143,14 @@ final class RequestCaseArbitraryTest
             static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->partContentTypeMismatchForOperation($operation),
             ['kind' => 'part-content-type', 'location' => 'body', 'name' => 'note'],
         ];
+        foreach (self::bodyCategoryProvider() as $label => [$method, $kind, $name]) {
+            yield 'body ' . $label => [
+                $this->bodyWitnessContract(),
+                'profiles.create',
+                static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->{$method}($operation),
+                ['kind' => $kind, 'location' => 'body', 'name' => $name],
+            ];
+        }
     }
 
     /**
@@ -1534,6 +1544,215 @@ final class RequestCaseArbitraryTest
             'paths' => ['/q' => ['get' => [
                 'operationId' => 'q.get',
                 'parameters' => [['name' => 'q', 'in' => 'query', 'required' => false, 'schema' => $schema]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+    }
+
+    /**
+     * Every body value category writes its witness over one top-level
+     * property of the required JSON body, and that property's schema rejects
+     * the request before transport. The `readOnly` property declared first
+     * is skipped: the contract drops it from a request before judging one,
+     * so a witness written over it would be judged valid (#94).
+     */
+    #[DataProvider('bodyCategoryProvider')]
+    public function everyBodyValueCategoryIsInvalidBeforeTransport(string $method, string $kind, string $name): void
+    {
+        $contract = $this->bodyWitnessContract();
+        $operation = $contract->operation('profiles.create');
+        $factory = new Psr17Factory();
+        $materializer = new RequestMaterializer($factory, $factory);
+        /** @var ArbitraryInterface<array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed}, misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string}}> $arbitrary */
+        $arbitrary = (new NegativeRequestCaseArbitrary())->{$method}($operation);
+        $valid = (new RequestCaseArbitrary())->forOperation($operation);
+
+        foreach (range(1, 15) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $result = $contract->validateRequest($materializer->materialize($operation, $case));
+            $members = is_array($case['body']) && is_array($case['body']['value']) ? $case['body']['value'] : null;
+            $base = $valid->generate(new Random($seed))->value['body']['value'] ?? null;
+
+            Assert::same($case['misuse'], ['kind' => $kind, 'location' => 'body', 'name' => $name]);
+            Assert::true(is_array($members) && array_key_exists($name, $members));
+            // Exactly one thing changes: the witness lands beside every member
+            // the same-seed valid body carries, never in place of them.
+            Assert::same(array_keys($members ?? []), array_keys(is_array($base) ? array_replace($base, [$name => null]) : []));
+            Assert::false($result->isValid());
+            Assert::same($result->violations[0]->code, 'request.body.schema');
+        }
+    }
+
+    public static function bodyCategoryProvider(): iterable
+    {
+        yield 'type' => ['bodyTypeMismatchForOperation', 'type', 'count'];
+        yield 'enum' => ['bodyEnumMismatchForOperation', 'enum', 'kind'];
+        yield 'const' => ['bodyConstMismatchForOperation', 'const', 'version'];
+        yield 'boundary' => ['bodyBoundaryMismatchForOperation', 'boundary', 'count'];
+        yield 'length' => ['bodyLengthMismatchForOperation', 'length', 'name'];
+        yield 'format' => ['bodyFormatMismatchForOperation', 'format', 'email'];
+        yield 'pattern' => ['bodyPatternMismatchForOperation', 'pattern', 'token'];
+    }
+
+    /**
+     * The witness values a request body target resolves to, pinned exactly:
+     * the same values the response side pins, found through the
+     * request-direction schema, under the body's media type.
+     */
+    public function bodyWitnessValuesArePinnedExactly(): void
+    {
+        $targets = new BodyTargets();
+        $operation = $this->bodyWitnessContract()->operation('profiles.create');
+
+        Assert::same($targets->bodyWitness($operation, 'type'), ['mediaType' => 'application/json', 'name' => 'count', 'invalid' => 'not-a-integer']);
+        Assert::same($targets->bodyWitness($operation, 'enum'), ['mediaType' => 'application/json', 'name' => 'kind', 'invalid' => '__openapi_misuse__']);
+        Assert::same($targets->bodyWitness($operation, 'const'), ['mediaType' => 'application/json', 'name' => 'version', 'invalid' => 'v1__openapi_misuse__']);
+        Assert::same($targets->bodyWitness($operation, 'boundary'), ['mediaType' => 'application/json', 'name' => 'count', 'invalid' => -1]);
+        Assert::same($targets->bodyWitness($operation, 'length'), ['mediaType' => 'application/json', 'name' => 'name', 'invalid' => 'aaaaaaaaa']);
+        Assert::same($targets->bodyWitness($operation, 'format'), ['mediaType' => 'application/json', 'name' => 'email', 'invalid' => 'not-an-email']);
+
+        $pattern = $targets->bodyWitness($operation, 'pattern');
+        Assert::same($pattern['name'], 'token');
+        Assert::true(is_string($pattern['invalid']) && preg_match('/^[0-9a-f]{8}$/', $pattern['invalid']) === 0);
+
+        $root = $targets->bodyWitness($this->bodyOperation(['application/vnd.api+json' => ['schema' => ['type' => 'integer', 'minimum' => 1]]]), 'boundary');
+        Assert::same($root, ['mediaType' => 'application/vnd.api+json', 'name' => '$', 'invalid' => 0]);
+    }
+
+    public function aScalarRootBodyIsReplacedWhole(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/count' => ['put' => [
+                'operationId' => 'count.put',
+                'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['type' => 'integer', 'minimum' => 1]]]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $operation = $contract->operation('count.put');
+        $case = (new NegativeRequestCaseArbitrary())->bodyBoundaryMismatchForOperation($operation)->generate(new Random(94))->value;
+        $factory = new Psr17Factory();
+        $request = (new RequestMaterializer($factory, $factory))->materialize($operation, $case);
+
+        Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'body', 'name' => '$']);
+        Assert::same($case['body'], ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 0]);
+        Assert::same((string) $request->getBody(), '0');
+        Assert::false($contract->validateRequest($request)->isValid());
+    }
+
+    /**
+     * A body declared under a form encoding and two JSON media types is
+     * generated under all three; the body witness is built on the JSON
+     * alternative it was found under only, since that is the one whose value
+     * it overwrites — not the form body, and not the other JSON body either.
+     */
+    public function bodyWitnessesFollowTheJsonAlternativeOfAMultiMediaTypeBody(): void
+    {
+        $schema = ['type' => 'object', 'required' => ['name'], 'properties' => ['name' => ['type' => 'string', 'maxLength' => 4]]];
+        $operation = $this->bodyOperation([
+            'application/x-www-form-urlencoded' => ['schema' => $schema],
+            'application/json' => ['schema' => $schema],
+            'application/vnd.api+json' => ['schema' => $schema],
+        ]);
+        $arbitrary = (new NegativeRequestCaseArbitrary())->bodyLengthMismatchForOperation($operation);
+
+        foreach (range(1, 40) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+
+            Assert::same($case['body'], ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['name' => 'aaaaa']]);
+            Assert::same($case['misuse'], ['kind' => 'length', 'location' => 'body', 'name' => 'name']);
+        }
+    }
+
+    /**
+     * An object body whose properties are all optional is generated empty
+     * some of the time, and an empty PHP array is a list; the witness is
+     * still written into it rather than the case being refused as a
+     * non-object.
+     */
+    public function anEmptyObjectBodyStillTakesTheWitness(): void
+    {
+        $operation = $this->bodyOperation(['application/json' => ['schema' => [
+            'type' => 'object',
+            'properties' => ['n' => ['type' => 'integer', 'maximum' => 5]],
+        ]]]);
+        $valid = (new RequestCaseArbitrary())->forOperation($operation);
+        $negative = (new NegativeRequestCaseArbitrary())->bodyBoundaryMismatchForOperation($operation);
+        $empty = false;
+
+        foreach (range(1, 60) as $seed) {
+            $empty = $empty || ($valid->generate(new Random($seed))->value['body']['value'] ?? null) === [];
+            $case = $negative->generate(new Random($seed))->value;
+
+            Assert::same($case['body'], ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => ['n' => 6]]);
+            Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'body', 'name' => 'n']);
+        }
+
+        Assert::true($empty);
+    }
+
+    /**
+     * A property declaration the witness cannot be built from is skipped for
+     * the next one: an empty name, a boolean schema, a list where a schema
+     * object belongs.
+     */
+    public function bodyWitnessSkipsMalformedPropertyDeclarations(): void
+    {
+        $operation = $this->bodyOperation(['application/json' => ['schema' => [
+            'type' => 'object',
+            'properties' => [
+                '' => ['type' => 'integer', 'maximum' => 3],
+                'flag' => true,
+                'list' => [['type' => 'integer', 'maximum' => 3]],
+                'n' => ['type' => 'integer', 'maximum' => 3],
+            ],
+        ]]]);
+
+        Assert::same((new BodyTargets())->bodyWitness($operation, 'boundary'), ['mediaType' => 'application/json', 'name' => 'n', 'invalid' => 4]);
+    }
+
+    public function bodyWitnessesFailClosedWithoutAConstructibleOne(): void
+    {
+        $negative = new NegativeRequestCaseArbitrary();
+        foreach ([
+            fn(): ArbitraryInterface => $negative->bodyEnumMismatchForOperation($this->bodyOperation(['application/json' => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'string']]]]])),
+            fn(): ArbitraryInterface => $negative->bodyTypeMismatchForOperation($this->bodyOperation(['application/json' => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'integer']]]]], required: false)),
+            fn(): ArbitraryInterface => $negative->bodyBoundaryMismatchForOperation($this->bodyOperation(['application/x-www-form-urlencoded' => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'integer', 'minimum' => 1]]]]])),
+            fn(): ArbitraryInterface => $negative->bodyFormatMismatchForOperation($this->queryParamOperation(['type' => 'string'])),
+        ] as $build) {
+            try {
+                $build();
+                Assert::true(actual: false, message: 'Expected unsupported generation exception');
+            } catch (UnsupportedGeneration $exception) {
+                Assert::string($exception->getMessage())->contains('constructible');
+            }
+        }
+    }
+
+    /**
+     * One constrained top-level property per body value category, with a
+     * `readOnly` property declared first to prove it is skipped.
+     */
+    private function bodyWitnessContract(): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/profiles' => ['post' => [
+                'operationId' => 'profiles.create',
+                'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                    'type' => 'object',
+                    'required' => ['email', 'token'],
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'id' => ['type' => 'integer', 'minimum' => 1, 'readOnly' => true],
+                        'count' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9],
+                        'kind' => ['type' => 'string', 'enum' => ['person', 'bot']],
+                        'version' => ['type' => 'string', 'const' => 'v1'],
+                        'name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8],
+                        'email' => ['type' => 'string', 'format' => 'email'],
+                        'token' => ['type' => 'string', 'pattern' => '^[0-9a-f]{8}$'],
+                    ],
+                ]]]],
                 'responses' => ['204' => []],
             ]]],
         ]);

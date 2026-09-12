@@ -73,6 +73,10 @@ final class LeagueGeneratedDifferentialTest
         'additionalProperty' => 'items.create',
         'mediaTypeMismatch' => 'items.create',
         'malformedJson' => 'items.create',
+        'bodyTypeMismatch' => 'items.create',
+        'bodyEnumMismatch' => 'items.create',
+        'bodyBoundaryMismatch' => 'items.create',
+        'bodyLengthMismatch' => 'items.create',
     ];
 
     private ServerRequestValidator $league;
@@ -255,6 +259,10 @@ final class LeagueGeneratedDifferentialTest
             'additionalProperty' => $arbitrary->additionalPropertyForOperation($operation),
             'mediaTypeMismatch' => $arbitrary->mediaTypeMismatchForOperation($operation),
             'malformedJson' => $arbitrary->malformedJsonForOperation($operation),
+            'bodyTypeMismatch' => $arbitrary->bodyTypeMismatchForOperation($operation),
+            'bodyEnumMismatch' => $arbitrary->bodyEnumMismatchForOperation($operation),
+            'bodyBoundaryMismatch' => $arbitrary->bodyBoundaryMismatchForOperation($operation),
+            'bodyLengthMismatch' => $arbitrary->bodyLengthMismatchForOperation($operation),
             default => throw new \LogicException('Unknown misuse kind "' . $kind . '"'),
         };
     }
