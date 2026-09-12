@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** `ContractSuite::negativeCoverage()` answers, per selected
+  operation, which misuses the negative phase can reach and why it reaches
+  nothing where it cannot — computed from the document, without drawing. A
+  category was either constructible or silently absent, and nothing told the
+  two apart; a green suite looks identical whether a category is generating
+  and the application is correctly rejecting it, or the category was never
+  constructed. Sampling `negativeCases()` recovers part of the answer but
+  cannot prove a negative and cannot say why one is missing, which the
+  `skipped` reason does.
+
 - **Changed.** A `format` refusal names its cause. The probe answered every
   refusal with a bare `null`, which reads the same whether the schema declares
   no format at all — nothing to do there — or declares one this package holds

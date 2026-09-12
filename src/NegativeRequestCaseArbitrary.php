@@ -19,6 +19,10 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
  *
  * @psalm-import-type RequestCaseData from RequestCaseArbitrary
  * @psalm-import-type Kind from JsonBodyWitness
+ * @psalm-type CoverageData = array{
+ *     covered: list<array{kind: non-empty-string, location: string, name: string}>,
+ *     skipped: list<array{kind: non-empty-string, side: 'request'|'parameter'|'body', reason: string}>,
+ * }
  * @psalm-import-type Witness from JsonBodyWitness
  * @psalm-type NegativeRequestCaseData = array{
  *     operationKey: string,
@@ -431,6 +435,115 @@ final readonly class NegativeRequestCaseArbitrary
                 return $case;
             };
         });
+    }
+
+    /**
+     * Every misuse this operation admits, and the reason for each one it does
+     * not — without drawing anything.
+     *
+     * Whether a category is constructible is a pure function of the document,
+     * and until this existed the only way to find out was to sample: build
+     * `negativeCases()`, draw a few hundred times and tally `misuse`. That
+     * works, but it cannot prove a negative — a category absent from 300 draws
+     * might appear at 10 000 — and it cannot say *why* one is absent.
+     *
+     * The gap mattered exactly where the information was needed. A hand-written
+     * test asserting `per_page > maximum` → 422 was deleted twice in one
+     * document on the premise that the negative phase built that case itself.
+     * It did not, both deletions passed review, and the suite stayed green
+     * either way: a green suite looks identical whether a category is
+     * generating and the application is correctly rejecting, or the category
+     * was never constructed. `assertSame($expected, $suite->negativeCoverage())`
+     * fails the moment such a deletion lands (#101).
+     *
+     * @return CoverageData
+     */
+    public function coverageForOperation(Operation $operation): array
+    {
+        $covered = [];
+        $skipped = [];
+        foreach ($this->coverageSources($operation) as [$kind, $side, $find]) {
+            try {
+                foreach ($find() as $target) {
+                    $covered[] = ['kind' => $kind, 'location' => $target['location'], 'name' => $target['name']];
+                }
+            } catch (UnsupportedGeneration $refusal) {
+                $skipped[] = ['kind' => $kind, 'side' => $side, 'reason' => $refusal->getMessage()];
+            }
+        }
+
+        return ['covered' => $covered, 'skipped' => $skipped];
+    }
+
+    /**
+     * Each category paired with the finder that decides it, in the order
+     * {@see ContractSuite::negativeCases()} weights them.
+     *
+     * The finders are the ones the arbitraries use, so a category listed as
+     * covered is one an arbitrary can build and a category listed as skipped
+     * carries the refusal an arbitrary would have thrown.
+     *
+     * A category is identified by its kind *and* its side: `format` names one
+     * category over the parameters and another over the body, and a refusal
+     * that did not say which would be unreadable.
+     *
+     * @return list<array{0: non-empty-string, 1: 'request'|'parameter'|'body', 2: \Closure(): list<array{location: string, name: string}>}>
+     */
+    private function coverageSources(Operation $operation): array
+    {
+        $body = static fn(string $name): array => [['location' => 'body', 'name' => $name]];
+
+        return [
+            ['missing-required', 'request', fn(): array => $this->located($this->parameterTargets->missingRequired($operation))],
+            ['type', 'parameter', fn(): array => $this->located($this->parameterTargets->typeMismatch($operation))],
+            ['enum', 'parameter', fn(): array => $this->located($this->parameterTargets->enumMismatch($operation))],
+            ['const', 'parameter', fn(): array => $this->located($this->parameterTargets->constMismatch($operation))],
+            ['boundary', 'parameter', fn(): array => $this->located($this->parameterTargets->boundaryMismatch($operation))],
+            ['length', 'parameter', fn(): array => $this->located($this->parameterTargets->lengthMismatch($operation))],
+            ['format', 'parameter', fn(): array => $this->located($this->parameterTargets->formatMismatch($operation))],
+            ['pattern', 'parameter', fn(): array => $this->located($this->parameterTargets->patternMismatch($operation))],
+            ['additional-properties', 'body', fn(): array => $body($this->bodyTargets->additionalProperty($operation)['name'])],
+            ['media-type', 'body', function () use ($operation, $body): array {
+                $this->bodyTargets->mediaTypeMismatch($operation);
+
+                return $body('body');
+            }],
+            ['part-content-type', 'body', fn(): array => $body($this->bodyTargets->partContentTypeMismatch($operation)['property'])],
+            ['json-syntax', 'body', function () use ($operation, $body): array {
+                if ($this->bodyTargets->jsonBody($operation) === null) {
+                    throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body for a malformed JSON case', $operation->key));
+                }
+
+                return $body('body');
+            }],
+            ...array_map(
+                fn(string $kind): array => [$kind, 'body', function () use ($operation, $kind): array {
+                    /** @var Kind $kind */
+                    $found = $this->bodyTargets->bodyWitness($operation, $kind);
+
+                    return array_map(
+                        static fn(array $target): array => ['location' => 'body', 'name' => $target['name']],
+                        $found['targets'],
+                    );
+                }],
+                ['type', 'enum', 'const', 'boundary', 'length', 'format', 'pattern'],
+            ),
+        ];
+    }
+
+    /**
+     * Drops the witness value from a target list: coverage reports where a
+     * category lands, not what it writes there.
+     *
+     * @param list<array{location: string, name: string, invalid?: mixed}> $targets
+     * @return list<array{location: string, name: string}>
+     */
+    private function located(array $targets): array
+    {
+        return array_map(
+            static fn(array $target): array => ['location' => $target['location'], 'name' => $target['name']],
+            $targets,
+        );
     }
 
     /**

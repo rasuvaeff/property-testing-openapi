@@ -404,6 +404,50 @@ use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
 ```
 
+### Negative coverage
+
+`negativeCoverage()` answers, for each selected operation, which misuses the
+negative phase can reach and why it reaches nothing where it cannot. It is
+computed from the document — nothing is drawn.
+
+```php
+$suite->negativeCoverage();
+// [
+//   'verified.get' => [
+//     'covered' => [
+//       ['kind' => 'missing-required', 'location' => 'query', 'name' => 'email'],
+//       ['kind' => 'enum',             'location' => 'query', 'name' => 'grade'],
+//       ['kind' => 'format',           'location' => 'query', 'name' => 'email'],
+//     ],
+//     'skipped' => [
+//       ['kind' => 'boundary', 'side' => 'parameter',
+//        'reason' => 'Operation "verified.get" has no numeric parameter with a constructible boundary mismatch'],
+//     ],
+//   ],
+// ]
+```
+
+A category is identified by its kind *and* its side (`request`, `parameter`,
+`body`): `format` names one category over the parameters and another over the
+body.
+
+This exists because a green suite looks identical whether a category is
+generating and the application is correctly rejecting it, or the category was
+never constructed at all — which is how a hand-written test asserting
+`per_page > maximum` → 422 can be deleted on the premise that the negative
+phase builds that case itself, when it does not. Assert the listing and the
+premise stops being invisible:
+
+```php
+Assert::same($suite->negativeCoverage(), $expected);
+```
+
+Sampling `negativeCases()` and tallying `misuse` recovers part of the same
+answer, but it cannot prove a negative — a category absent from 300 draws
+might appear at 10 000 — and it cannot say why one is missing. The `skipped`
+reason does: an unsupported `format`, a wildcard media type, a body no witness
+can contradict.
+
 ## Response Generation
 
 For testing an API client without live traffic, the package generates the

@@ -216,6 +216,30 @@ array root, which takes the root branch and never reaches the guard). Both
 are typing guards on shapes the generator cannot produce, the class already
 recorded for `RequestCaseArbitrary` above.
 
+The verified witness check (2026-09-12, #100/#102/#103) adds: the `max(…, 0)`
+floor and the `?? 0` default in `SchemaProbe::alternatives()` (any of `0`, `1`
+or `-1` there produces the same first candidate, because the loop already
+starts at `max($minLength, 1)`); the `(int)` casts on `minItems`/`maxItems`
+in `JsonBodyWitness::lengthWitness()`, which `is_int()` has already narrowed;
+and the ordering of the fixed array fillers, since `WitnessCheck` keeps the
+first that discriminates and any filler the `items` schema admits answers the
+same question. What is *not* equivalent there, and must stay killed, is the
+membership of the filler list and the presence of the generated item: drop the
+item drawn from the `items` schema and every array-of-objects body loses its
+`length` category silently.
+
+The mutants that escaped in `WitnessCheck` before the memo-key test were a
+different shape and worth naming: the key is what makes the check answer the
+same question the same way, so a removed component of it does not change any
+single answer — only the answer to a *later, different* question. Cover it by
+asking two questions that differ in exactly one component and must disagree,
+which `WitnessCheckTest::theMemoDistinguishesEveryPartOfTheQuestion` does.
+
+Testo maps mutants by `#[Covers]`, not by what a test executes. A test that
+exercises `ParameterTargets` from a class covering only `WitnessCheck` kills
+nothing in it; the escapes read as missing coverage when the coverage is
+there. Check the attribute before writing another test.
+
 Casts of an array key to `string` are equivalent by the same rule the
 `DocumentExamples` paragraph above states, and are therefore not written:
 `[(string) $k => $v]` and `[$k => $v]` build the same array. The cast belongs
