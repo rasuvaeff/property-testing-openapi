@@ -101,6 +101,12 @@ final class PatternWitnessTest
         );
     }
 
+    /**
+     * A competing keyword is no longer among these: whether the witness trips
+     * `enum`, `const` or `format` instead of the pattern is decided by
+     * validating it rather than guessed from the schema (#102). What stays
+     * here is what makes a pattern witness unbuildable at all.
+     */
     public function patternConstraintsRejectEveryUnprovableSchema(): void
     {
         $probe = new SchemaProbe();
@@ -109,9 +115,6 @@ final class PatternWitnessTest
             'missing pattern' => ['type' => 'string'],
             'empty pattern' => ['type' => 'string', 'pattern' => ''],
             'non-string pattern' => ['type' => 'string', 'pattern' => ['^a+$']],
-            'enum conflict' => ['type' => 'string', 'pattern' => '^a+$', 'enum' => ['a']],
-            'const conflict' => ['type' => 'string', 'pattern' => '^a+$', 'const' => 'a'],
-            'format conflict' => ['type' => 'string', 'pattern' => '^a+$', 'format' => 'uuid'],
             'negative minLength' => ['type' => 'string', 'pattern' => '^a+$', 'minLength' => -1],
             'negative maxLength' => ['type' => 'string', 'pattern' => '^a+$', 'maxLength' => -1],
             'inverted window' => ['type' => 'string', 'pattern' => '^a+$', 'minLength' => 3, 'maxLength' => 2],

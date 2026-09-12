@@ -170,9 +170,7 @@ parameter with a wire value just outside its `minimum`/`maximum` bound
 (honouring boolean exclusive bounds) and records `misuse.kind = 'boundary'`.
 `lengthMismatchForOperation()` replaces one `string` parameter with a
 value whose length falls just outside its `minLength`/`maxLength` bound and
-records `misuse.kind = 'length'`; parameters carrying `enum`, `const`,
-`pattern`, or `format` are skipped because a pure length mismatch cannot be
-promised there.
+records `misuse.kind = 'length'`.
 `formatMismatchForOperation()` replaces one `string` parameter with a
 fixed witness that provably violates its `format` (`uuid`, `email`, `ipv4`,
 `uri`, `uri-reference`, `date`, `date-time`) and records
@@ -183,9 +181,25 @@ searched wire value that provably fails its `pattern` and records
 `misuse.kind = 'pattern'`. The pattern itself is the oracle: bounded candidates
 (alphabet samples and mutations of an accepted value) are checked with
 `preg_match()` against the exact regex the validation backend compiles.
-Parameters carrying `enum`, `const`, or `format` are skipped, the witness stays
-inside the `minLength`/`maxLength` window, and a PCRE error or an exhausted
-candidate/time budget fails closed instead of guessing.
+The witness stays inside the `minLength`/`maxLength` window, and a PCRE error
+or an exhausted candidate/time budget fails closed instead of guessing.
+Every value category is *verified*, not asserted. A candidate witness is kept
+only when the property's schema rejects it and the same schema without the
+category's keywords accepts it — the check runs through
+`Contract::accepts()`, so a witness is judged by the rules that will judge the
+generated request. A category whose every candidate fails that test is not
+constructible for that target, and the operation simply has no case of that
+kind rather than one whose name misstates which assertion rejected it.
+
+Two consequences are worth knowing. A `format` beside a `minLength`/`maxLength`
+bound now yields a case whenever the fixed witness fits the window — the most
+common string shape in a real document used to get neither a `format` case nor
+a `length` one. And a witness that would contradict a second keyword is refused
+even where nothing in the schema was listed as conflicting: a marker string
+cannot contradict an `enum` of integers without also contradicting the type, so
+the `enum` and `const` categories offer typed alternatives and the check picks
+the one that bites exactly once.
+
 `additionalPropertyForOperation()` adds one undeclared property to a required
 JSON object body whose schema sets `additionalProperties: false` and records
 `misuse.kind = 'additional-properties'` with the injected property name.

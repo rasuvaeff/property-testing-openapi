@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -42,7 +43,7 @@ final readonly class BodyTargets
     {
         $body = $this->jsonBody($operation);
         if ($body !== null) {
-            $targets = $this->witnesses->findAll($this->schemas->effective($body['schema']), $kind);
+            $targets = $this->witnesses->findAll($this->schemas->effective($body['schema']), $kind, $operation->dialect, SchemaDirection::Request);
             if ($targets !== []) {
                 return ['mediaType' => $body['mediaType'], 'targets' => $targets];
             }
