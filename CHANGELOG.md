@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Fixed.** A JSON body property whose name is a decimal integer — `"12"` —
+  is a witness candidate on both sides. PHP stores such a name as an `int`
+  array key, and `JsonBodyWitness::candidates()` kept only string keys, so the
+  seven request body value categories and the response body categories never
+  contradicted it and an operation whose only constrained property is numeric
+  had no constructible body value category at all. The response side now
+  writes the witness with `array_replace()` for the same reason:
+  `array_merge()` renumbers integer keys, so the write landed under a fresh
+  index and left the declared property untouched.
+
 ## 0.12.1 — 2026-09-12
 
 - **Fixed.** `additionalPropertyForOperation()` and

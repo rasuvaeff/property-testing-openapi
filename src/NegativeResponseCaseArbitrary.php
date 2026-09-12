@@ -194,7 +194,10 @@ final readonly class NegativeResponseCaseArbitrary
                 return $target['invalid'];
             }
 
-            return array_merge($value, [$name => $target['invalid']]);
+            // `array_replace()` rather than `array_merge()`: merging
+            // renumbers integer keys, and a numeric-string property name
+            // (`'12'`) is an integer key in PHP (#98).
+            return array_replace($value, [$name => $target['invalid']]);
         }, root: $name === '$');
     }
 

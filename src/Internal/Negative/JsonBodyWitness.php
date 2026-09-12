@@ -42,7 +42,10 @@ final readonly class JsonBodyWitness
         foreach ($this->candidates($schema) as $name => $candidate) {
             $invalid = $this->witness($candidate, $kind);
             if ($invalid !== null) {
-                return ['name' => $name, 'invalid' => $invalid['value']];
+                // The name is cast back: PHP stores a decimal-integer
+                // property name (`"12"`) as an `int` key, and the misuse
+                // records what the document declares (#98).
+                return ['name' => (string) $name, 'invalid' => $invalid['value']];
             }
         }
 
@@ -50,8 +53,14 @@ final readonly class JsonBodyWitness
     }
 
     /**
+     * A decimal-integer property name is an `int` key here: that is the only
+     * spelling PHP has for one, not a malformed map, and the generator, the
+     * encoder and the contract all handle it. Rejecting it left an operation
+     * whose only constrained property is numeric with no constructible body
+     * value category at all (#98).
+     *
      * @param array<string, mixed> $schema
-     * @return array<string, array<string, mixed>> keyed by property name, or `$` for a scalar root
+     * @return array<array-key, array<string, mixed>> keyed by property name, or `$` for a scalar root
      */
     private function candidates(array $schema): array
     {
@@ -62,7 +71,7 @@ final readonly class JsonBodyWitness
         $properties = $this->mapOf($schema['properties'] ?? null);
         /** @var mixed $property */
         foreach ($properties as $name => $property) {
-            if (is_string($name) && $name !== '' && is_array($property) && !array_is_list($property)) {
+            if ((is_int($name) || $name !== '') && is_array($property) && !array_is_list($property)) {
                 /** @var array<string, mixed> $property */
                 $candidates[$name] = $property;
             }
