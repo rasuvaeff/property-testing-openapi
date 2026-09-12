@@ -164,4 +164,19 @@ final class SchemaProbeTest
         ];
     }
 
+    /** A format the probe cannot disprove is named, so the gap is reviewable rather than silent. */
+    #[DataProvider('unsupportedFormatProvider')]
+    public function unsupportedFormatNamesWhatCannotBeDisproved(array $schema, ?string $expected): void
+    {
+        Assert::same($this->probe->unsupportedFormat($schema), $expected);
+    }
+
+    public static function unsupportedFormatProvider(): iterable
+    {
+        yield 'unsupported' => [['type' => 'string', 'format' => 'hostname'], 'hostname'];
+        yield 'supported' => [['type' => 'string', 'format' => 'email'], null];
+        yield 'none declared' => [['type' => 'string'], null];
+        yield 'empty' => [['type' => 'string', 'format' => ''], null];
+        yield 'not a string' => [['type' => 'string', 'format' => 7], null];
+    }
 }
