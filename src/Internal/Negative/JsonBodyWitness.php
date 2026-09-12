@@ -104,13 +104,22 @@ final readonly class JsonBodyWitness
      * The values worth offering for one property and category, in preference
      * order.
      *
+     * A negated property is judged by a schema this search does not read, so
+     * it offers nothing. A nullable one used to be skipped as well, on the
+     * reasoning that a schema admitting `null` promises nothing about what is
+     * written over it — but `null` is admitted *in addition*, and a string
+     * longer than `maxLength` is no more valid for it. The check decides
+     * whether a candidate discriminates; withholding the candidates from it
+     * left a `nullable` string with a length bound, the ordinary shape of an
+     * optional free-text field, with no `length` case at all (#112).
+     *
      * @param array<string, mixed> $schema
      * @param Kind $kind
      * @return list<Witness>
      */
     private function witnesses(array $schema, string $kind): array
     {
-        if (($schema['nullable'] ?? false) === true || array_key_exists('not', $schema)) {
+        if (array_key_exists('not', $schema)) {
             return [];
         }
         $types = array_values($this->probe->declaredTypes($schema));

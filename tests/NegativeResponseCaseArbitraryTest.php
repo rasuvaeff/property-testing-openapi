@@ -279,6 +279,10 @@ final class NegativeResponseCaseArbitraryTest
         Assert::same($case['misuse'], ['kind' => 'undeclared-status', 'location' => 'status', 'name' => '597']);
     }
 
+    /**
+     * `nullable` is refused by the contract under the operation's default 3.1
+     * dialect, so it fails closed here; under 3.0 it keeps its cases (#112).
+     */
     public function skipsNullableAndNegatedSchemasAndTypeUnions(): void
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['type' => 'object', 'properties' => [
