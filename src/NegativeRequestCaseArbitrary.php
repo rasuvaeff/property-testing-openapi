@@ -165,9 +165,10 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function additionalPropertyForOperation(Operation $operation): ArbitraryInterface
     {
-        $name = $this->bodyTargets->additionalProperty($operation)['name'];
+        $target = $this->bodyTargets->additionalProperty($operation);
+        $name = $target['name'];
 
-        return $this->mutate($operation, static function (array $case) use ($name): array {
+        return $this->mutateJsonBody($operation, $target['mediaType'], static function (array $case) use ($name): array {
             $body = $case['body'];
             $value = $body['value'] ?? null;
             if ($body === null || !is_array($value)) {
@@ -189,14 +190,15 @@ final readonly class NegativeRequestCaseArbitrary
      */
     public function mediaTypeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
-        $mediaType = $this->bodyTargets->mediaTypeMismatch($operation)['invalid'];
+        $target = $this->bodyTargets->mediaTypeMismatch($operation);
+        $invalid = $target['invalid'];
 
-        return $this->mutate($operation, static function (array $case) use ($mediaType): array {
+        return $this->mutateJsonBody($operation, $target['mediaType'], static function (array $case) use ($invalid): array {
             $body = $case['body'];
             if ($body === null) {
                 throw new \LogicException('Required JSON body expected for a media type misuse');
             }
-            $case['body'] = ['mediaType' => $mediaType, 'encoding' => 'json', 'value' => $body['value'] ?? null];
+            $case['body'] = ['mediaType' => $invalid, 'encoding' => 'json', 'value' => $body['value'] ?? null];
             $case['misuse'] = ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'];
 
             return $case;
@@ -254,6 +256,11 @@ final readonly class NegativeRequestCaseArbitrary
         }
         $mediaType = $body['mediaType'];
 
+        // Unfiltered, unlike the other two body mutations (#97): this one
+        // replaces the body wholesale and never reads the valid case's
+        // `value`, so a draw that carried a multipart or form body is as good
+        // a base as a JSON one. Filtering would discard most draws of a
+        // multi-media-type body for nothing.
         return $this->mutate($operation, static function (array $case) use ($mediaType): array {
             $case['body'] = ['mediaType' => $mediaType, 'encoding' => 'raw', 'value' => '{"malformed":'];
             $case['misuse'] = ['kind' => 'json-syntax', 'location' => 'body', 'name' => 'body'];
@@ -361,12 +368,6 @@ final readonly class NegativeRequestCaseArbitrary
         $name = $target['name'];
         $invalid = $target['invalid'];
 
-        $carriesJson = static function (array $case) use ($mediaType): bool {
-            /** @var RequestCaseData $case */
-            $body = $case['body'];
-
-            return $body !== null && $body['encoding'] === 'json' && $body['mediaType'] === $mediaType;
-        };
         $mutation = static function (array $case) use ($kind, $name, $invalid): array {
             /** @var RequestCaseData $case */
             $body = $case['body'];
@@ -394,10 +395,7 @@ final readonly class NegativeRequestCaseArbitrary
             return $case;
         };
 
-        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
-        $mutated = Gen::map(Gen::filter($this->valid->forOperation($operation), $carriesJson), $mutation);
-
-        return $mutated;
+        return $this->mutateJsonBody($operation, $mediaType, $mutation);
     }
 
     /**
@@ -421,6 +419,35 @@ final readonly class NegativeRequestCaseArbitrary
 
             return $case;
         });
+    }
+
+    /**
+     * Mutates only the valid cases that carry one JSON media type.
+     *
+     * Since #79 a body declared under several media types is generated under
+     * each of them, so a valid case for an operation offering
+     * `multipart/form-data` beside `application/json` carries parts and no
+     * `value`. A mutation that rewrites that `value` — or that promises to
+     * keep it while changing something else — is built on the media type its
+     * target was found under rather than on the unfiltered valid cases (#97).
+     *
+     * @param non-empty-string $mediaType
+     * @param \Closure(RequestCaseData): NegativeRequestCaseData $mutation
+     * @return ArbitraryInterface<NegativeRequestCaseData>
+     */
+    private function mutateJsonBody(Operation $operation, string $mediaType, \Closure $mutation): ArbitraryInterface
+    {
+        $carriesJson = static function (array $case) use ($mediaType): bool {
+            /** @var RequestCaseData $case */
+            $body = $case['body'];
+
+            return $body !== null && $body['encoding'] === 'json' && $body['mediaType'] === $mediaType;
+        };
+
+        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        $mutated = Gen::map(Gen::filter($this->valid->forOperation($operation), $carriesJson), $mutation);
+
+        return $mutated;
     }
 
     /**

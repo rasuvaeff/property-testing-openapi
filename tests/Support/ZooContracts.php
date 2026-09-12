@@ -27,7 +27,7 @@ final class ZooContracts
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
         'nested.create', 'health.get', 'version.get', 'files.get',
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
-        'encoded.create', 'numeric.create', 'headers.get',
+        'encoded.create', 'mixed.create', 'numeric.create', 'headers.get',
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
     ];
 
@@ -221,6 +221,24 @@ final class ZooContracts
                         'application/x-www-form-urlencoded' => ['schema' => [
                             'type' => 'object', 'required' => ['name'], 'additionalProperties' => false,
                             'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+                        ]],
+                    ]],
+                    'responses' => ['204' => []],
+                ]],
+                // A JSON body offered beside a multipart one. The body
+                // mutations that rewrite the JSON value are built on the
+                // media type they found their target under, so a multipart
+                // draw cannot reach them (#97).
+                '/mixed' => ['post' => [
+                    'operationId' => 'mixed.create',
+                    'requestBody' => ['required' => true, 'content' => [
+                        'application/json' => ['schema' => [
+                            'type' => 'object', 'required' => ['note'], 'additionalProperties' => false,
+                            'properties' => ['note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+                        ]],
+                        'multipart/form-data' => ['schema' => [
+                            'type' => 'object', 'required' => ['note'], 'additionalProperties' => false,
+                            'properties' => ['note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
                         ]],
                     ]],
                     'responses' => ['204' => []],
