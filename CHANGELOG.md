@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.1 — 2026-09-12
+
+- **Fixed.** `additionalPropertyForOperation()` and
+  `mediaTypeMismatchForOperation()` are built on the valid cases carrying the
+  JSON media type their target was found under. Since 0.9.0 a body declared
+  under several media types is generated under each of them, so a body
+  offering `application/json` beside `multipart/form-data` or
+  `application/x-www-form-urlencoded` produced draws with parts (or form
+  fields) and no JSON value. The additional-property case then threw
+  `LogicException` out of `Gen::map()` on a multipart draw and relabelled a
+  form body as JSON on a form draw; the media-type case sent an empty body
+  instead of the schema-valid one it promises to keep. `ContractSuite` weights
+  both categories in, so `OperationProperty` over such an operation aborted
+  with the exception rather than reporting anything about the document.
+  `malformedJsonForOperation()` is deliberately left unfiltered: it replaces
+  the body wholesale and never reads the drawn value, so every draw is as good
+  a base as a JSON one.
+
 ## 0.12.0 — 2026-09-12
 
 - **Changed.** The seven value categories of `NegativeRequestCaseArbitrary` —

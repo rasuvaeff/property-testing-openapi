@@ -51,7 +51,7 @@ final readonly class BodyTargets
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body value with a constructible %s mismatch', $operation->key, $kind));
     }
 
-    /** @return array{name: non-empty-string} */
+    /** @return array{mediaType: non-empty-string, name: non-empty-string} */
     public function additionalProperty(Operation $operation): array
     {
         $body = $this->jsonBody($operation);
@@ -59,7 +59,7 @@ final readonly class BodyTargets
             && in_array('object', $this->probe->declaredTypes($body['schema']), strict: true)
             && ($body['schema']['additionalProperties'] ?? null) === false
         ) {
-            return ['name' => $this->unusedPropertyName($body['schema']['properties'] ?? null)];
+            return ['mediaType' => $body['mediaType'], 'name' => $this->unusedPropertyName($body['schema']['properties'] ?? null)];
         }
 
         throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON object body rejecting additional properties', $operation->key));
@@ -69,11 +69,12 @@ final readonly class BodyTargets
      * A declared wildcard media type could match the substitute Content-Type,
      * so such operations fail closed.
      *
-     * @return array{invalid: non-empty-string}
+     * @return array{mediaType: non-empty-string, invalid: non-empty-string}
      */
     public function mediaTypeMismatch(Operation $operation): array
     {
-        if ($this->jsonBody($operation) === null) {
+        $body = $this->jsonBody($operation);
+        if ($body === null) {
             throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body for a media type mismatch', $operation->key));
         }
         $content = $operation->requestBody['content'] ?? null;
@@ -90,7 +91,7 @@ final readonly class BodyTargets
             $invalid .= '-x';
         }
 
-        return ['invalid' => $invalid];
+        return ['mediaType' => $body['mediaType'], 'invalid' => $invalid];
     }
 
     /**
