@@ -172,10 +172,15 @@ parameter with a wire value just outside its `minimum`/`maximum` bound
 value whose length falls just outside its `minLength`/`maxLength` bound and
 records `misuse.kind = 'length'`.
 `formatMismatchForOperation()` replaces one `string` parameter with a
-fixed witness that provably violates its `format` (`uuid`, `email`, `ipv4`,
-`uri`, `uri-reference`, `date`, `date-time`) and records
-`misuse.kind = 'format'`; `url` is excluded because the validation backend does
-not assert it.
+fixed witness that provably violates its `format` and records
+`misuse.kind = 'format'`. A witness is held for seven formats — `uuid`,
+`email`, `ipv4`, `uri`, `uri-reference`, `date`, `date-time` — and `url` is
+deliberately not among them, because the validation backend does not assert
+it. Any other format (`hostname`, `ipv6`, `duration`, a custom one) has no
+witness and contributes no case: the refusal names it, so a constraint going
+untested for want of a witness here is visible rather than silent, and the
+right response is an issue on this repository rather than an edit to the
+document.
 `patternMismatchForOperation()` replaces one `string` parameter with a
 searched wire value that provably fails its `pattern` and records
 `misuse.kind = 'pattern'`. The pattern itself is the oracle: bounded candidates

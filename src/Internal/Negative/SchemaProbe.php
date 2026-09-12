@@ -25,7 +25,7 @@ final readonly class SchemaProbe
      * validator. `url` is absent deliberately: the backend accepts any string
      * for it, so a format mismatch cannot be promised.
      */
-    private const array FORMAT_WITNESSES = [
+    public const array FORMAT_WITNESSES = [
         'uuid' => 'not-a-uuid',
         'email' => 'not-an-email',
         'ipv4' => 'not-an-ipv4',
@@ -168,15 +168,58 @@ final readonly class SchemaProbe
      */
     public function formatWitnesses(array $schema): array
     {
-        if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
-            return [];
-        }
         if (!isset($schema['format']) || !is_string($schema['format'])) {
             return [];
         }
         $witness = self::FORMAT_WITNESSES[$schema['format']] ?? null;
+        if ($witness === null || !in_array('string', $this->declaredTypes($schema), strict: true)) {
+            return [];
+        }
 
-        return $witness === null ? [] : [$witness];
+        return [$witness];
+    }
+
+    /**
+     * The declared `format` this package holds no witness for, or `null` when
+     * the schema declares none or declares one it can disprove.
+     *
+     * @param array<string, mixed> $schema
+     * @return non-empty-string|null
+     */
+    public function unsupportedFormat(array $schema): ?string
+    {
+        $format = $schema['format'] ?? null;
+        if (!is_string($format) || $format === '' || array_key_exists($format, self::FORMAT_WITNESSES)) {
+            return null;
+        }
+
+        return $format;
+    }
+
+    /**
+     * Why no `format` witness is offered, or `null` when one is.
+     *
+     * The three causes are opposite situations for a document owner. A schema
+     * that declares no format is not a gap. One that declares a format this
+     * package holds no witness for is a gap, and the right response to it is
+     * to say so here rather than to edit the schema — which a bare `null`
+     * could never tell anyone (#103).
+     *
+     * @param array<string, mixed> $schema
+     */
+    public function formatRefusal(array $schema): ?FormatRefusal
+    {
+        if (!isset($schema['format']) || !is_string($schema['format'])) {
+            return FormatRefusal::NotDeclared;
+        }
+        if (!array_key_exists($schema['format'], self::FORMAT_WITNESSES)) {
+            return FormatRefusal::Unsupported;
+        }
+        if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
+            return FormatRefusal::NotAString;
+        }
+
+        return null;
     }
 
     /**

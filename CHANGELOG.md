@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** A `format` refusal names its cause. The probe answered every
+  refusal with a bare `null`, which reads the same whether the schema declares
+  no format at all — nothing to do there — or declares one this package holds
+  no witness for. Those call for opposite responses, and only the second is a
+  gap here. The refusal now names the formats no witness is held for, and the
+  seven that are supported are documented rather than discoverable only by
+  reading `private const`.
+
 - **Changed.** A value category's witness is verified rather than asserted. A
   candidate is kept only when the property's schema rejects it and the same
   schema without the category's keywords accepts it, checked through

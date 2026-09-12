@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
+use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\FormatRefusal;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
+use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Property;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -21,6 +26,8 @@ use Testo\Test;
 
 #[Test]
 #[Covers(WitnessCheck::class)]
+#[Covers(FormatRefusal::class)]
+#[Covers(ParameterTargets::class)]
 final class WitnessCheckTest
 {
     private WitnessCheck $check;
@@ -81,6 +88,96 @@ final class WitnessCheckTest
         $schema = ['type' => 'array', 'maxItems' => 1, 'items' => ['type' => 'object', 'required' => ['id'], 'properties' => ['id' => ['type' => 'integer']]]];
 
         Assert::true($this->check->discriminates([['id' => 1], ['id' => 2]], $schema, 'length', SchemaDialect::OpenApi31, SchemaDirection::Request));
+    }
+
+    /**
+     * A refusal used to read the same whether the schema declared no format
+     * at all or declared one this package holds no witness for — opposite
+     * situations for a document owner, since the second is a gap here rather
+     * than in the document (#103).
+     */
+    #[DataProvider('formatRefusalProvider')]
+    public function aFormatRefusalNamesItsCause(array $schema, ?FormatRefusal $expected): void
+    {
+        Assert::same((new SchemaProbe())->formatRefusal($schema), $expected);
+    }
+
+    public static function formatRefusalProvider(): iterable
+    {
+        yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
+        yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], FormatRefusal::Unsupported];
+        yield 'url is deliberately unsupported' => [['type' => 'string', 'format' => 'url'], FormatRefusal::Unsupported];
+        yield 'supported format on a non-string' => [['type' => 'integer', 'format' => 'int64'], FormatRefusal::Unsupported];
+        yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
+        yield 'no refusal' => [['type' => 'string', 'format' => 'email'], null];
+        yield 'no refusal beside a length bound' => [['type' => 'string', 'format' => 'email', 'maxLength' => 255], null];
+    }
+
+    /**
+     * And the refusal is observable where a user meets it: the exception that
+     * says no format case could be built names the formats no witness is held
+     * for, so the right response — an issue here, not an edit to the document
+     * — is visible without reading the source.
+     */
+    public function anUnsupportedFormatIsNamedInTheRefusal(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
+            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'hostname'], 'specPointer' => '#/h'],
+            ['name' => 'when', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'duration'], 'specPointer' => '#/w'],
+        ]);
+
+        try {
+            (new ParameterTargets())->formatMismatch($operation);
+        } catch (UnsupportedGeneration $exception) {
+            Assert::string($exception->getMessage())->contains('no witness is held for format "hostname", "duration"');
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected a refusal naming the unsupported formats');
+    }
+
+    /**
+     * And only that refusal: a category that has nothing to do with formats
+     * says nothing about them.
+     */
+    public function onlyAFormatRefusalNamesFormats(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
+            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'hostname'], 'specPointer' => '#/h'],
+        ]);
+
+        try {
+            (new ParameterTargets())->boundaryMismatch($operation);
+        } catch (UnsupportedGeneration $exception) {
+            Assert::string($exception->getMessage())->contains('has no numeric parameter with a constructible boundary mismatch');
+            Assert::false(str_contains($exception->getMessage(), 'no witness is held'));
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected a boundary refusal');
+    }
+
+    /** A supported format is not named: it is disprovable, so nothing is skipped for it. */
+    public function aSupportedFormatIsNotNamedAsMissing(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
+            ['name' => 'when', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'integer', 'format' => 'date'], 'specPointer' => '#/w'],
+        ]);
+
+        try {
+            (new ParameterTargets())->formatMismatch($operation);
+        } catch (UnsupportedGeneration $exception) {
+            // `date` is supported; it is the integer type that makes the
+            // witness inapplicable, and that is not a gap in this package.
+            Assert::false(str_contains($exception->getMessage(), 'no witness is held'));
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected a format refusal');
     }
 
     /** Repeating a question answers it identically; the memo is not a cache that forgets. */

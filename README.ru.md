@@ -173,10 +173,14 @@ $credentials = new Credentials(
 значением с длиной сразу за границей `minLength`/`maxLength` и записывает
 `misuse.kind = 'length'`.
 `formatMismatchForOperation()` заменяет один string-параметр
-фиксированным значением, доказуемо нарушающим его `format` (`uuid`, `email`,
-`ipv4`, `uri`, `uri-reference`, `date`, `date-time`), и записывает
-`misuse.kind = 'format'`; `url` исключён — validation backend его не
-ассертит.
+фиксированным значением, доказуемо нарушающим его `format`, и записывает
+`misuse.kind = 'format'`. Witness есть для семи форматов — `uuid`, `email`,
+`ipv4`, `uri`, `uri-reference`, `date`, `date-time`; `url` среди них
+сознательно нет, потому что validation backend его не ассертит. Любой другой
+формат (`hostname`, `ipv6`, `duration`, собственный) witness'а не имеет и
+случая не даёт: отказ называет его по имени, так что ограничение, оставшееся
+непроверенным из-за отсутствия witness'а, видно, а не молчит, — и правильный
+ответ на это issue в этом репозитории, а не правка документа.
 `patternMismatchForOperation()` заменяет один string-параметр
 найденным поиском значением, доказуемо нарушающим его `pattern`, и записывает
 `misuse.kind = 'pattern'`. Оракул — сам pattern: ограниченные кандидаты

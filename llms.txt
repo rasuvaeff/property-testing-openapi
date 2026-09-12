@@ -81,7 +81,10 @@ Public API:
 - `NegativeRequestCaseArbitrary::formatMismatchForOperation(Operation)`
   replaces one string parameter with a fixed witness violating its
   `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
-  `misuse.kind = 'format'`; `url` is not asserted by the backend and is skipped.
+  `misuse.kind = 'format'`. Witnesses are held for exactly seven formats:
+  `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `date`, `date-time`. `url`
+  is excluded deliberately (the backend does not assert it); any other format
+  has no witness, contributes no case, and is named in the refusal.
 - Every value category is verified, not asserted: a candidate witness is kept
   only when the property's schema rejects it and the same schema without the
   category's keywords accepts it, checked through `Contract::accepts()`. A
