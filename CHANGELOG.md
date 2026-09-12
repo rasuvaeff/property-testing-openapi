@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.13.0 — 2026-09-12
 
 - **Added.** `ContractSuite::negativeCoverage()` answers, per selected
   operation, which misuses the negative phase can reach and why it reaches
@@ -16,15 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   constructed. Sampling `negativeCases()` recovers part of the answer but
   cannot prove a negative and cannot say why one is missing, which the
   `skipped` reason does.
-
-- **Changed.** A `format` refusal names its cause. The probe answered every
-  refusal with a bare `null`, which reads the same whether the schema declares
-  no format at all — nothing to do there — or declares one this package holds
-  no witness for. Those call for opposite responses, and only the second is a
-  gap here. The refusal now names the formats no witness is held for, and the
-  seven that are supported are documented rather than discoverable only by
-  reading `private const`.
-
 - **Changed.** A value category's witness is verified rather than asserted. A
   candidate is kept only when the property's schema rejects it and the same
   schema without the category's keywords accepts it, checked through
@@ -33,6 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keywords are gone with it, and so is their inconsistency: they had different
   contents in each probe and none at all on the boundary probe, and relaxing
   one meant reasoning about keyword interactions by hand.
+- **Changed.** Every negative category draws its target among all the eligible
+  ones instead of always taking the first. Selection used to be deterministic
+  and position-based: an operation declaring `per_page` and `page`, both
+  bounded, had all of its `boundary` cases land on `per_page`, and swapping
+  the two entries in the document swapped which bound was ever checked —
+  drawing more did not help, because it re-drew the same target. The count
+  stayed healthy, so only a per-name breakdown revealed that one parameter
+  absorbed the whole category. The same applied to `missing-required` across
+  required components and to every body value category across a body's
+  properties. Targets are listed in declaration order and drawn with
+  `Gen::elements()`, so shrinking converges on the first eligible one and the
+  minimal counterexample is what the first-match search used to return.
+- **Changed.** A `format` refusal names its cause. The probe answered every
+  refusal with a bare `null`, which reads the same whether the schema declares
+  no format at all — nothing to do there — or declares one this package holds
+  no witness for. Those call for opposite responses, and only the second is a
+  gap here. The refusal now names the formats no witness is held for, and the
+  seven that are supported are documented rather than discoverable only by
+  reading `private const`.
+- **Changed.** `rasuvaeff/openapi-contract` is required at `^0.11`, for
+  `Contract::accepts()` and `Operation::$dialect`.
 - **Fixed.** A `format` declared beside a `minLength`/`maxLength` bound yields
   a `format` case whenever the fixed witness fits the window. `format: email`
   with `maxLength: 255`, the most common string shape in a real document, used
@@ -49,22 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of `null`s contradicts typed items as well as `maxItems`, so what the
   `length` category produced for an array body was never the pure length
   mismatch it recorded.
-- **Changed.** `rasuvaeff/openapi-contract` is required at `^0.11`, for
-  `Contract::accepts()` and `Operation::$dialect`.
-
-- **Changed.** Every negative category draws its target among all the
-  eligible ones instead of always taking the first. Selection used to be
-  deterministic and position-based: an operation declaring `per_page` and
-  `page`, both bounded, had all of its `boundary` cases land on `per_page`,
-  and swapping the two entries in the document swapped which bound was ever
-  checked — drawing more did not help, because it re-drew the same target. The
-  count stayed healthy, so only a per-name breakdown revealed that one
-  parameter absorbed the whole category. The same applied to `missing-required`
-  across required components and to every body value category across a body's
-  properties. Targets are listed in declaration order and drawn with
-  `Gen::elements()`, so shrinking converges on the first eligible one and the
-  minimal counterexample is what the first-match search used to return.
-
 - **Fixed.** A JSON body property whose name is a decimal integer — `"12"` —
   is a witness candidate on both sides. PHP stores such a name as an `int`
   array key, and `JsonBodyWitness::candidates()` kept only string keys, so the
