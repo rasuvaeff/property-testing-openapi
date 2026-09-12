@@ -131,10 +131,44 @@ final readonly class ParameterTargets
             }
         }
         if ($targets === []) {
-            throw new UnsupportedGeneration(sprintf('Operation "%s" %s', $operation->key, $missing));
+            throw new UnsupportedGeneration(sprintf('Operation "%s" %s%s', $operation->key, $missing, $this->unsupportedFormats($operation, $kind)));
         }
 
         return $targets;
+    }
+
+    /**
+     * Names the declared formats this package holds no witness for, when the
+     * `format` category found nothing.
+     *
+     * A refusal used to read the same whether the schemas declared no format
+     * at all or declared one that cannot be disproved here — and those call
+     * for opposite responses: the second is a gap in this package, and the
+     * right answer to it is an issue rather than an edit to the document
+     * (#103).
+     *
+     * @param Kind $kind
+     */
+    private function unsupportedFormats(Operation $operation, string $kind): string
+    {
+        if ($kind !== 'format') {
+            return '';
+        }
+        $unsupported = [];
+        foreach ($operation->parameters as $parameter) {
+            $format = $this->probe->unsupportedFormat($parameter['schema']);
+            if ($format !== null) {
+                $unsupported[$format] = true;
+            }
+        }
+        if ($unsupported === []) {
+            return '';
+        }
+
+        return sprintf('; no witness is held for format %s', implode(', ', array_map(
+            static fn(string $format): string => sprintf('"%s"', $format),
+            array_keys($unsupported),
+        )));
     }
 
     /**
