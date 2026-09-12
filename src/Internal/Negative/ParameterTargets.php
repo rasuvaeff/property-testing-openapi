@@ -10,6 +10,13 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 /**
  * Finds the parameter (or body) each misuse category invalidates.
  *
+ * Only {@see missingRequired()} asks whether a parameter is required: an
+ * optional one cannot be omitted into invalidity. Every other category
+ * writes an invalid value over a parameter the case then carries, and a
+ * present optional parameter is validated against its schema exactly as a
+ * required one is (#93) — so those categories consider every parameter, in
+ * declaration order.
+ *
  * @internal
  */
 final readonly class ParameterTargets
@@ -42,9 +49,6 @@ final readonly class ParameterTargets
     public function typeMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
             // A union admits every type it lists, so a witness built for one
             // member stays valid under the others: ["string", "null"] accepts
             // the string "not-null". Only a single declared type can be
@@ -67,7 +71,7 @@ final readonly class ParameterTargets
             return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible type mismatch', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no scalar parameter with a constructible type mismatch', $operation->key));
     }
 
     /**
@@ -76,7 +80,7 @@ final readonly class ParameterTargets
     public function enumMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required'] || !array_key_exists('enum', $parameter['schema'])) {
+            if (!array_key_exists('enum', $parameter['schema'])) {
                 continue;
             }
             $enum = $parameter['schema']['enum'];
@@ -91,14 +95,14 @@ final readonly class ParameterTargets
             return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible enum mismatch', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no scalar parameter with a constructible enum mismatch', $operation->key));
     }
 
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
     public function constMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required'] || !array_key_exists('const', $parameter['schema']) || !is_scalar($parameter['schema']['const'])) {
+            if (!array_key_exists('const', $parameter['schema']) || !is_scalar($parameter['schema']['const'])) {
                 continue;
             }
             $invalid = '__openapi_invalid_const__';
@@ -117,39 +121,33 @@ final readonly class ParameterTargets
             return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required scalar parameter with a constructible const mismatch', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no scalar parameter with a constructible const mismatch', $operation->key));
     }
 
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
     public function boundaryMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
             $invalid = $this->probe->outOfRangeValue($parameter['schema']);
             if ($invalid !== null) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
             }
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required numeric parameter with a constructible boundary mismatch', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no numeric parameter with a constructible boundary mismatch', $operation->key));
     }
 
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
     public function lengthMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
             $invalid = $this->probe->outOfLengthValue($parameter['schema']);
             if ($invalid !== null) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
             }
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible length mismatch', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no string parameter with a constructible length mismatch', $operation->key));
     }
 
     /**
@@ -162,9 +160,6 @@ final readonly class ParameterTargets
     public function patternMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
             $constraints = $this->probe->patternConstraints($parameter['schema']);
             if ($constraints === null) {
                 continue;
@@ -176,22 +171,19 @@ final readonly class ParameterTargets
             }
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a provable pattern counter-witness', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no string parameter with a provable pattern counter-witness', $operation->key));
     }
 
     /** @return array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} */
     public function formatMismatch(Operation $operation): array
     {
         foreach ($operation->parameters as $parameter) {
-            if (!$parameter['required']) {
-                continue;
-            }
             $invalid = $this->probe->formatWitness($parameter['schema']);
             if ($invalid !== null) {
                 return ['location' => $parameter['in'], 'name' => $parameter['name'], 'invalid' => $invalid];
             }
         }
 
-        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required string parameter with a constructible format mismatch', $operation->key));
+        throw new UnsupportedGeneration(sprintf('Operation "%s" has no string parameter with a constructible format mismatch', $operation->key));
     }
 }

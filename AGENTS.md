@@ -186,7 +186,7 @@ compares a string loosely equal to a number, so `==` decides the same); and the
 guard and carries an example would tell them apart, which the guard's own
 condition excludes).
 
-Response generation (`ResponseTargets`, `NegativeResponseCaseArbitrary`,
+Response generation (`ResponseTargets`, `JsonBodyWitness`, `NegativeResponseCaseArbitrary`,
 `ResponseCaseArbitrary`, `ResponseMaterializer`, `ResponseSchemas`) adds:
 witness-container and witness-value variations that the oracle cannot tell
 apart (any non-conforming value still falsifies the schema, so replacing an
@@ -206,6 +206,15 @@ unobservable in the rendered command because the `Cookie` header is redacted
 wholesale by the default header set (see issue #73); and `??=` versus `=` when
 `SecuritySelector` remembers the anonymous security alternative, since every
 anonymous alternative carries the same empty credentials.
+
+The body value categories (2026-09-12, #94) add: the `$body !== null` half of
+the JSON-alternative filter in `NegativeRequestCaseArbitrary::bodyWitness()`
+(the target is only ever found under a required body, so the case never
+carries `null`), and the non-empty-list guard in its mutation closure (a
+required JSON body whose valid value is a non-empty list has a scalar or
+array root, which takes the root branch and never reaches the guard). Both
+are typing guards on shapes the generator cannot produce, the class already
+recorded for `RequestCaseArbitrary` above.
 
 Casts of an array key to `string` are equivalent by the same rule the
 `DocumentExamples` paragraph above states, and are therefore not written:

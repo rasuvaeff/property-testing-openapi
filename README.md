@@ -154,27 +154,31 @@ $credentials = new Credentials(
 
 `NegativeRequestCaseArbitrary` provides constructive negative categories. The
 `forOperation()` arbitrary removes one required path, query, header, cookie, or
-body component and records `misuse.kind = 'missing-required'`. The
-`typeMismatchForOperation()` arbitrary replaces one required scalar
+body component and records `misuse.kind = 'missing-required'`. That is the
+only category that needs a required component: every value category below
+writes its invalid value into the case, so an optional parameter the valid
+case leaves out is present in the negative one and is judged by its schema
+exactly like a required one; parameters are considered in declaration order.
+The `typeMismatchForOperation()` arbitrary replaces one scalar
 `integer`/`number`/`boolean`/`null` parameter with a deliberately invalid wire
 value and records `misuse.kind = 'type'`. `enumMismatchForOperation()` similarly
-uses a value outside a required scalar enum and records `misuse.kind = 'enum'`,
-and `constMismatchForOperation()` uses a value different from a required scalar
+uses a value outside a scalar enum and records `misuse.kind = 'enum'`,
+and `constMismatchForOperation()` uses a value different from a scalar
 `const` and records `misuse.kind = 'const'`.
-`boundaryMismatchForOperation()` replaces one required `integer`/`number`
+`boundaryMismatchForOperation()` replaces one `integer`/`number`
 parameter with a wire value just outside its `minimum`/`maximum` bound
 (honouring boolean exclusive bounds) and records `misuse.kind = 'boundary'`.
-`lengthMismatchForOperation()` replaces one required `string` parameter with a
+`lengthMismatchForOperation()` replaces one `string` parameter with a
 value whose length falls just outside its `minLength`/`maxLength` bound and
 records `misuse.kind = 'length'`; parameters carrying `enum`, `const`,
 `pattern`, or `format` are skipped because a pure length mismatch cannot be
 promised there.
-`formatMismatchForOperation()` replaces one required `string` parameter with a
+`formatMismatchForOperation()` replaces one `string` parameter with a
 fixed witness that provably violates its `format` (`uuid`, `email`, `ipv4`,
 `uri`, `uri-reference`, `date`, `date-time`) and records
 `misuse.kind = 'format'`; `url` is excluded because the validation backend does
 not assert it.
-`patternMismatchForOperation()` replaces one required `string` parameter with a
+`patternMismatchForOperation()` replaces one `string` parameter with a
 searched wire value that provably fails its `pattern` and records
 `misuse.kind = 'pattern'`. The pattern itself is the oracle: bounded candidates
 (alphabet samples and mutations of an accepted value) are checked with
@@ -200,6 +204,19 @@ every valid case passes either way.
 `malformedJsonForOperation()` replaces the required JSON body with a raw
 malformed payload (`encoding: 'raw'`) under the declared media type and records
 `misuse.kind = 'json-syntax'`.
+The seven body value categories — `bodyTypeMismatchForOperation()`,
+`bodyEnumMismatchForOperation()`, `bodyConstMismatchForOperation()`,
+`bodyBoundaryMismatchForOperation()`, `bodyLengthMismatchForOperation()`,
+`bodyFormatMismatchForOperation()` and `bodyPatternMismatchForOperation()` —
+overwrite one top-level property of the required JSON body (or its scalar
+root, named `$`) with the witness its schema provably rejects, using the same
+witnesses as the parameter categories above (plus `minItems`/`maxItems` for
+arrays), and record the parameter kind with `misuse.location = 'body'` and
+the property name in `misuse.name`. The request-direction schema is searched,
+so a `readOnly` property is never targeted; properties are considered in
+declaration order; `nullable`/`not` schemas and type unions are skipped; and a
+body declared under several media types is mutated on its JSON alternative
+only. Nested properties are not reached yet.
 Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.

@@ -10,6 +10,7 @@ use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
@@ -28,6 +29,7 @@ use Testo\Test;
 #[Test]
 #[Covers(NegativeResponseCaseArbitrary::class)]
 #[Covers(ResponseTargets::class)]
+#[Covers(JsonBodyWitness::class)]
 final class NegativeResponseCaseArbitraryTest
 {
     #[DataProvider('categoryProvider')]

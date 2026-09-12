@@ -254,6 +254,13 @@ final class ContractSuite
             fn(): ArbitraryInterface => $this->negative->mediaTypeMismatchForOperation($operation),
             fn(): ArbitraryInterface => $this->negative->partContentTypeMismatchForOperation($operation),
             fn(): ArbitraryInterface => $this->negative->malformedJsonForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyTypeMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyEnumMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyConstMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyBoundaryMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyLengthMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyFormatMismatchForOperation($operation),
+            fn(): ArbitraryInterface => $this->negative->bodyPatternMismatchForOperation($operation),
         ];
 
         return ConstructibleCategories::anyOf($factories, sprintf('Operation "%s" supports no constructible negative case category', $operation->key));
