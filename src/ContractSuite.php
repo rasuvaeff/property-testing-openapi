@@ -33,6 +33,8 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
  *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
  * }
  *
+ * @psalm-import-type CoverageData from NegativeRequestCaseArbitrary
+ *
  * @api
  */
 final class ContractSuite
@@ -264,6 +266,46 @@ final class ContractSuite
         ];
 
         return ConstructibleCategories::anyOf($factories, sprintf('Operation "%s" supports no constructible negative case category', $operation->key));
+    }
+
+    /**
+     * What the negative phase covers for each selected operation, and why it
+     * covers nothing where it does not — computed from the document, without
+     * drawing a single case.
+     *
+     * A category is either constructible for an operation or silently absent,
+     * and until this existed nothing told the two apart. That matters most in
+     * the situation where someone is deciding whether a hand-written negative
+     * test is still needed: a green suite looks identical whether a category
+     * is generating and the application is correctly rejecting it, or the
+     * category was never constructed at all. Sampling `negativeCases()` and
+     * tallying `misuse` recovers part of the answer, but it cannot prove a
+     * negative and cannot say *why* a category is missing.
+     *
+     * `covered` lists one entry per `(kind, location, name)` the phase can
+     * reach; `skipped` carries the refusal each unreachable category would
+     * have raised, which names its cause — an unsupported `format`, a
+     * wildcard media type, a body no witness can contradict.
+     *
+     * It is meant to be asserted:
+     *
+     * ```php
+     * Assert::same($suite->negativeCoverage(), $expected);
+     * ```
+     *
+     * so a constraint that stops being exercised fails the suite instead of
+     * going quiet (#101).
+     *
+     * @return array<string, CoverageData>
+     */
+    public function negativeCoverage(): array
+    {
+        $coverage = [];
+        foreach ($this->operationKeys() as $key) {
+            $coverage[$key] = $this->negative->coverageForOperation($this->contract->operation($key));
+        }
+
+        return $coverage;
     }
 
     /**

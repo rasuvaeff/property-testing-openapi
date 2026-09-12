@@ -19,6 +19,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
+use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
@@ -40,6 +41,7 @@ use function Rasuvaeff\Understudy\verify;
 #[Covers(ContractSuite::class)]
 #[Covers(CheckFailed::class)]
 #[Covers(SuiteConfigurationError::class)]
+#[Covers(NegativeRequestCaseArbitrary::class)]
 final class ContractSuiteTest
 {
     public function defaultSelectionIsEmpty(): void
@@ -537,6 +539,82 @@ final class ContractSuiteTest
         $suite->checkValid('pets.get', $suite->validCases('pets.get')->generate(new Random(11))->value);
 
         Assert::true(actual: true);
+    }
+
+    /**
+     * The coverage listing is computed from the document, not sampled: it
+     * says which `(kind, location, name)` the negative phase can reach and
+     * why it reaches nothing where it cannot. A green suite looks identical
+     * whether a category is generating or was never constructed, which is
+     * what made two hand-written negative tests deletable on a false premise
+     * (#101).
+     */
+    public function negativeCoverageListsWhatThePhaseReaches(): void
+    {
+        $factory = new Psr17Factory();
+        $coverage = ContractSuite::fromContract(ZooContracts::contract(), $factory, $factory)->operations(['verified.get'])->negativeCoverage();
+
+        Assert::same(array_keys($coverage), ['verified.get']);
+        Assert::same($coverage['verified.get']['covered'], [
+            ['kind' => 'missing-required', 'location' => 'query', 'name' => 'email'],
+            ['kind' => 'missing-required', 'location' => 'query', 'name' => 'grade'],
+            ['kind' => 'enum', 'location' => 'query', 'name' => 'grade'],
+            ['kind' => 'format', 'location' => 'query', 'name' => 'email'],
+        ]);
+
+        // Nothing was drawn to learn that, and the categories the operation
+        // does not admit each carry the refusal that explains them.
+        $skipped = [];
+        foreach ($coverage['verified.get']['skipped'] as $entry) {
+            $skipped[] = $entry['side'] . ':' . $entry['kind'];
+        }
+
+        // A kind names one category over the parameters and another over the
+        // body, so the side is part of the identity: `format` is reached over
+        // the parameters here and unreachable over a body this operation does
+        // not declare.
+        Assert::true(in_array('parameter:boundary', $skipped, strict: true));
+        Assert::false(in_array('parameter:format', $skipped, strict: true));
+        Assert::true(in_array('body:format', $skipped, strict: true));
+    }
+
+    /**
+     * An operation that admits no misuse at all reports an empty `covered`
+     * rather than raising — a document owner asking what is covered is asking
+     * precisely about that case.
+     */
+    public function negativeCoverageIsEmptyForAnOperationWithNoMisuse(): void
+    {
+        $factory = new Psr17Factory();
+        $coverage = ContractSuite::fromContract(ZooContracts::contract(), $factory, $factory)->operations(['health.get'])->negativeCoverage();
+
+        Assert::same($coverage['health.get']['covered'], []);
+        Assert::same($coverage['health.get']['skipped'][0]['kind'], 'missing-required');
+        Assert::string($coverage['health.get']['skipped'][0]['reason'])->contains('no required request component to invalidate');
+    }
+
+    /**
+     * A format this package holds no witness for is named in the reason, so
+     * the constraint going untested is visible rather than silent (#103).
+     */
+    public function negativeCoverageNamesAnUnsupportedFormat(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'info' => ['title' => 'Hosts', 'version' => '1.0.0'],
+            'paths' => ['/hosts' => ['get' => [
+                'operationId' => 'hosts.get',
+                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'hostname']]],
+                'responses' => ['204' => ['description' => 'ok']],
+            ]]],
+        ]);
+        $factory = new Psr17Factory();
+        $coverage = ContractSuite::fromContract($contract, $factory, $factory)->operations(['hosts.get'])->negativeCoverage();
+
+        $format = array_values(array_filter($coverage['hosts.get']['skipped'], static fn(array $entry): bool => $entry['kind'] === 'format' && $entry['side'] === 'parameter'));
+
+        Assert::same(count($format), 1);
+        Assert::string($format[0]['reason'])->contains('no witness is held for format "hostname"');
     }
 
     /**

@@ -409,6 +409,48 @@ use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
 ```
 
+### Покрытие негативной фазы
+
+`negativeCoverage()` отвечает по каждой выбранной операции, какие misuse
+негативная фаза способна построить и почему не строит там, где не строит.
+Ответ вычисляется из документа — ничего не генерируется.
+
+```php
+$suite->negativeCoverage();
+// [
+//   'verified.get' => [
+//     'covered' => [
+//       ['kind' => 'missing-required', 'location' => 'query', 'name' => 'email'],
+//       ['kind' => 'enum',             'location' => 'query', 'name' => 'grade'],
+//       ['kind' => 'format',           'location' => 'query', 'name' => 'email'],
+//     ],
+//     'skipped' => [
+//       ['kind' => 'boundary', 'side' => 'parameter',
+//        'reason' => 'Operation "verified.get" has no numeric parameter with a constructible boundary mismatch'],
+//     ],
+//   ],
+// ]
+```
+
+Категорию определяет пара «kind + сторона» (`request`, `parameter`, `body`):
+`format` — это одна категория над параметрами и другая над телом.
+
+Это нужно потому, что зелёный сьют выглядит одинаково и когда категория
+генерируется, а приложение её корректно отвергает, и когда категория никогда
+не строилась, — именно так ручной тест «`per_page > maximum` → 422» удаляется
+под предлогом «негативная фаза строит этот случай сама», когда она его не
+строит. Заассертите перечень — и предпосылка перестанет быть невидимой:
+
+```php
+Assert::same($suite->negativeCoverage(), $expected);
+```
+
+Сэмплирование `negativeCases()` с подсчётом `misuse` восстанавливает часть
+того же ответа, но не может доказать отрицание — категория, не встретившаяся
+за 300 прогонов, может появиться на 10 000, — и не говорит, почему её нет.
+Причина в `skipped` говорит: неподдерживаемый `format`, wildcard-медиатип,
+тело, которому нечем противоречить.
+
 ## Генерация responses
 
 Для тестирования API-клиента без живого трафика пакет генерирует ответы,
