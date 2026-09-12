@@ -14,6 +14,13 @@ final readonly class SchemaProbe
     public const int MAX_CONSTRUCTED_LENGTH = 4096;
 
     /**
+     * How long an alternative value may get before the search gives up. A
+     * schema whose every short value is enumerated is a schema no short
+     * witness contradicts, and a long one says nothing clearer.
+     */
+    private const int MAX_ALTERNATIVE_LENGTH = 24;
+
+    /**
      * Fixed wire values that provably violate their format under the core
      * validator. `url` is absent deliberately: the backend accepts any string
      * for it, so a format mismatch cannot be promised.
@@ -56,99 +63,169 @@ final readonly class SchemaProbe
         return true;
     }
 
-    /** @param array<string, mixed> $schema */
-    public function outOfRangeValue(array $schema): ?string
+    /**
+     * The values just outside each declared bound, typed as the schema
+     * declares them.
+     *
+     * Both sides are offered rather than only the first that exists: a bound
+     * the schema shares with another keyword may yield no discriminating
+     * witness while the other does.
+     *
+     * @param array<string, mixed> $schema
+     * @return list<int|float>
+     */
+    public function outOfRangeValues(array $schema): array
     {
         $types = $this->declaredTypes($schema);
         $integer = in_array('integer', $types, strict: true);
         if (!$integer && !in_array('number', $types, strict: true)) {
-            return null;
+            return [];
         }
+        $candidates = [];
 
         $minimum = $this->numericBound($schema['minimum'] ?? null);
         if ($minimum !== null) {
             if (($schema['exclusiveMinimum'] ?? false) === true) {
-                return $this->numericWire($minimum, $integer);
-            }
-            $below = is_int($minimum) ? ($minimum > PHP_INT_MIN ? $minimum - 1 : null) : $minimum - 1.0;
-            if ($below !== null && $below < $minimum) {
-                return $this->numericWire($below, $integer);
+                $candidates[] = $minimum;
+            } else {
+                $below = is_int($minimum) ? ($minimum > PHP_INT_MIN ? $minimum - 1 : null) : $minimum - 1.0;
+                if ($below !== null && $below < $minimum) {
+                    $candidates[] = $below;
+                }
             }
         }
 
         $maximum = $this->numericBound($schema['maximum'] ?? null);
         if ($maximum !== null) {
             if (($schema['exclusiveMaximum'] ?? false) === true) {
-                return $this->numericWire($maximum, $integer);
-            }
-            $above = is_int($maximum) ? ($maximum < PHP_INT_MAX ? $maximum + 1 : null) : $maximum + 1.0;
-            if ($above !== null && $above > $maximum) {
-                return $this->numericWire($above, $integer);
+                $candidates[] = $maximum;
+            } else {
+                $above = is_int($maximum) ? ($maximum < PHP_INT_MAX ? $maximum + 1 : null) : $maximum + 1.0;
+                if ($above !== null && $above > $maximum) {
+                    $candidates[] = $above;
+                }
             }
         }
 
-        return null;
+        $typed = [];
+        foreach ($candidates as $candidate) {
+            // An integer-typed value must stay an integer on the wire, so a
+            // float bound yields no candidate for one.
+            if ($integer && !is_int($candidate)) {
+                continue;
+            }
+            $typed[] = $integer ? $candidate : (float) $candidate;
+        }
+
+        return $typed;
     }
 
     /**
-     * A schema with enum, const, pattern, or format cannot promise a pure
-     * length mismatch, and a string below `minLength: 1` would materialize as
-     * an empty component, so those parameters are skipped.
+     * Strings just outside each declared length bound.
+     *
+     * A string below `minLength: 1` would materialize as an empty component
+     * and change route matching rather than fail the bound, so it is not
+     * offered. No keyword is excluded: whether such a string trips something
+     * other than the length is decided by {@see WitnessCheck}, not guessed
+     * from the schema's other keywords (#102).
      *
      * @param array<string, mixed> $schema
+     * @return list<string>
      */
-    public function outOfLengthValue(array $schema): ?string
+    public function outOfLengthValues(array $schema): array
     {
         if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
-            return null;
+            return [];
         }
-        foreach (['enum', 'const', 'pattern', 'format'] as $keyword) {
-            if (array_key_exists($keyword, $schema)) {
-                return null;
-            }
-        }
+        $candidates = [];
 
         $minLength = $this->intBound($schema['minLength'] ?? null);
         if ($minLength !== null && $minLength >= 2 && $minLength <= self::MAX_CONSTRUCTED_LENGTH) {
-            return str_repeat('a', $minLength - 1);
+            $candidates[] = str_repeat('a', $minLength - 1);
         }
 
         $maxLength = $this->intBound($schema['maxLength'] ?? null);
         if ($maxLength !== null && $maxLength >= 0 && $maxLength < self::MAX_CONSTRUCTED_LENGTH) {
-            return str_repeat('a', $maxLength + 1);
+            $candidates[] = str_repeat('a', $maxLength + 1);
         }
 
-        return null;
+        return $candidates;
     }
 
     /**
-     * Other constraining keywords are excluded so the witness cannot trip an
-     * unrelated assertion instead of the format.
+     * The fixed wire value that contradicts the declared `format`, if this
+     * probe knows one.
+     *
+     * No keyword is excluded. The witnesses are short fixed strings — the
+     * longest, `'not-a-date-time'`, is fifteen characters — so under a
+     * realistic `maxLength` one provably violates the format alone, and the
+     * old refusal on `minLength`/`maxLength` cost every `format: email` with
+     * a length bound its case (#100). Whether the witness trips anything else
+     * is decided by {@see WitnessCheck}.
      *
      * @param array<string, mixed> $schema
+     * @return list<string>
      */
-    public function formatWitness(array $schema): ?string
+    public function formatWitnesses(array $schema): array
     {
         if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
-            return null;
-        }
-        foreach (['enum', 'const', 'pattern', 'minLength', 'maxLength'] as $keyword) {
-            if (array_key_exists($keyword, $schema)) {
-                return null;
-            }
+            return [];
         }
         if (!isset($schema['format']) || !is_string($schema['format'])) {
-            return null;
+            return [];
         }
+        $witness = self::FORMAT_WITNESSES[$schema['format']] ?? null;
 
-        return self::FORMAT_WITNESSES[$schema['format']] ?? null;
+        return $witness === null ? [] : [$witness];
     }
 
     /**
-     * A pattern witness can be promised only when the pattern is the sole
-     * content assertion: enum, const, and format could reject the witness for
-     * an unrelated reason. The returned length window keeps the witness from
-     * tripping `minLength`/`maxLength` instead of the pattern.
+     * Values of the schema's declared type that are none of the forbidden
+     * ones, shortest first, for the categories that contradict a finite set
+     * (`enum`, `const`).
+     *
+     * A fixed marker string cannot contradict an `enum` of integers without
+     * also contradicting the type, and one longer than `maxLength` cannot
+     * contradict a string enum without also breaking the length. Offering
+     * typed alternatives is what keeps those two categories constructible
+     * once the witness has to earn its name (#102).
+     *
+     * @param array<string, mixed> $schema
+     * @param list<mixed> $forbidden
+     * @return list<int|float|bool|string>
+     */
+    public function alternatives(array $schema, array $forbidden): array
+    {
+        $types = $this->declaredTypes($schema);
+        $candidates = [];
+
+        if (in_array('integer', $types, strict: true) || in_array('number', $types, strict: true)) {
+            $integer = in_array('integer', $types, strict: true);
+            foreach ([0, 1, -1, 2, 7, 42, -99] as $number) {
+                $candidates[] = $integer ? $number : (float) $number;
+            }
+        } elseif (in_array('boolean', $types, strict: true)) {
+            $candidates = [false, true];
+        } else {
+            $minLength = max($this->intBound($schema['minLength'] ?? null) ?? 0, 0);
+            $maxLength = $this->intBound($schema['maxLength'] ?? null) ?? self::MAX_ALTERNATIVE_LENGTH;
+            if ($maxLength === 0) {
+                $candidates[] = '';
+            }
+            for ($length = max($minLength, 1); $length <= min($maxLength, self::MAX_ALTERNATIVE_LENGTH); ++$length) {
+                $candidates[] = str_repeat('a', $length);
+                $candidates[] = str_repeat('z', $length);
+            }
+        }
+
+        return array_values(array_filter($candidates, static fn(mixed $candidate): bool => !in_array($candidate, $forbidden, strict: false)));
+    }
+
+    /**
+     * The pattern to contradict and the length window a witness for it must
+     * stay inside, so the witness fails the pattern rather than a length
+     * bound. Whether it also trips `enum`, `const` or `format` is decided by
+     * {@see WitnessCheck} rather than refused here (#102).
      *
      * @param array<string, mixed> $schema
      * @return array{pattern: non-empty-string, minLength: int<0, max>, maxLength: int<0, max>}|null
@@ -157,11 +234,6 @@ final readonly class SchemaProbe
     {
         if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
             return null;
-        }
-        foreach (['enum', 'const', 'format'] as $keyword) {
-            if (array_key_exists($keyword, $schema)) {
-                return null;
-            }
         }
         $pattern = $schema['pattern'] ?? null;
         if (!is_string($pattern) || $pattern === '') {
@@ -191,18 +263,5 @@ final readonly class SchemaProbe
         }
 
         return null;
-    }
-
-    /**
-     * An integer-typed parameter must stay an integer on the wire, so a float
-     * bound cannot produce a pure boundary mismatch for it.
-     */
-    private function numericWire(int|float $value, bool $integer): ?string
-    {
-        if ($integer && !is_int($value)) {
-            return null;
-        }
-
-        return (string) $value;
     }
 }

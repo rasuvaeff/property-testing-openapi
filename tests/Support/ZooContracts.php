@@ -27,7 +27,7 @@ final class ZooContracts
         'strings.get', 'enum.get', 'users.create', 'merged.create', 'extras.create',
         'nested.create', 'health.get', 'version.get', 'files.get',
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
-        'encoded.create', 'mixed.create', 'numeric.create', 'headers.get',
+        'encoded.create', 'mixed.create', 'numeric.create', 'headers.get', 'verified.get',
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
     ];
 
@@ -279,6 +279,20 @@ final class ZooContracts
                             '12' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9],
                         ],
                     ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // The two shapes a hand-maintained keyword list got wrong: a
+                // format beside a length bound had neither category, and an
+                // integer enum was contradicted by a string that broke the
+                // type as well (#100, #102).
+                '/verified' => ['get' => [
+                    'operationId' => 'verified.get',
+                    'parameters' => [
+                        ['name' => 'email', 'in' => 'query', 'required' => true,
+                            'schema' => ['type' => 'string', 'format' => 'email', 'maxLength' => 255]],
+                        ['name' => 'grade', 'in' => 'query', 'required' => true,
+                            'schema' => ['type' => 'integer', 'enum' => [1, 2, 3]]],
+                    ],
                     'responses' => ['204' => []],
                 ]],
                 // A header field value is read exactly as sent, so what the

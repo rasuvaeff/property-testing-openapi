@@ -303,7 +303,9 @@ final class NegativeResponseCaseArbitraryTest
         $case = $negative->enumMismatchForOperation($operation, 200)->generate(new Random(1))->value;
 
         Assert::same($case['misuse'], ['kind' => 'enum', 'location' => 'body', 'name' => 'k']);
-        Assert::same($case['body']['value']['k'] ?? null, '__openapi_misuse__');
+        // The marker string would contradict `type: integer` as well as the
+        // enum, so the check walks past it to a typed alternative (#102).
+        Assert::same($case['body']['value']['k'] ?? null, 0);
     }
 
     public function lengthWitnessesCoverStringsAndArrays(): void
@@ -325,13 +327,19 @@ final class NegativeResponseCaseArbitraryTest
         Assert::false($contract->validateResponse('op', (new ResponseMaterializer($factory, $factory))->materialize($contract->operation('op'), $case))->isValid());
     }
 
+    /**
+     * A string const is contradicted by appending to it, which keeps the
+     * value a string and breaks nothing else. A non-string one cannot be: the
+     * marker contradicts the type too, so the check walks past it to a typed
+     * alternative (#102).
+     */
     public function constWitnessAppendsToStringsAndReplacesOtherScalars(): void
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['type' => 'object', 'required' => ['n'], 'properties' => ['n' => ['type' => 'integer', 'const' => 7]]]]]]]);
 
         $case = (new NegativeResponseCaseArbitrary())->constMismatchForOperation($operation, 200)->generate(new Random(1))->value;
 
-        Assert::same($case['body']['value']['n'] ?? null, '__openapi_misuse__');
+        Assert::same($case['body']['value']['n'] ?? null, 0);
 
         $case = (new NegativeResponseCaseArbitrary())->constMismatchForOperation(ResponseContracts::pets()->operation('pets.get'), 200)->generate(new Random(1))->value;
 
@@ -354,10 +362,10 @@ final class NegativeResponseCaseArbitraryTest
         Assert::same($targets->bodyWitness($body(['p' => ['type' => 'number', 'maximum' => 5]]), 200, 'boundary'), [['name' => 'p', 'invalid' => 6.0]]);
         Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'maxLength' => 3]]), 200, 'length'), [['name' => 'p', 'invalid' => 'aaaa']]);
         Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => []]]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 0, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => [null]]]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => [null, null, null]]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 0, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => [0]]]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'integer']]]), 200, 'length'), [['name' => 'p', 'invalid' => [0, 0, 0]]]);
         Assert::same($targets->bodyWitness($body(['p' => ['type' => 'string', 'enum' => ['a']]]), 200, 'enum'), [['name' => 'p', 'invalid' => '__openapi_misuse__']]);
-        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'const' => 7]]), 200, 'const'), [['name' => 'p', 'invalid' => '__openapi_misuse__']]);
+        Assert::same($targets->bodyWitness($body(['p' => ['type' => 'integer', 'const' => 7]]), 200, 'const'), [['name' => 'p', 'invalid' => 0]]);
 
         $pattern = $targets->bodyWitness($body(['p' => ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']]), 200, 'pattern')[0];
         Assert::same($pattern['name'], 'p');

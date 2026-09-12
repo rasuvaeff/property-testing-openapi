@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
@@ -133,7 +134,7 @@ final readonly class ResponseTargets
     public function bodyWitness(Operation $operation, int $status, string $kind): array
     {
         $schema = $this->requireJsonBody($operation, $status, $kind . ' mismatch')['schema'];
-        $targets = $this->witnesses->findAll($schema, $kind);
+        $targets = $this->witnesses->findAll($schema, $kind, $operation->dialect, SchemaDirection::Response);
         if ($targets !== []) {
             return $targets;
         }

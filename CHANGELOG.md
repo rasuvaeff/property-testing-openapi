@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed.** A value category's witness is verified rather than asserted. A
+  candidate is kept only when the property's schema rejects it and the same
+  schema without the category's keywords accepts it, checked through
+  `Contract::accepts()` — the rules that will judge the generated request, not
+  a second copy of them. The three hand-maintained lists of mutually-excluded
+  keywords are gone with it, and so is their inconsistency: they had different
+  contents in each probe and none at all on the boundary probe, and relaxing
+  one meant reasoning about keyword interactions by hand.
+- **Fixed.** A `format` declared beside a `minLength`/`maxLength` bound yields
+  a `format` case whenever the fixed witness fits the window. `format: email`
+  with `maxLength: 255`, the most common string shape in a real document, used
+  to get neither a `format` case nor a `length` one, because each probe
+  refused on the other's keyword; `'not-an-email'` is twelve characters and
+  provably violates only the format.
+- **Fixed.** `enum` and `const` offer typed alternatives, so an `enum` of
+  integers or a `const` beside a `maxLength` keeps its category. The single
+  marker string those categories used to write contradicts the type as well as
+  the enum, and is longer than a short string bound — which the verification
+  now catches, and which the alternatives answer.
+- **Fixed.** An over-long array witness is built from values the `items`
+  schema admits, drawn from the item schema when no fixed filler fits. A list
+  of `null`s contradicts typed items as well as `maxItems`, so what the
+  `length` category produced for an array body was never the pure length
+  mismatch it recorded.
+- **Changed.** `rasuvaeff/openapi-contract` is required at `^0.11`, for
+  `Contract::accepts()` and `Operation::$dialect`.
+
 - **Changed.** Every negative category draws its target among all the
   eligible ones instead of always taking the first. Selection used to be
   deterministic and position-based: an operation declaring `per_page` and

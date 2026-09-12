@@ -450,26 +450,32 @@ final class RequestCaseArbitraryTest
         Assert::false($contract->validateRequest($request)->isValid());
     }
 
+    /**
+     * Purity is verified, not guessed. A witness of `'aa'` under
+     * `minLength: 3, pattern: '^a+$'` matches the pattern, so it breaks the
+     * length alone and the category is constructible — the old keyword list
+     * refused it merely because a pattern was declared (#102).
+     */
+    public function lengthMismatchIsBuiltWhenTheWitnessOnlyBreaksTheLength(): void
+    {
+        $case = (new NegativeRequestCaseArbitrary())
+            ->lengthMismatchForOperation($this->queryParamOperation(['type' => 'string', 'minLength' => 3, 'pattern' => '^a+$']))
+            ->generate(new Random(5))->value;
+
+        Assert::same($case['query']['q'], 'aa');
+        Assert::same($case['misuse']['kind'], 'length');
+    }
+
+    /**
+     * And it is still refused when the witness would break something else:
+     * a string one over `maxLength: 3` cannot match `^a{1,3}$`, so no
+     * candidate contradicts the length alone.
+     */
     public function rejectsLengthMismatchWhenPurityCannotBePromised(): void
     {
         Expect::exception(UnsupportedGeneration::class);
-        $operation = new Operation(
-            key: 'patterned',
-            operationId: 'patterned',
-            method: 'GET',
-            path: '/patterned',
-            parameters: [[
-                'name' => 'code',
-                'in' => 'query',
-                'required' => true,
-                'style' => 'form',
-                'explode' => true,
-                'allowReserved' => false,
-                'schema' => ['type' => 'string', 'minLength' => 3, 'pattern' => '^a+$'],
-            ]],
-        );
 
-        (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($operation);
+        (new NegativeRequestCaseArbitrary())->lengthMismatchForOperation($this->queryParamOperation(['type' => 'string', 'maxLength' => 3, 'pattern' => '^a{1,3}$']));
     }
 
     public function formatMismatchIsInvalidBeforeTransport(): void
@@ -1315,9 +1321,11 @@ final class RequestCaseArbitraryTest
             }
         }
 
+        // The marker string would contradict the type as well as the const,
+        // so the check walks past it to a typed alternative (#102).
         $numeric = $this->queryParamOperation(['type' => 'integer', 'const' => 5]);
         $case = $negative->constMismatchForOperation($numeric)->generate(new Random(31))->value;
-        Assert::same($case['query']['q'], 'not-a-const-number');
+        Assert::same($case['query']['q'], '0');
     }
 
     public function boundaryMismatchHandlesNumberSchemasAndFloatBounds(): void
@@ -1385,19 +1393,35 @@ final class RequestCaseArbitraryTest
         }
     }
 
-    public function formatMismatchGuardsEveryConflictingKeyword(): void
+    /**
+     * A witness that would trip the enum as well as the format is refused —
+     * by validating it, not by noticing that an `enum` is declared.
+     */
+    public function formatMismatchIsRefusedWhenTheWitnessBreaksSomethingElse(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new NegativeRequestCaseArbitrary())->formatMismatchForOperation($this->queryParamOperation(['type' => 'string', 'format' => 'uuid', 'enum' => ['x']]));
+    }
+
+    /**
+     * A length bound alongside the format no longer costs the category its
+     * case. `'not-a-uuid'` is ten characters, so under any window that admits
+     * it the witness provably violates the format alone — the single most
+     * common string shape in a real document used to get neither a `format`
+     * case nor a `length` one (#100).
+     */
+    public function formatMismatchSurvivesALengthBound(): void
     {
         $negative = new NegativeRequestCaseArbitrary();
         foreach ([
-            ['type' => 'string', 'format' => 'uuid', 'enum' => ['x']],
             ['type' => 'string', 'format' => 'uuid', 'minLength' => 3],
+            ['type' => 'string', 'format' => 'email', 'maxLength' => 255],
         ] as $schema) {
-            try {
-                $negative->formatMismatchForOperation($this->queryParamOperation($schema));
-                Assert::true(actual: false, message: 'Expected unsupported generation exception');
-            } catch (UnsupportedGeneration) {
-                Assert::true(actual: true);
-            }
+            $case = $negative->formatMismatchForOperation($this->queryParamOperation($schema))->generate(new Random(3))->value;
+
+            Assert::same($case['misuse']['kind'], 'format');
+            Assert::true(in_array($case['query']['q'], ['not-a-uuid', 'not-an-email'], strict: true));
         }
     }
 

@@ -82,6 +82,13 @@ Public API:
   replaces one string parameter with a fixed witness violating its
   `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
   `misuse.kind = 'format'`; `url` is not asserted by the backend and is skipped.
+- Every value category is verified, not asserted: a candidate witness is kept
+  only when the property's schema rejects it and the same schema without the
+  category's keywords accepts it, checked through `Contract::accepts()`. A
+  category with no surviving candidate is not constructible for that target.
+  A `format` beside a `minLength`/`maxLength` bound therefore yields a case
+  whenever the fixed witness fits the window, and `enum`/`const` offer typed
+  alternatives so a marker string never contradicts the type as well.
 - `NegativeRequestCaseArbitrary::patternMismatchForOperation(Operation)`
   replaces one string parameter with a searched value failing its
   `pattern` (the pattern is the `preg_match()` oracle; bounded alphabet samples

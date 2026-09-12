@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
+use Rasuvaeff\OpenApiContract\SchemaDialect;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
+use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
+use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Random;
+
 /**
  * Builds, for one JSON body, the value a misuse category writes over a
  * top-level property (or over the scalar root, named `$`) so that the schema
@@ -18,7 +24,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
  * @internal
  *
  * @psalm-type Kind = 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'
- * @psalm-type Witness = int|float|string|list<null>
+ * @psalm-type Witness = int|float|bool|string|array<array-key, mixed>
  */
 final readonly class JsonBodyWitness
 {
@@ -27,6 +33,8 @@ final readonly class JsonBodyWitness
     public function __construct(
         private SchemaProbe $probe = new SchemaProbe(),
         private PatternWitness $patterns = new PatternWitness(),
+        private WitnessCheck $check = new WitnessCheck(),
+        private SchemaArbitraryCompiler $items = new SchemaArbitraryCompiler(),
     ) {}
 
     /**
@@ -38,20 +46,26 @@ final readonly class JsonBodyWitness
      * same way had one absorb every case of that category while the other was
      * never exercised (#99).
      *
+     * Each value is offered to {@see WitnessCheck}, which keeps it only if
+     * the property's schema rejects it and the schema without the category's
+     * keywords accepts it — so the witness earns the category it is recorded
+     * under rather than being assumed to (#102).
+     *
      * @param array<string, mixed> $schema
      * @param Kind $kind
      * @return list<array{name: string, invalid: Witness}>
      */
-    public function findAll(array $schema, string $kind): array
+    public function findAll(array $schema, string $kind, SchemaDialect $dialect, SchemaDirection $direction): array
     {
         $targets = [];
-        foreach ($this->candidates($schema) as $name => $candidate) {
-            $invalid = $this->witness($candidate, $kind);
+        foreach ($this->candidates($schema) as $name => $property) {
+            $invalid = $this->check->firstDiscriminating($this->witnesses($property, $kind), $property, $kind, $dialect, $direction);
             if ($invalid !== null) {
+                /** @var Witness $invalid */
                 // The name is cast back: PHP stores a decimal-integer
                 // property name (`"12"`) as an `int` key, and the misuse
                 // records what the document declares (#98).
-                $targets[] = ['name' => (string) $name, 'invalid' => $invalid['value']];
+                $targets[] = ['name' => (string) $name, 'invalid' => $invalid];
             }
         }
 
@@ -87,144 +101,160 @@ final readonly class JsonBodyWitness
     }
 
     /**
+     * The values worth offering for one property and category, in preference
+     * order.
+     *
      * @param array<string, mixed> $schema
      * @param Kind $kind
-     * @return null|array{value: Witness}
+     * @return list<Witness>
      */
-    private function witness(array $schema, string $kind): ?array
+    private function witnesses(array $schema, string $kind): array
     {
         if (($schema['nullable'] ?? false) === true || array_key_exists('not', $schema)) {
-            return null;
+            return [];
         }
         $types = array_values($this->probe->declaredTypes($schema));
 
         return match ($kind) {
-            'type' => $this->typeWitness($schema, $types),
-            'enum' => $this->enumWitness($schema),
-            'const' => $this->constWitness($schema),
-            'boundary' => $this->numericWitness($this->probe->outOfRangeValue($schema), $types),
+            'type' => $this->typeWitness($types),
+            'enum' => $this->finiteWitnesses($schema, 'enum'),
+            'const' => $this->finiteWitnesses($schema, 'const'),
+            'boundary' => $this->probe->outOfRangeValues($schema),
             'length' => $this->lengthWitness($schema, $types),
-            'format' => $this->stringWitness($this->probe->formatWitness($schema)),
+            'format' => $this->probe->formatWitnesses($schema),
             'pattern' => $this->patternWitness($schema),
         };
     }
 
     /**
-     * @param array<string, mixed> $schema
+     * A union admits every type it lists, so a witness built for one member
+     * stays valid under the others.
+     *
      * @param list<mixed> $types
-     * @return null|array{value: string|int}
+     * @return list<string|int>
      */
-    private function typeWitness(array $schema, array $types): ?array
+    private function typeWitness(array $types): array
     {
-        if (count($types) !== 1 || array_key_exists('enum', $schema) || array_key_exists('const', $schema)) {
-            return null;
+        if (count($types) !== 1) {
+            return [];
         }
 
         return match ($types[0]) {
-            'integer', 'number', 'boolean', 'null', 'array', 'object' => ['value' => 'not-a-' . $types[0]],
-            'string' => ['value' => 4096],
-            default => null,
+            'integer', 'number', 'boolean', 'null', 'array', 'object' => ['not-a-' . $types[0]],
+            'string' => [4096],
+            default => [],
         };
     }
 
     /**
+     * The marker the category has always produced first, then typed
+     * alternatives: a marker string cannot contradict an `enum` of integers
+     * without also contradicting the type, and one longer than `maxLength`
+     * cannot contradict a string enum without also breaking the length
+     * (#102).
+     *
      * @param array<string, mixed> $schema
-     * @return null|array{value: string}
+     * @param 'enum'|'const' $keyword
+     * @return list<int|float|bool|string>
      */
-    private function enumWitness(array $schema): ?array
+    private function finiteWitnesses(array $schema, string $keyword): array
     {
-        $enum = $schema['enum'] ?? null;
-        if (!is_array($enum) || $enum === [] || !$this->probe->isScalarEnum($enum)) {
-            return null;
+        if (!array_key_exists($keyword, $schema)) {
+            return [];
         }
-        $invalid = '__openapi_misuse__';
-        while (in_array($invalid, $enum, strict: true)) {
-            $invalid .= '_';
+        if ($keyword === 'enum') {
+            $enum = $schema['enum'];
+            if (!is_array($enum) || $enum === [] || !$this->probe->isScalarEnum($enum)) {
+                return [];
+            }
+            $forbidden = array_values($enum);
+            $marker = '__openapi_misuse__';
+        } else {
+            if (!is_scalar($schema['const']) && $schema['const'] !== null) {
+                return [];
+            }
+            $forbidden = [$schema['const']];
+            $marker = is_string($schema['const']) ? $schema['const'] . '__openapi_misuse__' : '__openapi_misuse__';
+        }
+        while (in_array($marker, $forbidden, strict: true)) {
+            $marker .= '_';
         }
 
-        return ['value' => $invalid];
+        return [$marker, ...$this->probe->alternatives($schema, $forbidden)];
     }
 
     /**
-     * @param array<string, mixed> $schema
-     * @return null|array{value: string}
-     */
-    private function constWitness(array $schema): ?array
-    {
-        if (!array_key_exists('const', $schema)) {
-            return null;
-        }
-        $const = $schema['const'];
-        if (!is_scalar($const) && $const !== null) {
-            return null;
-        }
-
-        return ['value' => is_string($const) ? $const . '__openapi_misuse__' : '__openapi_misuse__'];
-    }
-
-    /**
-     * @param list<mixed> $types
-     * @return null|array{value: int|float}
-     */
-    private function numericWitness(?string $wire, array $types): ?array
-    {
-        if ($wire === null) {
-            return null;
-        }
-
-        return ['value' => in_array('integer', $types, strict: true) ? (int) $wire : (float) $wire];
-    }
-
-    /**
+     * An over-long array is offered under several fillers. A list of `null`s
+     * is the shortest thing to build, but it contradicts `items` as well as
+     * `maxItems` whenever the items are typed — so it was never the pure
+     * length mismatch the category claims, and the check rejects it. One of
+     * the other fillers satisfies `items` for the common item types, and the
+     * check keeps that one (#102).
+     *
      * @param array<string, mixed> $schema
      * @param list<mixed> $types
-     * @return null|array{value: string|list<null>}
+     * @return list<string|array<array-key, mixed>>
      */
-    private function lengthWitness(array $schema, array $types): ?array
+    private function lengthWitness(array $schema, array $types): array
     {
-        $string = $this->probe->outOfLengthValue($schema);
-        if ($string !== null) {
-            return ['value' => $string];
-        }
+        $candidates = $this->probe->outOfLengthValues($schema);
         if (!in_array('array', $types, strict: true)) {
-            return null;
+            return $candidates;
         }
         $minItems = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
         if ($minItems >= 1) {
-            return ['value' => []];
+            $candidates[] = [];
         }
         $maxItems = is_int($schema['maxItems'] ?? null) ? (int) $schema['maxItems'] : 64;
         if ($maxItems >= 0 && $maxItems < 64) {
-            return ['value' => array_fill(0, $maxItems + 1, null)];
+            /** @var mixed $filler */
+            foreach ([null, 0, '', false, $this->validItem($schema)] as $filler) {
+                $candidates[] = array_fill(0, $maxItems + 1, $filler);
+            }
         }
 
-        return null;
+        return $candidates;
     }
 
-    /** @return null|array{value: string} */
-    private function stringWitness(?string $witness): ?array
+    /**
+     * One value the `items` schema admits, drawn at a fixed seed.
+     *
+     * A list of `null`s contradicts typed items, and the fixed fillers cover
+     * only scalars — so the most common list body there is, an array of
+     * objects, would have no provable length witness at all. Generating one
+     * item the same way the valid cases are generated keeps the category, and
+     * the check still decides whether the result is a pure length mismatch.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function validItem(array $schema): mixed
     {
-        return $witness === null ? null : ['value' => $witness];
+        $items = $schema['items'] ?? null;
+        if (!is_array($items) || array_is_list($items)) {
+            return null;
+        }
+
+        try {
+            /** @var array<string, mixed> $items */
+            return $this->items->compile($items)->generate(new Random(1))->value;
+        } catch (UnsupportedGeneration) {
+            return null;
+        }
     }
 
     /**
      * @param array<string, mixed> $schema
-     * @return null|array{value: string}
+     * @return list<string>
      */
-    private function patternWitness(array $schema): ?array
+    private function patternWitness(array $schema): array
     {
         $constraints = $this->probe->patternConstraints($schema);
         if ($constraints === null) {
-            return null;
+            return [];
         }
-        /** @var non-empty-string $pattern */
-        $pattern = $constraints['pattern'];
-        /** @var int<0, max> $minLength */
-        $minLength = $constraints['minLength'];
-        /** @var int<0, max> $maxLength */
-        $maxLength = $constraints['maxLength'];
+        $witness = $this->patterns->search($constraints['pattern'], $constraints['minLength'], $constraints['maxLength']);
 
-        return $this->stringWitness($this->patterns->search($pattern, $minLength, $maxLength));
+        return $witness === null ? [] : [$witness];
     }
 
     /** @param array<string, mixed> $schema */
