@@ -55,31 +55,35 @@ Public API:
   time; pass the selected credentials as the optional third argument to
   `RequestMaterializer::materialize`.
 - `NegativeRequestCaseArbitrary::forOperation(Operation)` removes one required
-  request component and records `misuse.kind = 'missing-required'`.
+  request component and records `misuse.kind = 'missing-required'`. It is the
+  only category that needs a required component: every value category below
+  writes its invalid value into the case, so an optional parameter the valid
+  case leaves out is present in the negative one and is judged by its schema
+  like a required one. Parameters are considered in declaration order.
 - `NegativeRequestCaseArbitrary::typeMismatchForOperation(Operation)` replaces
-  one required scalar integer/number/boolean/null parameter with an invalid wire
+  one scalar integer/number/boolean/null parameter with an invalid wire
   value and records `misuse.kind = 'type'`; both methods throw
   `UnsupportedGeneration` when their mutation cannot be constructed.
 - `NegativeRequestCaseArbitrary::enumMismatchForOperation(Operation)` replaces
-  one required scalar enum parameter with a value outside the enum and records
+  one scalar enum parameter with a value outside the enum and records
   `misuse.kind = 'enum'`.
 - `NegativeRequestCaseArbitrary::constMismatchForOperation(Operation)` replaces
-  one required scalar `const` parameter with a different value and records
+  one scalar `const` parameter with a different value and records
   `misuse.kind = 'const'`.
 - `NegativeRequestCaseArbitrary::boundaryMismatchForOperation(Operation)`
-  replaces one required integer/number parameter with a wire value just outside
+  replaces one integer/number parameter with a wire value just outside
   its `minimum`/`maximum` bound (boolean exclusive bounds honoured) and records
   `misuse.kind = 'boundary'`.
 - `NegativeRequestCaseArbitrary::lengthMismatchForOperation(Operation)`
-  replaces one required string parameter with a value just outside its
+  replaces one string parameter with a value just outside its
   `minLength`/`maxLength` bound and records `misuse.kind = 'length'`;
   parameters with `enum`/`const`/`pattern`/`format` are skipped.
 - `NegativeRequestCaseArbitrary::formatMismatchForOperation(Operation)`
-  replaces one required string parameter with a fixed witness violating its
+  replaces one string parameter with a fixed witness violating its
   `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
   `misuse.kind = 'format'`; `url` is not asserted by the backend and is skipped.
 - `NegativeRequestCaseArbitrary::patternMismatchForOperation(Operation)`
-  replaces one required string parameter with a searched value failing its
+  replaces one string parameter with a searched value failing its
   `pattern` (the pattern is the `preg_match()` oracle; bounded alphabet samples
   and mutations of an accepted value) and records `misuse.kind = 'pattern'`;
   parameters with `enum`/`const`/`format` are skipped and an exhausted search

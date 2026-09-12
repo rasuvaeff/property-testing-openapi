@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Changed.** The seven value categories of `NegativeRequestCaseArbitrary` —
+  `type`, `enum`, `const`, `boundary`, `length`, `format` and `pattern` —
+  target optional parameters as well as required ones. Each writes its invalid
+  value into the case, so a parameter the valid case leaves out is carried by
+  the negative one, and the contract judges a present optional parameter by
+  its schema exactly as it judges a required one; only `forOperation()`
+  (`missing-required`) still needs a required component. Pagination and
+  filtering are usually declared optional, so a document shaped that way had
+  no constructible `boundary`, `type`, `format` or `pattern` case at all. An
+  operation that gains its first constructible category through this now runs
+  the negative phase of `OperationProperty`, and an application that accepts
+  an out-of-range optional parameter is reported by it (#93).
+- **Added.** `pages.get` in the zoo: pagination and filtering with every
+  constrained parameter optional, one per value category, which gives the
+  recorded corpus the `const`, `format` and `pattern` kinds it had no source
+  for.
+
 ## 0.11.0 — 2026-09-12
 
 - **Changed.** Accepts `rasuvaeff/property-testing-core` `^0.7`, `^0.8` and

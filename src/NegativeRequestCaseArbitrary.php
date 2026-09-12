@@ -78,8 +78,8 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required scalar parameter with a wire value that cannot
-     * satisfy its integer, number, boolean, or null schema type.
+     * Replaces one scalar parameter with a wire value that cannot satisfy its
+     * integer, number, boolean, or null schema type.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -89,8 +89,8 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required scalar parameter with a value absent from its
-     * finite enum.
+     * Replaces one scalar parameter with a value absent from its finite
+     * enum.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -100,8 +100,8 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required scalar parameter with a value other than the
-     * single one its `const` admits.
+     * Replaces one scalar parameter with a value other than the single one
+     * its `const` admits.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -111,8 +111,8 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required numeric parameter with a wire value just outside
-     * its `minimum`/`maximum` bound, honouring boolean exclusive bounds.
+     * Replaces one numeric parameter with a wire value just outside its
+     * `minimum`/`maximum` bound, honouring boolean exclusive bounds.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -122,8 +122,8 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required string parameter with a wire value whose length
-     * falls just outside its `minLength`/`maxLength` bound.
+     * Replaces one string parameter with a wire value whose length falls
+     * just outside its `minLength`/`maxLength` bound.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -133,8 +133,8 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required string parameter with a wire value that provably
-     * violates its asserted `format`.
+     * Replaces one string parameter with a wire value that provably violates
+     * its asserted `format`.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -144,9 +144,9 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Replaces one required string parameter with a searched wire value that
-     * provably fails its `pattern`; the pattern itself is the oracle, and an
-     * exhausted search budget fails closed.
+     * Replaces one string parameter with a searched wire value that provably
+     * fails its `pattern`; the pattern itself is the oracle, and an exhausted
+     * search budget fails closed.
      *
      * @return ArbitraryInterface<NegativeRequestCaseData>
      */
@@ -264,6 +264,10 @@ final readonly class NegativeRequestCaseArbitrary
      * Writes one target's invalid wire value over the parameter it names.
      * Every parameter misuse differs only in the `kind` it records, so they
      * all come through here rather than restating the location handling.
+     *
+     * The write is an assignment, not a replacement: an optional parameter
+     * the valid case left out is carried by the negative one, which is what
+     * lets every category target optional parameters at all (#93).
      *
      * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
      * @param array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} $target

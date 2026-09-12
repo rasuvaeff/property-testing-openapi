@@ -28,7 +28,7 @@ final class ZooContracts
         'nested.create', 'health.get', 'version.get', 'files.get',
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
         'encoded.create', 'numeric.create', 'headers.get',
-        'search.get', 'narrowed.create', 'bounded.create',
+        'search.get', 'narrowed.create', 'bounded.create', 'pages.get',
     ];
 
     /**
@@ -283,6 +283,24 @@ final class ZooContracts
                 // OAS 3.1 spells the absent branch as a `null` member of a type
                 // union. A parameter travels as text and has no representation
                 // for it, the same way it has none for 3.0 `nullable`.
+                // Pagination and filtering the way they are usually declared:
+                // every constrained parameter optional, one per value
+                // category. Each category used to skip a parameter that was
+                // not `required`, so a document shaped like this had no
+                // constructible negative case at all (#93).
+                '/pages' => ['get' => [
+                    'operationId' => 'pages.get',
+                    'parameters' => [
+                        ['name' => 'page', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1]],
+                        ['name' => 'per_page', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 20]],
+                        ['name' => 'sort', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => ['asc', 'desc']]],
+                        ['name' => 'v', 'in' => 'query', 'schema' => ['type' => 'string', 'const' => 'v1']],
+                        ['name' => 'q', 'in' => 'query', 'schema' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 6]],
+                        ['name' => 'since', 'in' => 'query', 'schema' => ['type' => 'string', 'format' => 'date']],
+                        ['name' => 'code', 'in' => 'query', 'schema' => ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']],
+                    ],
+                    'responses' => ['204' => []],
+                ]],
                 '/unions/{id}' => ['get' => [
                     'operationId' => 'unions.get',
                     'parameters' => [

@@ -1235,11 +1235,10 @@ final class RequestCaseArbitraryTest
         );
     }
 
-    public function enumMismatchTargetsOnlyRequiredScalarEnums(): void
+    public function enumMismatchTargetsOnlyScalarEnums(): void
     {
         $negative = new NegativeRequestCaseArbitrary();
         foreach ([
-            $this->queryParamOperation(['type' => 'string', 'enum' => ['a']], required: false),
             $this->queryParamOperation(['type' => 'string', 'enum' => []]),
             $this->queryParamOperation(['type' => 'string', 'enum' => [['a']]]),
         ] as $operation) {
@@ -1260,11 +1259,10 @@ final class RequestCaseArbitraryTest
         Assert::same($case['query']['q'], '__openapi_invalid_enum___');
     }
 
-    public function constMismatchTargetsOnlyRequiredScalarConsts(): void
+    public function constMismatchTargetsOnlyScalarConsts(): void
     {
         $negative = new NegativeRequestCaseArbitrary();
         foreach ([
-            $this->queryParamOperation(['type' => 'string', 'const' => 'v1'], required: false),
             $this->queryParamOperation(['type' => 'object', 'const' => ['a']]),
         ] as $operation) {
             try {
@@ -1436,6 +1434,12 @@ final class RequestCaseArbitraryTest
         Assert::same($case['misuse']['name'] ?? null, 'second');
     }
 
+    /**
+     * The unusable declaration is the required one and the sound one is
+     * optional, so the pick proves both halves: an enum of arrays has no
+     * scalar witness and is skipped, and being optional is no reason to be
+     * skipped (#93).
+     */
     public function enumTargetSkipsMalformedEnumsBeforeAValidOne(): void
     {
         $operation = new Operation(
@@ -1444,14 +1448,95 @@ final class RequestCaseArbitraryTest
             method: 'GET',
             path: '/mixed',
             parameters: [
-                ['name' => 'broken', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'enum' => ['skip']]],
-                ['name' => 'ok', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'enum' => ['a']]],
+                ['name' => 'broken', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'array', 'items' => ['type' => 'string'], 'enum' => [['skip']]]],
+                ['name' => 'ok', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'enum' => ['a']]],
             ],
         );
 
         $case = (new NegativeRequestCaseArbitrary())->enumMismatchForOperation($operation)->generate(new Random(29))->value;
 
         Assert::same($case['misuse']['name'] ?? null, 'ok');
+    }
+
+    /**
+     * An optional parameter the valid case may leave out is carried by every
+     * negative case, with the invalid value in it; the contract then rejects
+     * it by its schema exactly as it would a required one (#93).
+     */
+    #[DataProvider('optionalParameterCategoryProvider')]
+    public function everyValueCategoryTargetsAnOptionalParameter(string $method, string $kind, array $schema): void
+    {
+        $contract = $this->optionalQueryContract($schema);
+        $operation = $contract->operation('q.get');
+        $factory = new Psr17Factory();
+        $materializer = new RequestMaterializer($factory, $factory);
+        /** @var ArbitraryInterface<array{operationKey: string, path: array<string, string|list<string>|array<string, string>>, query: array<string, string|list<string>|array<string, string>>, headers: array<string, string|list<string>|array<string, string>>, cookies: array<string, string|list<string>|array<string, string>>, body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed}, misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string}}> $arbitrary */
+        $arbitrary = (new NegativeRequestCaseArbitrary())->{$method}($operation);
+        $valid = (new RequestCaseArbitrary())->forOperation($operation);
+        $omitted = false;
+
+        foreach (range(1, 20) as $seed) {
+            $case = $arbitrary->generate(new Random($seed))->value;
+            $result = $contract->validateRequest($materializer->materialize($operation, $case));
+
+            Assert::true(array_key_exists('q', $case['query']));
+            Assert::same($case['misuse'], ['kind' => $kind, 'location' => 'query', 'name' => 'q']);
+            Assert::false($result->isValid());
+            Assert::same($result->violations[0]->code, 'request.parameter.schema');
+
+            $omitted = $omitted || !array_key_exists('q', $valid->generate(new Random($seed))->value['query']);
+        }
+
+        // The parameter is optional in fact, not only in the declaration.
+        Assert::true($omitted);
+    }
+
+    public static function optionalParameterCategoryProvider(): iterable
+    {
+        yield 'type' => ['typeMismatchForOperation', 'type', ['type' => 'integer']];
+        yield 'enum' => ['enumMismatchForOperation', 'enum', ['type' => 'string', 'enum' => ['asc', 'desc']]];
+        yield 'const' => ['constMismatchForOperation', 'const', ['type' => 'string', 'const' => 'v1']];
+        yield 'boundary' => ['boundaryMismatchForOperation', 'boundary', ['type' => 'integer', 'minimum' => 1, 'maximum' => 20]];
+        yield 'length' => ['lengthMismatchForOperation', 'length', ['type' => 'string', 'minLength' => 1, 'maxLength' => 3]];
+        yield 'format' => ['formatMismatchForOperation', 'format', ['type' => 'string', 'format' => 'date']];
+        yield 'pattern' => ['patternMismatchForOperation', 'pattern', ['type' => 'string', 'pattern' => '^[a-z]{2,4}$']];
+    }
+
+    /**
+     * Declaration order is the only order: an optional parameter declared
+     * before a required one with the same constructible mismatch is the one
+     * targeted, the way pagination is usually declared ahead of a filter.
+     */
+    public function optionalParametersAreTargetedInDeclarationOrder(): void
+    {
+        $operation = new Operation(
+            key: 'pages',
+            operationId: 'pages',
+            method: 'GET',
+            path: '/pages',
+            parameters: [
+                ['name' => 'per_page', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 20]],
+                ['name' => 'page', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'integer', 'minimum' => 1]],
+            ],
+        );
+
+        $case = (new NegativeRequestCaseArbitrary())->boundaryMismatchForOperation($operation)->generate(new Random(93))->value;
+
+        Assert::same($case['misuse'], ['kind' => 'boundary', 'location' => 'query', 'name' => 'per_page']);
+        Assert::same($case['query']['per_page'], '0');
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function optionalQueryContract(array $schema): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/q' => ['get' => [
+                'operationId' => 'q.get',
+                'parameters' => [['name' => 'q', 'in' => 'query', 'required' => false, 'schema' => $schema]],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
     }
 
     public function enumTargetRejectsScalarEnumDeclarations(): void

@@ -153,27 +153,32 @@ $credentials = new Credentials(
 
 `NegativeRequestCaseArbitrary` предоставляет конструктивные negative-категории.
 `forOperation()` удаляет один обязательный path, query, header, cookie или body
-и записывает `misuse.kind = 'missing-required'`.
-`typeMismatchForOperation()` заменяет один обязательный scalar-параметр типа
+и записывает `misuse.kind = 'missing-required'`. Это единственная категория,
+которой нужен обязательный компонент: каждая категория значений ниже
+записывает неверное значение в кейс, поэтому необязательный параметр,
+который валидный кейс опустил, в негативном присутствует и проверяется по
+своей схеме ровно как обязательный; параметры перебираются в порядке
+объявления.
+`typeMismatchForOperation()` заменяет один scalar-параметр типа
 `integer`/`number`/`boolean`/`null` заведомо неверным wire-значением и записывает
 `misuse.kind = 'type'`. `enumMismatchForOperation()` аналогично выбирает
 значение вне scalar enum и записывает `misuse.kind = 'enum'`, а
-`constMismatchForOperation()` — значение, отличное от обязательного scalar
+`constMismatchForOperation()` — значение, отличное от scalar
 `const`, с `misuse.kind = 'const'`.
-`boundaryMismatchForOperation()` заменяет один обязательный
+`boundaryMismatchForOperation()` заменяет один
 `integer`/`number`-параметр wire-значением сразу за границей
 `minimum`/`maximum` (с учётом boolean exclusive границ) и записывает
 `misuse.kind = 'boundary'`.
-`lengthMismatchForOperation()` заменяет один обязательный string-параметр
+`lengthMismatchForOperation()` заменяет один string-параметр
 значением с длиной сразу за границей `minLength`/`maxLength` и записывает
 `misuse.kind = 'length'`; параметры с `enum`, `const`, `pattern` или `format`
 пропускаются — чистое нарушение длины там не гарантируется.
-`formatMismatchForOperation()` заменяет один обязательный string-параметр
+`formatMismatchForOperation()` заменяет один string-параметр
 фиксированным значением, доказуемо нарушающим его `format` (`uuid`, `email`,
 `ipv4`, `uri`, `uri-reference`, `date`, `date-time`), и записывает
 `misuse.kind = 'format'`; `url` исключён — validation backend его не
 ассертит.
-`patternMismatchForOperation()` заменяет один обязательный string-параметр
+`patternMismatchForOperation()` заменяет один string-параметр
 найденным поиском значением, доказуемо нарушающим его `pattern`, и записывает
 `misuse.kind = 'pattern'`. Оракул — сам pattern: ограниченные кандидаты
 (образцы из алфавита и мутации принятого значения) проверяются `preg_match()`
