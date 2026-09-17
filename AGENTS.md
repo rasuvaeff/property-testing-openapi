@@ -252,6 +252,34 @@ every mutation of it is masked. `RequestReproducer::redactCase()` had four such
 guards over `$body['encoding']` and became one `match`; the escapes went with
 them. Masked mutants are a shape, not a fact of life.
 
+The numeric-boundary wave (2026-09-18, #116) adds, all in
+`ScalarArbitraries`: the overflow guard of `multiply()` is unreachable by
+construction — `first`/`last` are the exact ceil/floor of `min`/`max` over the
+multiple, so every index product lands inside `[min, max]` and cannot leave the
+integer range; only its boundary flip (`<` → `<=` on
+`intdiv(PHP_INT_MIN, $right)`) is observable, and
+`integerMultiplesReachTheNativeMinimum` kills it. The `(float)` casts around
+`$min / (float) $multiple` and in `round((float) $value * (float) $multiple)`
+are redundant — PHP division always yields float, and arithmetic with one
+float operand is float. The `(float)` casts on `PHP_INT_MIN`/`PHP_INT_MAX` in
+`multipleIndex()` are exact (±2^63 needs no rounding), and flipping its first
+`||` to `&&` changes nothing: NAN cannot reach the method (bounds and multiple
+are finite), and ±INF is still caught by the remaining clauses. The endianness
+probe of `adjacentFloat()` (`pack('d', 1.0)[0]`, `range(7, 0)`) only mutates
+into answers that agree on the little-endian hardware CI runs on, and the
+byte-loop budget variants (`range(0, 8)`-style) are reachable only through an
+all-`0xff`/all-`0x00` double — a NaN, rejected upstream by `is_finite()`. The
+carry itself is *not* equivalent and stays killed:
+`exclusiveMinimumCarriesThroughTheMantissaBytes` and
+`exclusiveMaximumOnAPositiveValueBorrowsThroughTheLowBytes` pin the
+increment-carry and the decrement-borrow chains (a broken break-condition
+returns a value on the wrong side of the input). The `Throw_` removals at the
+native-limit exclusive guards survive a schema without the opposite bound —
+`++$min` overflows to a float that the `min > max` guard rejects with the same
+message — so the provider carries the both-bounds-at-the-limit cases that make
+the overflow observable as a `TypeError` instead. 
+
+
 ## The contract package is the other half of the oracle
 
 `rasuvaeff/openapi-contract` depends on nothing here, and this package depends
