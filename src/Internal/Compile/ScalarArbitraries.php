@@ -188,9 +188,17 @@ final readonly class ScalarArbitraries
         $min = $this->facts->integerBound($schema, 'minimum', -1000);
         $max = $this->facts->integerBound($schema, 'maximum', 1000);
         if (($schema['exclusiveMinimum'] ?? false) === true) {
+            if ($min === PHP_INT_MAX) {
+                throw UnsupportedGeneration::forSchema('integer bounds leave no value');
+            }
+
             ++$min;
         }
         if (($schema['exclusiveMaximum'] ?? false) === true) {
+            if ($max === PHP_INT_MIN) {
+                throw UnsupportedGeneration::forSchema('integer bounds leave no value');
+            }
+
             --$max;
         }
         if ($min > $max) {
@@ -204,14 +212,16 @@ final readonly class ScalarArbitraries
         if (!is_int($multiple) || $multiple <= 0) {
             throw UnsupportedGeneration::forSchema('integer multipleOf must be a positive integer');
         }
-        $multipleValue = (float) $multiple;
-        $first = (int) ceil((float) $min / $multipleValue);
-        $last = (int) floor((float) $max / $multipleValue);
+        $first = $this->ceilDiv($min, $multiple);
+        $last = $this->floorDiv($max, $multiple);
         if ($first > $last) {
             throw UnsupportedGeneration::forSchema('integer multipleOf leaves no value');
         }
 
-        return Gen::map(Gen::intBetween($first, $last), static fn(mixed $value): int => (int) $value * $multiple);
+        return Gen::map(
+            Gen::intBetween($first, $last),
+            fn(mixed $value): int => $this->multiply((int) $value, $multiple),
+        );
     }
 
     /** @param array<string, mixed> $schema */
@@ -219,19 +229,16 @@ final readonly class ScalarArbitraries
     {
         $min = $this->facts->numberBound($schema, 'minimum', -1000.0);
         $max = $this->facts->numberBound($schema, 'maximum', 1000.0);
+        if (!is_finite($min) || !is_finite($max)) {
+            throw UnsupportedGeneration::forSchema('number bounds must be finite');
+        }
         $exclusiveMinimum = ($schema['exclusiveMinimum'] ?? false) === true;
         $exclusiveMaximum = ($schema['exclusiveMaximum'] ?? false) === true;
-        if (($exclusiveMinimum || $exclusiveMaximum) && $min >= $max) {
-            throw UnsupportedGeneration::forSchema('number bounds leave no value');
-        }
-        // Step inside an open bound by a tenth, or by a quarter of a narrow
-        // window, so that `(0, 0.05]` still leaves values.
-        $step = min(0.1, ($max - $min) / 4.0);
         if ($exclusiveMinimum) {
-            $min += $step;
+            $min = $this->nextUp($min);
         }
         if ($exclusiveMaximum) {
-            $max -= $step;
+            $max = $this->nextDown($max);
         }
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('number bounds leave no value');
@@ -247,8 +254,8 @@ final readonly class ScalarArbitraries
         if ($multiple <= 0 || !is_finite((float) $multiple)) {
             throw UnsupportedGeneration::forSchema('number multipleOf must be positive and finite');
         }
-        $first = (int) ceil($min / (float) $multiple);
-        $last = (int) floor($max / (float) $multiple);
+        $first = $this->multipleIndex(ceil($min / (float) $multiple));
+        $last = $this->multipleIndex(floor($max / (float) $multiple));
         if ($first > $last) {
             throw UnsupportedGeneration::forSchema('number multipleOf leaves no value');
         }
@@ -263,5 +270,86 @@ final readonly class ScalarArbitraries
             Gen::intBetween($first, $last),
             static fn(mixed $value): float => round((float) $value * (float) $multiple, $decimals),
         );
+    }
+
+    private function ceilDiv(int $dividend, int $divisor): int
+    {
+        $quotient = intdiv($dividend, $divisor);
+
+        return $dividend > 0 && $dividend % $divisor !== 0 ? $quotient + 1 : $quotient;
+    }
+
+    private function floorDiv(int $dividend, int $divisor): int
+    {
+        $quotient = intdiv($dividend, $divisor);
+
+        return $dividend < 0 && $dividend % $divisor !== 0 ? $quotient - 1 : $quotient;
+    }
+
+    private function multiply(int $left, int $right): int
+    {
+        if (($left > 0 && $left > intdiv(PHP_INT_MAX, $right))
+            || ($left < 0 && $left < intdiv(PHP_INT_MIN, $right))
+        ) {
+            throw UnsupportedGeneration::forSchema('integer multipleOf result is outside the integer range');
+        }
+
+        return $left * $right;
+    }
+
+    private function multipleIndex(float $index): int
+    {
+        // PHP cannot represent PHP_INT_MAX as a float: the nearest double is
+        // PHP_INT_MAX + 1. Refuse that edge rather than cast it to PHP_INT_MIN.
+        if (!is_finite($index) || $index < (float) PHP_INT_MIN || $index >= (float) PHP_INT_MAX) {
+            throw UnsupportedGeneration::forSchema('number multipleOf index is outside the supported integer range');
+        }
+
+        return (int) $index;
+    }
+
+    private function nextUp(float $value): float
+    {
+        return $this->adjacentFloat($value, towardPositive: true);
+    }
+
+    private function nextDown(float $value): float
+    {
+        return $this->adjacentFloat($value, towardPositive: false);
+    }
+
+    private function adjacentFloat(float $value, bool $towardPositive): float
+    {
+        if ($value === 0.0) {
+            return $towardPositive ? 5e-324 : -5e-324;
+        }
+
+        $bits = pack('d', $value);
+        $littleEndian = ord(pack('d', 1.0)[0]) === 0;
+        $indices = $littleEndian ? range(0, 7) : range(7, 0);
+        $increment = ($value > 0.0) === $towardPositive;
+
+        foreach ($indices as $index) {
+            $byte = ord($bits[$index]);
+            if ($increment) {
+                $bits[$index] = chr(($byte + 1) & 0xff);
+                if ($byte !== 0xff) {
+                    break;
+                }
+            } else {
+                $bits[$index] = chr(($byte - 1) & 0xff);
+                if ($byte !== 0x00) {
+                    break;
+                }
+            }
+        }
+
+        $decoded = unpack('dvalue', $bits);
+        $adjacent = is_array($decoded) ? $decoded['value'] ?? null : null;
+        if (!is_float($adjacent)) {
+            throw new \LogicException('Unable to decode an adjacent float');
+        }
+
+        return $adjacent;
     }
 }

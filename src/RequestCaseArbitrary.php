@@ -9,6 +9,7 @@ use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
@@ -391,6 +392,7 @@ final readonly class RequestCaseArbitrary
             $contentType = is_string($configuredType) && $configuredType !== ''
                 ? $configuredType
                 : $this->multipartContentType($partSchema);
+            ParameterSerializer::assertTransmittableHeader('Content-Type', $contentType);
             $headers = $this->multipartHeaders($configuration['headers'] ?? []);
             $items = is_array($value[$name]) && array_is_list($value[$name]) ? $value[$name] : [$value[$name]];
             $parts = array_merge($parts, array_map(function (mixed $partValue) use ($name, $contentType, $headers): array {
@@ -483,7 +485,9 @@ final readonly class RequestCaseArbitrary
             }
             /** @var mixed $headerValue */
             $headerValue = is_scalar($definition['example'] ?? null) ? $definition['example'] : (is_scalar($definition['default'] ?? null) ? $definition['default'] : 'x-openapi');
-            $result[$name] = $this->scalar($headerValue);
+            $value = $this->scalar($headerValue);
+            ParameterSerializer::assertTransmittableHeader($name, $value);
+            $result[$name] = $value;
         }
 
         return $result;

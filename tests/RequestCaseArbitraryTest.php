@@ -41,6 +41,66 @@ use Testo\Test;
 #[Covers(RequestMaterializer::class)]
 final class RequestCaseArbitraryTest
 {
+    public function multipartEncodingRejectsHeaderInjection(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
+
+        $operation = new Operation(
+            key: 'upload.create',
+            operationId: 'upload.create',
+            method: 'POST',
+            path: '/upload',
+            requestBody: [
+                'required' => true,
+                'content' => [
+                    'multipart/form-data' => [
+                        'schema' => [
+                            'type' => 'object',
+                            'required' => ['title'],
+                            'properties' => ['title' => ['const' => 'ok']],
+                        ],
+                        'encoding' => [
+                            'title' => [
+                                'headers' => [
+                                    'X-Trace' => ['required' => true, 'default' => "ok\r\nX-Injected: yes"],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        );
+
+        (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(1));
+    }
+
+    public function multipartEncodingRejectsContentTypeInjection(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "Content-Type" carries a value no HTTP field can');
+
+        $operation = new Operation(
+            key: 'upload.create',
+            operationId: 'upload.create',
+            method: 'POST',
+            path: '/upload',
+            requestBody: [
+                'required' => true,
+                'content' => [
+                    'multipart/form-data' => [
+                        'schema' => [
+                            'type' => 'object',
+                            'required' => ['title'],
+                            'properties' => ['title' => ['const' => 'ok']],
+                        ],
+                        'encoding' => ['title' => ['contentType' => "text/plain\r\nX-Injected: yes"]],
+                    ],
+                ],
+            ],
+        );
+
+        (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(1));
+    }
+
     #[Property(runs: 100)]
     public function generatedCaseMaterializesToAValidRequest(array $case): void
     {

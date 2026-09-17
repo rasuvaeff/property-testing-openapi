@@ -674,6 +674,49 @@ final class RequestMaterializerTest
         );
     }
 
+    #[DataProvider('unsafeMultipartPartHeaderProvider')]
+    public function rejectsMultipartPartHeadersThatCannotTravel(string $contentType, array $headers, string $message): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation([]),
+            $this->bodyCase('body.test', [
+                'mediaType' => 'multipart/form-data',
+                'encoding' => 'multipart',
+                'boundary' => 'boundary',
+                'parts' => [[
+                    'name' => 'field',
+                    'value' => 'value',
+                    'encoding' => 'text',
+                    'contentType' => $contentType,
+                    'headers' => $headers,
+                ]],
+            ]),
+        );
+    }
+
+    /** @return iterable<string, array{string, array<string, string>, string}> */
+    public static function unsafeMultipartPartHeaderProvider(): iterable
+    {
+        yield 'content type injection' => [
+            "text/plain\r\nX-Injected: yes",
+            [],
+            'Header "Content-Type" carries a value no HTTP field can',
+        ];
+        yield 'header name injection' => [
+            'text/plain',
+            ["X-Trace\r\nX-Injected" => 'yes'],
+            'Header name "X-Trace' . "\r\n" . 'X-Injected" is invalid',
+        ];
+        yield 'header value injection' => [
+            'text/plain',
+            ['X-Trace' => "yes\r\nX-Injected: yes"],
+            'Header "X-Trace" carries a value no HTTP field can',
+        ];
+    }
+
     public function rejectsMultipartWithoutParts(): void
     {
         Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart request body has an invalid shape');

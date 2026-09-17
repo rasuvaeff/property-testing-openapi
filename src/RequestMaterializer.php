@@ -355,8 +355,10 @@ final readonly class RequestMaterializer
             $payload .= '--' . $boundary . "\r\n";
             $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . '"'
                 . ($part['encoding'] === 'base64' ? '; filename="' . $this->quoteHeader($name) . '"' : '') . "\r\n";
+            ParameterSerializer::assertTransmittableHeader('Content-Type', $contentType);
             $payload .= 'Content-Type: ' . $contentType . "\r\n";
             foreach ($headers as $header => $headerValue) {
+                ParameterSerializer::assertTransmittableHeader($header, $headerValue);
                 $payload .= $header . ': ' . $headerValue . "\r\n";
             }
             $payload .= "\r\n" . $value . "\r\n";

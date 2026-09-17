@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.14.1 — 2026-09-18
+
+- **Fixed.** Valid number schemas now keep exclusive bounds at the adjacent
+  IEEE-754 value, including subnormals, instead of stepping by a decimal
+  fraction that could cross an entire representable interval.
+- **Fixed.** Integer `multipleOf` calculations stay in the native integer
+  domain and fail closed at its limits; number multiples whose index cannot
+  fit that domain now fail closed too.
+- **Fixed.** Multipart per-part content types and encoding headers reject
+  invalid field names and CR/LF values before either a case or a PSR-7 request
+  is constructed.
+
 ## 0.14.0 — 2026-09-12
 
 - **Changed.** Accepts `rasuvaeff/property-testing-core` `^0.10` alongside
