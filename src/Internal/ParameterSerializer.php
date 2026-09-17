@@ -64,7 +64,7 @@ final readonly class ParameterSerializer
     }
 
     /**
-     * Refuses a header value that no HTTP field can carry.
+     * Refuses a header name or value that no HTTP field can carry.
      *
      * Percent-encoding used to make this unreachable: a CR or an LF in a case
      * came out as `%0D%0A` and travelled harmlessly. A header is written as
@@ -77,6 +77,9 @@ final readonly class ParameterSerializer
      */
     public static function assertTransmittableHeader(string $name, string $value): void
     {
+        if (preg_match('/\A[!#$%&\'*+\-.^_`|~0-9A-Za-z]+\z/', $name) !== 1) {
+            throw new UnsupportedGeneration(sprintf('Header name "%s" is invalid', $name));
+        }
         if ($value !== '' && preg_match('/\A[\x21-\x7e\x80-\xff](?:[\x20-\x7e\x80-\xff]*[\x21-\x7e\x80-\xff])?\z/', $value) !== 1) {
             throw new UnsupportedGeneration(sprintf('Header "%s" carries a value no HTTP field can', $name));
         }

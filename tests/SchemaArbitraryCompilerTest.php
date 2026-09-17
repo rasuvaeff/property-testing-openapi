@@ -1072,6 +1072,30 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    public function exclusiveBoundsStayOutsideAtTheSubnormalLimits(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        Assert::same(
+            Gen::sample($compiler->compile([
+                'type' => 'number',
+                'minimum' => 0.0,
+                'maximum' => 5e-324,
+                'exclusiveMinimum' => true,
+            ]), count: 4, seed: 1),
+            [5e-324, 5e-324, 5e-324, 5e-324],
+        );
+        Assert::same(
+            Gen::sample($compiler->compile([
+                'type' => 'number',
+                'minimum' => -5e-324,
+                'maximum' => 0.0,
+                'exclusiveMaximum' => true,
+            ]), count: 4, seed: 1),
+            [-5e-324, -5e-324, -5e-324, -5e-324],
+        );
+    }
+
     public function fractionalIntegerBoundsRoundInward(): void
     {
         $compiler = new SchemaArbitraryCompiler();
@@ -1176,6 +1200,46 @@ final class SchemaArbitraryCompilerTest
         ]), count: 20, seed: 7);
 
         Assert::same(array_values(array_unique($values)), [8]);
+    }
+
+    public function integerMultiplesKeepExtremeBoundsInTheIntegerDomain(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $values = Gen::sample($compiler->compile([
+            'type' => 'integer',
+            'minimum' => PHP_INT_MAX - 1,
+            'maximum' => PHP_INT_MAX,
+            'multipleOf' => 2,
+        ]), count: 4, seed: 1);
+
+        Assert::same($values, [PHP_INT_MAX - 1, PHP_INT_MAX - 1, PHP_INT_MAX - 1, PHP_INT_MAX - 1]);
+    }
+
+    #[DataProvider('integerExclusiveNativeLimitProvider')]
+    public function integerExclusiveNativeLimitsFailClosed(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: integer bounds leave no value');
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, int|bool|string>}> */
+    public static function integerExclusiveNativeLimitProvider(): iterable
+    {
+        yield 'exclusive minimum at the native maximum' => [['type' => 'integer', 'minimum' => PHP_INT_MAX, 'exclusiveMinimum' => true]];
+        yield 'exclusive maximum at the native minimum' => [['type' => 'integer', 'maximum' => PHP_INT_MIN, 'exclusiveMaximum' => true]];
+    }
+
+    public function numberMultiplesOutsideTheIndexDomainFailClosed(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: number multipleOf index is outside the supported integer range');
+
+        (new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => PHP_INT_MAX - 1,
+            'maximum' => PHP_INT_MAX,
+            'multipleOf' => 1,
+        ]);
     }
 
     public function numberBoundsSupportSingleValueWindows(): void
