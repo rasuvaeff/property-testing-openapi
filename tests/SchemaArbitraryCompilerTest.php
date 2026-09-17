@@ -1096,6 +1096,30 @@ final class SchemaArbitraryCompilerTest
         );
     }
 
+    public function exclusiveBoundsUseTheAdjacentNormalDouble(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        Assert::same(
+            Gen::sample($compiler->compile([
+                'type' => 'number',
+                'minimum' => 1.0,
+                'maximum' => 1.0000000000000002,
+                'exclusiveMinimum' => true,
+            ]), count: 4, seed: 1),
+            [1.0000000000000002, 1.0000000000000002, 1.0000000000000002, 1.0000000000000002],
+        );
+        Assert::same(
+            Gen::sample($compiler->compile([
+                'type' => 'number',
+                'minimum' => -1.0000000000000002,
+                'maximum' => -1.0,
+                'exclusiveMaximum' => true,
+            ]), count: 4, seed: 1),
+            [-1.0000000000000002, -1.0000000000000002, -1.0000000000000002, -1.0000000000000002],
+        );
+    }
+
     public function fractionalIntegerBoundsRoundInward(): void
     {
         $compiler = new SchemaArbitraryCompiler();
@@ -1215,6 +1239,28 @@ final class SchemaArbitraryCompilerTest
         Assert::same($values, [PHP_INT_MAX - 1, PHP_INT_MAX - 1, PHP_INT_MAX - 1, PHP_INT_MAX - 1]);
     }
 
+    public function integerMultiplesRoundBothSignsIntoTheirBoundedDomain(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $positive = Gen::sample($compiler->compile([
+            'type' => 'integer',
+            'minimum' => 1,
+            'maximum' => 9,
+            'multipleOf' => 4,
+        ]), count: 100, seed: 19);
+        $negative = Gen::sample($compiler->compile([
+            'type' => 'integer',
+            'minimum' => -9,
+            'maximum' => -3,
+            'multipleOf' => 4,
+        ]), count: 100, seed: 19);
+
+        Assert::same(min($positive), 4);
+        Assert::same(max($positive), 8);
+        Assert::same(min($negative), -8);
+        Assert::same(max($negative), -4);
+    }
+
     #[DataProvider('integerExclusiveNativeLimitProvider')]
     public function integerExclusiveNativeLimitsFailClosed(array $schema): void
     {
@@ -1240,6 +1286,30 @@ final class SchemaArbitraryCompilerTest
             'maximum' => PHP_INT_MAX,
             'multipleOf' => 1,
         ]);
+    }
+
+    public function numberBoundsRejectNonFiniteValues(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: number bounds must be finite');
+
+        (new SchemaArbitraryCompiler())->compile([
+            'type' => 'number',
+            'minimum' => 0.0,
+            'maximum' => INF,
+        ]);
+    }
+
+    public function numberMultiplesKeepTheNativeMinimumIndex(): void
+    {
+        Assert::same(
+            Gen::sample((new SchemaArbitraryCompiler())->compile([
+                'type' => 'number',
+                'minimum' => PHP_INT_MIN,
+                'maximum' => PHP_INT_MIN,
+                'multipleOf' => 1,
+            ]), count: 2, seed: 1),
+            [(float) PHP_INT_MIN, (float) PHP_INT_MIN],
+        );
     }
 
     public function numberBoundsSupportSingleValueWindows(): void
