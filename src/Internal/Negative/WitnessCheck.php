@@ -107,7 +107,7 @@ final class WitnessCheck
             // category fails closed rather than promising a contradiction.
             $answer = !$this->schemas->accepts($decoded, $schema, $dialect, $direction)
                 && $this->schemas->accepts($decoded, $stripped, $dialect, $direction);
-        } catch (ContractException|\JsonException) {
+        } catch (ContractException) {
             $answer = false;
         }
 

@@ -25,6 +25,8 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
  * contradicts every declared server fails closed before transport.
  *
  * @api
+ *
+ * @psalm-import-type CompiledMediaType from Operation
  */
 final readonly class RequestMaterializer
 {
@@ -197,7 +199,7 @@ final readonly class RequestMaterializer
         }
         $server = $operation->servers[0] ?? null;
         if ($server === null) {
-            return $this->joinBase($operation->serverBases[0] ?? '/', $path);
+            return $this->joinBase('/', $path);
         }
         $authority = $server['host'] === null
             ? ''
@@ -325,16 +327,7 @@ final readonly class RequestMaterializer
     /** @return array<array-key, mixed> */
     private function bodyEncoding(Operation $operation, string $mediaType): array
     {
-        $content = $operation->requestBody['content'] ?? null;
-        if (!is_array($content) || !is_array($content[$mediaType] ?? null)) {
-            return [];
-        }
-        $definition = $content[$mediaType] ?? null;
-        if (!is_array($definition)) {
-            return [];
-        }
-
-        return (array) ($definition['encoding'] ?? []);
+        return $operation->requestBody['content'][$mediaType]['encoding'] ?? [];
     }
 
     /** @param list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}> $parts */
@@ -382,36 +375,31 @@ final readonly class RequestMaterializer
      */
     private function bodySchema(Operation $operation, string $mediaType, ?array $misuse): array
     {
-        $content = $operation->requestBody['content'] ?? null;
-        if (!is_array($content)) {
-            throw new UnsupportedGeneration('Request body content must be an object');
-        }
+        $content = $operation->requestBody['content'] ?? [];
         $definition = $content[$mediaType] ?? null;
-        if (!is_array($definition) && $misuse !== null && $misuse['kind'] === 'media-type' && $misuse['location'] === 'body') {
+        if ($definition === null && $misuse !== null && $misuse['kind'] === 'media-type' && $misuse['location'] === 'body') {
             $definition = $this->declaredJsonDefinition($content);
         }
-        if (!is_array($definition)) {
+        if ($definition === null) {
             throw new UnsupportedGeneration(sprintf('Request body media type "%s" is not declared', $mediaType));
         }
         $schema = $definition['schema'] ?? [];
-        if (!is_array($schema) || array_is_list($schema)) {
-            throw new UnsupportedGeneration('JSON request body schema must be an object');
+        if (!is_array($schema)) {
+            // A boolean schema constrains no member shape: `true` admits any
+            // value, and a body under `false` is being sent to be refused.
+            return [];
         }
 
-        /** @var array<string, mixed> $schema */
         return $schema;
     }
 
     /**
-     * @param array<array-key, mixed> $content
-     * @return array<array-key, mixed>|null
+     * @param array<string, CompiledMediaType> $content
+     * @return null|CompiledMediaType
      */
     private function declaredJsonDefinition(array $content): ?array
     {
         foreach ($content as $mediaType => $definition) {
-            if (!is_string($mediaType) || !is_array($definition)) {
-                continue;
-            }
             if (MediaType::isJson($mediaType)) {
                 return $definition;
             }

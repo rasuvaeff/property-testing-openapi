@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
@@ -21,6 +22,7 @@ final readonly class ContainerArbitraries
     public function __construct(
         private SchemaArbitraryCompiler $compiler,
         private SchemaFacts $facts,
+        private ?SchemaDirection $direction = null,
     ) {}
 
     /** @param array<string, mixed> $schema */
@@ -93,12 +95,22 @@ final readonly class ContainerArbitraries
             }
             $requiredNames[$name] = true;
         }
+        $omitted = $this->direction?->foreignFlag();
+        /** @var array<array-key, true> $reserved */
+        $reserved = [];
         /** @var array<string, true> $requiredNames */
         foreach ($properties as $name => $property) {
             if (!is_array($property) || array_is_list($property)) {
                 throw UnsupportedGeneration::forSchema('object properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
+            if ($omitted !== null && ($property[$omitted] ?? false) === true) {
+                // Owned by the other direction: never sent, still declared.
+                $reserved[$name] = true;
+                unset($requiredNames[$name]);
+
+                continue;
+            }
             $compiled = $this->compiler->compile($property);
             $shape[$name] = isset($requiredNames[$name]) ? $compiled : $this->optionalProperty($compiled);
         }
@@ -145,7 +157,7 @@ final readonly class ContainerArbitraries
         $key = Gen::map(
             Gen::filter(
                 Gen::stringFrom($keyAlphabet, minLength: 1, maxLength: 8),
-                static fn(string $name): bool => !array_key_exists($name, $shape),
+                static fn(string $name): bool => !array_key_exists($name, $shape) && !isset($reserved[$name]),
             ),
             static fn(string $name): string => $name,
         );

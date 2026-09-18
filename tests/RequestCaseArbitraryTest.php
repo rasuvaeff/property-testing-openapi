@@ -1519,7 +1519,7 @@ final class RequestCaseArbitraryTest
     {
         $negative = new NegativeRequestCaseArbitrary();
 
-        $upper = $this->bodyOperation([0 => ['schema' => ['type' => 'object']], 'Application/JSON ; charset=utf-8' => ['schema' => ['type' => 'object']]]);
+        $upper = $this->bodyOperation(['Application/JSON ; charset=utf-8' => ['schema' => ['type' => 'object']]]);
         $case = $negative->malformedJsonForOperation($upper)->generate(new Random(71))->value;
         Assert::same($case['misuse']['kind'] ?? null, 'json-syntax');
 
@@ -2053,11 +2053,8 @@ final class RequestCaseArbitraryTest
     {
         $arbitrary = new RequestCaseArbitrary();
 
-        $case = $arbitrary->forOperation($this->bodyOperation([0 => 'junk', 'application/json' => ['schema' => ['type' => 'object']]]))->generate(new Random(13))->value;
-        Assert::true(is_array($case['body']) && $case['body']['mediaType'] === 'application/json');
-
         foreach ([
-            ['application/json' => ['schema' => 'invalid']],
+            ['application/json' => ['schema' => false]],
             ['text/plain' => ['schema' => ['type' => 'object']]],
         ] as $content) {
             try {
@@ -2345,7 +2342,6 @@ final class RequestCaseArbitraryTest
         yield 'multipart array items not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['x']]]]]]], 'Multipart array items must be a schema object'];
         yield 'request body content not an object' => [['content' => 'oops'], 'Request body content must be an object'];
         yield 'no supported media type' => [['content' => ['text/csv' => ['schema' => ['type' => 'string']]]], 'Request body has no supported media type'];
-        yield 'json schema is a list' => [['content' => ['application/json' => ['schema' => ['a']]]], 'JSON request body schema must be an object'];
     }
 
     public function formRequiredPropertyThatIsNotASchemaFailsClosed(): void

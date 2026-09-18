@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
@@ -30,14 +31,20 @@ final readonly class SchemaArbitraryCompiler
      * @param string $excludedCharacters characters no generated plain string
      *        may contain — the separator of a delimited parameter style, which
      *        that style has no way to escape
+     * @param null|SchemaDirection $direction the direction the values travel
+     *        in, when they travel in one: a property the other direction owns
+     *        (`readOnly` on a request, `writeOnly` on a response) is declared
+     *        and typed by the contract but must not be sent, so an object
+     *        never carries it — while its name stays reserved, so no undeclared
+     *        member is generated under it either. A parameter has no direction.
      */
-    public function __construct(string $excludedCharacters = '')
+    public function __construct(string $excludedCharacters = '', ?SchemaDirection $direction = null)
     {
         $facts = new SchemaFacts();
         $this->facts = $facts;
         $this->composition = new CompositionArbitraries($this, $facts);
         $this->scalars = new ScalarArbitraries($facts, $excludedCharacters);
-        $this->containers = new ContainerArbitraries($this, $facts);
+        $this->containers = new ContainerArbitraries($this, $facts, $direction);
     }
 
     /**

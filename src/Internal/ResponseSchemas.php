@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
+use Rasuvaeff\OpenApiContract\SchemaDirection;
+
 /**
- * The response-direction view of a schema: `writeOnly` properties are not
- * part of a response, so they leave `properties` and `required` the way the
- * contract validator drops them before checking a response body.
+ * The response-direction view of a schema, exactly as the contract validator
+ * reads a response body: a `writeOnly` property is not required on a
+ * response.
  *
  * @internal
  */
@@ -23,6 +25,6 @@ final readonly class ResponseSchemas
      */
     public function effective(array $schema): array
     {
-        return $this->schemas->effective($schema, 'writeOnly');
+        return $this->schemas->effective($schema, SchemaDirection::Response);
     }
 }

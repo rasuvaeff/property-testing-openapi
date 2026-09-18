@@ -58,7 +58,7 @@ final readonly class JsonBodyWitness
     public function findAll(array $schema, string $kind, SchemaDialect $dialect, SchemaDirection $direction): array
     {
         $targets = [];
-        foreach ($this->candidates($schema) as $name => $property) {
+        foreach ($this->candidates($schema, $direction) as $name => $property) {
             $invalid = $this->check->firstDiscriminating($this->witnesses($property, $kind), $property, $kind, $dialect, $direction);
             if ($invalid !== null) {
                 /** @var Witness $invalid */
@@ -79,19 +79,25 @@ final readonly class JsonBodyWitness
      * whose only constrained property is numeric with no constructible body
      * value category at all (#98).
      *
+     * A property the other direction owns (`readOnly` on a request,
+     * `writeOnly` on a response) is not a candidate: the contract types it
+     * but a message should not carry it, so a witness written over it would
+     * contradict a member the application is entitled to ignore.
+     *
      * @param array<string, mixed> $schema
      * @return array<array-key, array<string, mixed>> keyed by property name, or `$` for a scalar root
      */
-    private function candidates(array $schema): array
+    private function candidates(array $schema, SchemaDirection $direction): array
     {
         if (!$this->isObject($schema)) {
             return [self::ROOT => $schema];
         }
         $candidates = [];
         $properties = $this->mapOf($schema['properties'] ?? null);
+        $foreign = $direction->foreignFlag();
         /** @var mixed $property */
         foreach ($properties as $name => $property) {
-            if ((is_int($name) || $name !== '') && is_array($property) && !array_is_list($property)) {
+            if ((is_int($name) || $name !== '') && is_array($property) && !array_is_list($property) && ($property[$foreign] ?? false) !== true) {
                 /** @var array<string, mixed> $property */
                 $candidates[$name] = $property;
             }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
@@ -41,7 +42,7 @@ final readonly class ResponseCaseArbitrary
 
     public function __construct()
     {
-        $this->schemas = new SchemaArbitraryCompiler();
+        $this->schemas = new SchemaArbitraryCompiler(direction: SchemaDirection::Response);
         $this->responseSchemas = new ResponseSchemas();
         $this->parameterSchemas = new ParameterSchemas();
     }

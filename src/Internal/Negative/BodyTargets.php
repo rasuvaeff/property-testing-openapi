@@ -83,7 +83,7 @@ final readonly class BodyTargets
             throw new UnsupportedGeneration('Request body content must be an object');
         }
         foreach (array_keys($content) as $declared) {
-            if (is_string($declared) && str_contains($declared, '*')) {
+            if (str_contains($declared, '*')) {
                 throw new UnsupportedGeneration(sprintf('Operation "%s" declares wildcard media type "%s"; an undeclared media type cannot be promised', $operation->key, $declared));
             }
         }

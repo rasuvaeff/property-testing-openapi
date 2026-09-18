@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
@@ -39,6 +40,9 @@ final readonly class RequestCaseArbitrary
 {
     private SchemaArbitraryCompiler $schemas;
 
+    /** The body compiler: a request never carries a `readOnly` member. */
+    private SchemaArbitraryCompiler $bodySchemas;
+
     private ParameterSchemas $parameterSchemas;
 
     private RequestSchemas $requestSchemas;
@@ -46,6 +50,7 @@ final readonly class RequestCaseArbitrary
     public function __construct()
     {
         $this->schemas = new SchemaArbitraryCompiler();
+        $this->bodySchemas = new SchemaArbitraryCompiler(direction: SchemaDirection::Request);
         $this->parameterSchemas = new ParameterSchemas();
         $this->requestSchemas = new RequestSchemas();
     }
@@ -149,19 +154,21 @@ final readonly class RequestCaseArbitrary
         /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
         $bodies = [];
         foreach ($content as $mediaType => $definition) {
-            if (!is_string($mediaType) || !is_array($definition)) {
-                continue;
-            }
+            // A media type without a schema, or with the `true` schema, admits
+            // any value — the contract reads both as unconstrained. Only the
+            // `false` schema admits nothing, and nothing can be generated for it.
             $schema = $definition['schema'] ?? [];
-            if (!is_array($schema) || array_is_list($schema)) {
-                throw new UnsupportedGeneration('JSON request body schema must be an object');
+            if ($schema === true) {
+                $schema = [];
             }
-            /** @var array<string, mixed> $schema */
+            if ($schema === false) {
+                throw new UnsupportedGeneration(sprintf('Request body "%s" declares the false schema, which admits no value', $mediaType));
+            }
             $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
             if (MediaType::isJson($mediaType)) {
                 /** @var ArbitraryInterface<mixed> $json */
-                $json = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
+                $json = Gen::map($this->bodySchemas->compile($schema), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,
                     'encoding' => 'json',
                     'value' => $value,
@@ -171,7 +178,7 @@ final readonly class RequestCaseArbitrary
                 $this->assertObjectSchema($schema, 'Form request body schema must be an object');
                 $this->assertFormEncoding($definition['encoding'] ?? []);
                 /** @var ArbitraryInterface<mixed> $form */
-                $form = Gen::map($this->schemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
+                $form = Gen::map($this->bodySchemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
                     'mediaType' => $mediaType,
                     'encoding' => 'form',
                     'value' => $value,
@@ -302,6 +309,10 @@ final readonly class RequestCaseArbitrary
                 throw new UnsupportedGeneration('Multipart properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
+            if (($property['readOnly'] ?? false) === true) {
+                // Owned by the response: declared, typed, never sent.
+                continue;
+            }
             $required = isset($requiredNames[$name]);
             // A required container has to be generated non-empty here as well
             // as for a form body: an empty array becomes zero parts, and a
@@ -367,7 +378,7 @@ final readonly class RequestCaseArbitrary
         // shape removed here is one no client sends on purpose, and refusing
         // it costs a percent of draws.
         return Gen::filter(
-            $this->schemas->compile($schema),
+            $this->bodySchemas->compile($schema),
             static fn(mixed $value): bool => !is_string($value) || trim($value) === $value,
         );
     }

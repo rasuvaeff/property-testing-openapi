@@ -122,11 +122,7 @@ final readonly class DocumentExamples
      */
     private function bodyPart(Operation $operation): ?array
     {
-        $content = isset($operation->requestBody['content']) && is_array($operation->requestBody['content']) ? $operation->requestBody['content'] : [];
-        foreach ($content as $mediaType => $definition) {
-            if (!is_string($mediaType) || !is_array($definition)) {
-                continue;
-            }
+        foreach ($operation->requestBody['content'] ?? [] as $mediaType => $definition) {
             $encoding = match (true) {
                 MediaType::isJson($mediaType) => 'json',
                 MediaType::normalize($mediaType) === 'application/x-www-form-urlencoded' => 'form',
@@ -139,10 +135,12 @@ final readonly class DocumentExamples
                 continue;
             }
             $schema = $definition['schema'] ?? [];
-            if (!is_array($schema) || array_is_list($schema)) {
+            if ($schema === true) {
+                $schema = [];
+            }
+            if ($schema === false) {
                 continue;
             }
-            /** @var array<string, mixed> $schema */
             $unnamed = $this->unnamed($definition, $schema);
             $named = $this->named($definition['examples'] ?? null, sprintf('request body "%s"', $mediaType));
             if ($unnamed === null && $named === []) {
