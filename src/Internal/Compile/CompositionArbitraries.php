@@ -79,7 +79,7 @@ final readonly class CompositionArbitraries
             }
             $byType[$types[0]][] = $index;
         }
-        foreach ($byType as $type => $indexes) {
+        foreach ($byType as $indexes) {
             if (count($indexes) !== 1) {
                 return null;
             }
@@ -145,16 +145,20 @@ final readonly class CompositionArbitraries
             || (($number['exclusiveMaximum'] ?? false) === true && (float) $value === $maximum)) {
             return false;
         }
-        /** @var mixed $multiple */
-        $multiple = $number['multipleOf'] ?? null;
-        if (is_int($multiple) && $multiple > 0) {
+        $multiple = $this->positiveNumber($number['multipleOf'] ?? null);
+        if (is_int($multiple)) {
             return $value % $multiple === 0;
         }
-        if (is_float($multiple) && $multiple > 0) {
+        if (is_float($multiple)) {
             return abs((float) $value - round((float) $value / $multiple) * $multiple) < 1e-14;
         }
 
         return true;
+    }
+
+    private function positiveNumber(mixed $value): int|float|null
+    {
+        return (is_int($value) || is_float($value)) && $value > 0 ? $value : null;
     }
 
     /**

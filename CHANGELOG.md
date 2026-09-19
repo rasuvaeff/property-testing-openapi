@@ -5,6 +5,104 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.15.0 — 2026-09-19
+
+The 1.0-readiness review of 2026-09-18 (#117–#129). A minor on 0.x: the
+constructor of `ResponseMaterializer` narrows, the `OperationPropertyFailed`
+factories take one more argument, the `RequestCaseData` /
+`NegativeRequestCaseData` psalm aliases are gone, and case-shape errors are a
+type of their own.
+
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.12` and accepts
+  `rasuvaeff/property-testing-core` `^0.11` (develops against
+  `rasuvaeff/property-testing-testo` `^0.11` too). The directional schema
+  rewrite is delegated to `SchemaCheck::effective()` — this package's own
+  copy never recursed into `additionalProperties` — and the request body and
+  responses arrive as the contract's typed shapes, so the guards that
+  re-checked them are gone.
+- **Fixed.** A numeric parameter reached the wire through `(string)`, which
+  rounds to `precision=14` and put a different number there for any value
+  that needed more digits (`846608010056.187` went as `846608010056.19`). A
+  float is spelled the way `json_encode` spells it now. The `multipleOf`
+  generator also rounded `k × m` back to the decimal it meant, which from
+  about `64` upwards is one ulp away from the product the validator
+  computes and tolerates, so a third of the draws for `0.1` were rejected;
+  the decimal spelling is kept only where the validator agrees with it.
+  Under `ext-bcmath` the contract evaluates `multipleOf` in decimal
+  arithmetic and its verdict is its own — openapi-contract#151 (#117).
+- **Fixed.** `missing-required` no longer targets a path parameter, and
+  `negativeCoverage()` no longer lists it: omitting one leaves the template
+  literal in the request target, which a `string` schema accepts, so the
+  negative phase failed on any `/{slug}` operation with
+  `unexpectedlyValidRequest`. An operation whose only required component is a
+  path parameter skips the category and names the reason (#118).
+- **Fixed.** `+` stays `%2B` under `allowReserved`: a raw plus in a query is
+  a space to the validator and to every SAPI (#119).
+- **Fixed.** A form body property with an object schema and `explode: true`
+  is generated without undeclared members — its flat `member=value` pairs can
+  carry only the declared ones, and an extra landed as a top-level member of
+  the body. A nested object whose `minProperties` its declared properties
+  cannot meet fails closed at compile time (#120).
+- **Fixed.** `oneOf` over an `integer` and a `number` branch was compiled as a
+  plain choice between disjoint branches, and half the draws matched both.
+  The number branch is generated without integral values, the integer branch
+  keeps only what the number branch's bounds and multiple refuse, and a
+  number branch that admits every value outside the integer branch fails
+  closed. `1.0` is an integer to JSON Schema, and is treated as one (#121).
+- **Fixed.** A multipart part declared under a JSON media type carries the
+  JSON encoding of its value; `text/*` and `application/octet-stream` parts
+  carry it verbatim; any other part media type fails closed instead of
+  sending a body the generator cannot vouch for (#122).
+- **Fixed.** Three legal documents reached a run-time `GenerationExhausted`:
+  a header enum outside ASCII (`isHeaderSafe()` admits obs-text now, as RFC
+  9110 and the validator do), a path pattern that always carries a slash
+  (probed at compile time and refused by name, as is a header pattern none
+  of whose strings survives the wire), and an object whose twelve optionals
+  were drawn as independent presence choices against `maxProperties: 1`
+  (`minProperties`/`maxProperties` are met by construction: an optional past
+  the ceiling is left out, one needed for the floor brought in). `uniqueItems`
+  with `minItems` over a bounded integer domain smaller than it fails closed
+  at compile time (#123).
+- **Fixed.** A header enum member with an interior space (`New York`) was
+  refused at compile time although the validator accepts it: a scalar
+  header's members are refused only for whitespace at an end or a control
+  character, a list or object header's additionally for a comma (#129).
+- **Added.** `ContractSuite::redaction(RedactionPolicy)` configures the policy
+  every rendering goes through: `reproduce()` by default (its policy
+  argument is optional now) and the minimal case `OperationPropertyFailed`
+  prints, which used to be the unredacted counterexample JSON.
+  `ContractSuite::redact(array $case): array` applies it to a case. The
+  READMEs and `llms.txt` claimed `Cookie` was in the default redacted header
+  set; it is not, by design since #73, and they say so now (#124).
+- **Added.** `OpenApiPropertyTestingException`, an empty marker interface
+  implemented by every exception of the package; `InvalidCase`
+  (`\InvalidArgumentException`) for a case that does not have the exported
+  shape — the materializer and the serializer threw `UnsupportedGeneration`
+  for it, which is a document limitation, not a caller error; a
+  `Psr15Transport` configuration error is a `SuiteConfigurationError` rather
+  than a bare `\LogicException`. `UnsupportedGeneration::forSchema()`
+  refusals name the operation and the parameter or body being compiled
+  (`Unsupported OpenAPI schema generation for operation "pets.list", query
+  parameter "limit": minLength exceeds maxLength`) through
+  `inOperation()` (#127).
+- **Changed.** The case shape is declared once, on `ContractSuite`
+  (`CaseData` with `ParameterMap`, `BodyData`, `PartData`, `MisuseData`), and
+  imported everywhere else; the `RequestCaseData` and
+  `NegativeRequestCaseData` aliases and the inline copies are gone.
+  `checkValid()`, `checkNegative()`, `reproduce()`, `redact()` and
+  `RequestMaterializer::materialize()` refuse a case missing a key with
+  `InvalidCase` naming it — a hand-written case without `misuse` used to
+  raise a PHP warning and pass `checkValid()` (#128).
+- **Changed.** `ResponseMaterializer::__construct()` no longer takes the
+  `@internal` `JsonBodyEncoder` and `ParameterSerializer` as defaulted
+  parameters; it builds them, as `RequestMaterializer` does (#125).
+  `CheckFailed::$result` is `readonly`, assigned through the constructor by
+  the factories (#126). `OperationPropertyFailed::forCounterExample()` and
+  `forExample()` take the redacted case to print as their last argument.
+- Zoo: `labels.get`, `sparse.create`, `amounts.create`, `settings.create`,
+  `precise.get`; the contract's generated corpus is re-recorded from it
+  (openapi-contract#152).
+
 ## 0.14.1 — 2026-09-18
 
 - **Fixed.** Valid number schemas now keep exclusive bounds at the adjacent

@@ -24,7 +24,7 @@ styles и JSON, form-urlencoded или multipart request body, после чег
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.11 и `rasuvaeff/property-testing-core` ^0.5–^0.10
+- `rasuvaeff/openapi-contract` ^0.12 и `rasuvaeff/property-testing-core` ^0.5–^0.11
 - реализации `psr/http-message`, `psr/http-factory` и
   `psr/http-server-handler`: PSR-17 factory материализует запросы, а
   `ContractSuite` гоняет PSR-15 handler в процессе
@@ -54,16 +54,36 @@ $request = (new RequestMaterializer(new Psr17Factory(), new Psr17Factory()))->ma
 $contract->validateRequest($request)->assertValid();
 ```
 
-`RequestCaseData` - JSON-compatible associative array с раздельными `path`,
-`query`, `headers`, `cookies` и optional `body`. Form body хранит logical value,
+Case (`CaseData`, объявлен один раз psalm-типом на `ContractSuite` и
+импортируется отовсюду) — JSON-compatible associative array с
+`operationKey`, раздельными `path`, `query`, `headers`, `cookies`, `body`
+(или `null`) и `misuse` (`null` для валидного кейса). Каждая `@api`-точка
+входа, принимающая кейс — `checkValid()`, `checkNegative()`, `reproduce()`,
+`redact()`, `RequestMaterializer::materialize()` — отвергает кейс без
+ключа как `InvalidCase`, называя ключ. Form body хранит logical value,
 а multipart body - deterministic boundary и data-only parts; binary payload
 представлен как base64. Части multipart — только скаляры и binary: вложенные
 объекты и массивы падают как `UnsupportedGeneration`; content type части —
 умолчание OAS для схемы элемента, если Encoding Object не задал свой.
-Required parameters и
+Часть под JSON media type несёт JSON-кодировку значения; `text/*` и
+`application/octet-stream` — значение как есть; любой другой media type
+части падает fail-closed. Required parameters и
 request bodies присутствуют всегда; для optional parameters и JSON body
 генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
 case можно сохранять в property corpus.
+
+Значение заголовка генерируется так, как его читает валидатор: как
+отправлено, с обрезанными пробелами по краям. Генерируемые строки остаются
+в printable ASCII без пробела; член enum или const оценивается целиком,
+поэтому пробел внутри (`New York`) и obs-text (`žluť`) сохраняются, а член с
+пробелом на краю, управляющим символом или — в списочном/объектном
+заголовке — запятой отбрасывается; заголовок, ни один член которого
+отправить нельзя, отвергается при компиляции. Path- или header-`pattern`,
+ни одна строка которого не переживает провод, тоже отвергается при
+компиляции; `+` в query остаётся `%2B` под `allowReserved` (сырой плюс —
+пробел для любого читателя). Form-свойство с exploded object-схемой
+генерируется без необъявленных членов: его плоские пары несут только
+объявленные.
 
 У пустого массива или объекта нет form-style представления на проводе
 (RFC 6570 считает его неопределённым), поэтому materializer опускает такой
@@ -107,13 +127,13 @@ request-направлению схемы — `readOnly`-свойства ухо
 | Keyword | Генерация |
 |---|---|
 | `type` (один или список), `const`, `enum`, `nullable` (OAS 3.0) | поддержано; список типов — взвешенное объединение |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; дробная граница у integer округляется внутрь, открытая граница отступает внутрь на десятую (или четверть узкого окна) |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — так, как его вычисляет валидатор (`ext-bcmath` меняет вердикт самого контракта — openapi-contract#151) |
 | `minLength`, `maxLength` (не более 64), `pattern` (подмножество PCRE) | поддержано |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
 | `items`, `minItems`, `maxItems` (не более 16), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
-| `properties`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано |
+| `properties`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано; кардинальность выполняется по построению (optional сверх потолка выпадает, нужный для пола — добавляется) |
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
-| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
+| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
 | `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed |
 | `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
 
@@ -142,7 +162,7 @@ $request = (new RequestMaterializer($requests, $streams))->materialize(
 `Credentials` принимает обычную строку или список строк для каждого значения
 header, query и cookie. Публичные maps нормализуются в списки. Credentials
 применяются только во время materialization, поэтому секреты не попадают в
-`RequestCaseData` и сохранённые property examples:
+case и сохранённые property examples:
 
 ```php
 $credentials = new Credentials(
@@ -152,8 +172,10 @@ $credentials = new Credentials(
 ```
 
 `NegativeRequestCaseArbitrary` предоставляет конструктивные negative-категории.
-`forOperation()` удаляет один обязательный path, query, header, cookie или body
-и записывает `misuse.kind = 'missing-required'`. Это единственная категория,
+`forOperation()` удаляет один обязательный query, header, cookie или body
+и записывает `misuse.kind = 'missing-required'`. Path-параметр целью не
+бывает: его пропуск оставляет в request target литерал шаблона, который
+`string`-схема принимает, так что отсутствие ненаблюдаемо. Это единственная категория,
 которой нужен обязательный компонент: каждая категория значений ниже
 записывает неверное значение в кейс, поэтому необязательный параметр,
 который валидный кейс опустил, в негативном присутствует и проверяется по
@@ -251,6 +273,25 @@ JSON-варианте. Вложенные свойства пока не
 
 Неподдерживаемые schema assertions и non-JSON request bodies бросают
 `UnsupportedGeneration`; они не расширяются молча до произвольных строк.
+Отказ по схеме называет операцию и параметр или body, которые компилировал
+(`Unsupported OpenAPI schema generation for operation "pets.list", query
+parameter "limit": minLength exceeds maxLength`).
+
+### Исключения
+
+Каждое исключение пакета реализует маркер-интерфейс
+`OpenApiPropertyTestingException`, так что `catch (OpenApiPropertyTestingException)`
+ловит всё, что пакет сообщает; SPL-родитель у каждого сохраняется.
+
+| Исключение | Родитель | Когда |
+|---|---|---|
+| `UnsupportedGeneration` | `InvalidArgumentException` | документ использует возможность вне матрицы поддержки |
+| `InvalidCase` | `InvalidArgumentException` | рукописный кейс не имеет экспортируемой формы или нацелен на другую операцию |
+| `SuiteConfigurationError` | `LogicException` | suite или transport просят работать в форме, которую конфигурация не допускает |
+| `CheckFailed` | `RuntimeException` | встроенная проверка увидела нарушение контракта (`$result` хранит результат валидации) |
+| `OperationPropertyFailed` | `RuntimeException` | фаза `OperationProperty::check()` фальсифицирована |
+| `CredentialsUnavailable` | `RuntimeException` | credentials provider не может удовлетворить альтернативу |
+| `CoverageIncomplete` | `RuntimeException` | выбранная операция не выполнила ни одного trial |
 
 ## Transports
 
@@ -401,14 +442,25 @@ case: диагностируемый дефект документа, а не м
 не применяются никогда, поэтому секреты provider-а не могут утечь по
 построению; `RedactionPolicy` дополнительно редактирует названные headers,
 query-параметры, cookies и dot-separated JSON body paths поверх дефолтного
-набора заголовков (`Authorization`, `Proxy-Authorization`, `Cookie`,
-`Set-Cookie`). Body preview ограничен по байтам и никогда не режет UTF-8
-последовательность пополам.
+набора заголовков (`Authorization`, `Proxy-Authorization`, `Set-Cookie`).
+`Cookie` в дефолтный набор не входит: policy называет cookie-параметры по
+одному, остальные остаются читаемыми. Body preview ограничен по байтам и
+никогда не режет UTF-8 последовательность пополам.
+
+`redaction()` задаёт policy один раз на suite: её рендерит `reproduce()` по
+умолчанию и через неё `OperationProperty` печатает minimal case
+фальсифицированной фазы, так что секрет из заголовка `X-Api-Key`,
+query-параметра или body-члена не появится ни там, ни там. `redact()`
+возвращает кейс с применённой policy, форма сохранена.
 
 ```php
 use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 
-echo $suite->reproduce('pets.get', $case, new RedactionPolicy(bodyPaths: ['owner.card']));
+$suite = $suite->redaction(new RedactionPolicy(headers: ['X-Api-Key'], bodyPaths: ['owner.card']));
+
+echo $suite->reproduce('pets.get', $case);                       // настроенная policy
+echo $suite->reproduce('pets.get', $case, new RedactionPolicy()); // один вызов, другая policy
+$printable = $suite->redact($case);
 ```
 
 ### Покрытие негативной фазы
@@ -473,10 +525,10 @@ Response Object — тот, к которому его резолвит конт
 `NXX`, затем `default` — тот же выбор, что в `validateResponse()`, через
 `Operation::responseFor()`). Required response headers присутствуют всегда,
 optional берут обе ветви, JSON body генерируется без `writeOnly`-свойств.
-`ResponseMaterializer` сериализует значения заголовков `simple`-стилем, как и
-request-заголовки, — percent-encoded, список через запятую, — так что
-управляющие символы не доходят до PSR-7-фабрики, а запятая внутри элемента
-переживает round trip.
+`ResponseMaterializer` пишет значения заголовков `simple`-стилем, как и
+request-заголовки, — как отправлено, список через запятую, — а генератор
+не пускает в них управляющий символ и запятую внутри элемента, так что до
+PSR-7-фабрики не доходит ни то, ни другое.
 `ResponseCaseData` JSON-compatible и corpus-safe, как и request-аналог.
 Необъявленный статус, required header без схемы и body без JSON media type
 падают как `UnsupportedGeneration`.
@@ -527,7 +579,8 @@ final class ApiContractTest
 `check()` всегда выполняет valid-фазу, а negative-фазу — когда у операции
 есть хотя бы одна конструктивная misuse-категория. Falsified-фаза бросает
 `OperationPropertyFailed` с ключом операции, фазой, seed, shrunk minimal case
-и redacted curl-репродьюсером.
+и redacted curl-репродьюсером. Сообщение печатает minimal case через
+`redaction()`-policy suite; `$counterExample` хранит его как сгенерирован.
 
 Валидная фаза начинается с примеров документа (`exampleCases()`): они
 выполняются до replay корпуса и random-фазы при любом seed и числе прогонов,

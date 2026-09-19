@@ -46,7 +46,7 @@ final readonly class ParameterSchemas
     public function forLocation(array $schema, string $location, string $style = 'form'): array
     {
         if ($location === 'header') {
-            return $this->rewrite($schema, false, null, header: SchemaShape::isArray($schema) || SchemaShape::isObject($schema) ? 'delimited' : 'scalar');
+            return $this->rewrite($schema, path: false, separator: null, header: SchemaShape::isArray($schema) || SchemaShape::isObject($schema) ? 'delimited' : 'scalar');
         }
 
         return $this->rewrite($schema, $location === 'path', self::separatorOf($location, $style, $schema));

@@ -6,7 +6,6 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
-use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
@@ -310,28 +309,6 @@ final class WireAgreementTest
             $case = $arbitrary->generate(new Random($seed))->value;
             $result = $contract->validateRequest($materializer->materialize($operation, $case));
             Assert::true($result->isValid(), sprintf('Seed %d: %s', $seed, json_encode([$case, $result->violations], JSON_THROW_ON_ERROR)));
-            $cases[] = $case;
-        }
-
-        return $cases;
-    }
-
-    /**
-     * Every draw must be rejected by the contract.
-     *
-     * @param ArbitraryInterface<array<string, mixed>> $arbitrary
-     * @return list<array<string, mixed>>
-     */
-    private function negativeCases(Contract $contract, string $operationKey, ArbitraryInterface $arbitrary, int $draws = self::DRAWS): array
-    {
-        $operation = $contract->operation($operationKey);
-        $factory = new Psr17Factory();
-        $materializer = new RequestMaterializer($factory, $factory);
-        $cases = [];
-        foreach (range(1, $draws) as $seed) {
-            $case = $arbitrary->generate(new Random($seed))->value;
-            $result = $contract->validateRequest($materializer->materialize($operation, $case));
-            Assert::false($result->isValid(), sprintf('Seed %d accepted: %s', $seed, json_encode($case, JSON_THROW_ON_ERROR)));
             $cases[] = $case;
         }
 

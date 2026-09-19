@@ -44,18 +44,29 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
 
 ## Invariants & gotchas
 
-- Keep `RequestCaseData` JSON-compatible. It must never contain PSR-7 objects,
-  credentials, closures, or application DTOs.
+- Keep `CaseData` JSON-compatible. It must never contain PSR-7 objects,
+  credentials, closures, or application DTOs. The shape is declared once on
+  `ContractSuite` (`CaseData` and its parts) and imported everywhere else;
+  `Internal\CaseShape::assert()` is the run-time check every `@api` entry
+  point that takes a case runs first, and `InvalidCase` — not
+  `UnsupportedGeneration` — is what a malformed *case* raises. Keep the two
+  apart: `UnsupportedGeneration` is a document limitation.
 - A materialized valid case must pass `Contract::validateRequest()` before a
   transport may observe it.
 - A header is written verbatim, a path and a query are percent-encoded, and a
   cookie is percent-encoded. That is not a style question but a wire question:
   the validator reads a header field value as sent (openapi-contract#66), so
   encoding one here would put a string on the wire that no client sends.
-  `ParameterSchemas::separatorOf()` narrows the alphabet accordingly and
-  `isHeaderSafe()` guards what a `pattern` or a `format` can still put outside
-  a field value — the same two halves as the path rule below. A CR or an LF
-  reaching a materializer is refused by name, never encoded away.
+  `ParameterSchemas::separatorOf()` narrows the alphabet of generated plain
+  strings accordingly and `isHeaderSafe()` is the judgement for everything
+  the alphabet cannot see — a `pattern`, a `format`, an enum member, a const:
+  obs-text and an interior space are read as sent and kept, whitespace at an
+  end is stripped by the reader and refused, a comma is refused only in a
+  list/object header (#123, #129). `forLocation()` narrows a header enum by
+  that judgement and refuses at compile time when nothing remains; a path or
+  header `pattern` is probed at `forOperation()` time for the same reason —
+  the same two halves as the path rule below. A CR or an LF reaching a
+  materializer is refused by name, never encoded away.
 - Keep parameter serialization location-aware. A path value must not escape its
   template segment after percent decoding: `Internal\ParameterSchemas` raises
   `minLength` to 1 on every path string, drops unsafe `enum` members, refuses
@@ -70,10 +81,23 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   `null` enum members and a `null` const at every nesting level.
 - Every unsatisfiable combination the compiler can recognise fails closed at
   compile time (`pattern` + asserted `format`, format length bands,
-  `uniqueItems` over a finite domain, `not.type` covering the source, `allOf`
-  branch bounding `additionalProperties` without its siblings' properties).
-  Do not push such checks into `Gen::filter()`; a run-time
-  `GenerationExhausted` is a defect here.
+  `uniqueItems` over a finite domain including a bounded integer, `not.type`
+  covering the source, `allOf` branch bounding `additionalProperties` without
+  its siblings' properties, an exploded form object whose `minProperties` its
+  declared properties cannot meet, `oneOf` over `integer`/`number` with no
+  value to keep apart). Object cardinality is met by construction in
+  `ContainerArbitraries::objectValues()`, never by a count filter. Do not push
+  such checks into `Gen::filter()`; a run-time `GenerationExhausted` is a
+  defect here. Where a filter is unavoidable (a `pattern` on the path or
+  header wire), probe it at compile time with the same retry budget and refuse
+  by name.
+- A generated float goes on the wire through `WireValue` as `json_encode`
+  spells it, never `(string)` (precision=14 rounds); a decimal `multipleOf`
+  product is kept as the clean decimal only where the validator's float-mode
+  arithmetic agrees, else as the product itself
+  (`ScalarArbitraries::multipleOf()`, #117). Under `ext-bcmath` the contract's
+  verdict is its own (openapi-contract#151); tests that pin multipleOf
+  agreement skip there.
 - The end-to-end oracle for the valid phase is `tests/Support/ZooContracts.php`
   + `ContractSuiteTest::zooValidCasesPassTheBuiltInChecks`: one operation per
   schema feature, checked through materialize → validate → transport →

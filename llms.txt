@@ -16,11 +16,26 @@ Public API:
 - Compile-time fail-closed (`UnsupportedGeneration`) on: `pattern` +
   asserted `format`; a length window outside the format's band (uuid 36,
   date 10, date-time 29, ipv4 7–15, email 6–36, uri/url 12–55); `uniqueItems`
-  over a finite item domain (`boolean`, `enum`, `const`, `null`) smaller than
-  `minItems`; `not.type` covering every declared type; an `allOf` branch
-  bounding `additionalProperties` that does not declare every sibling
-  property. Fractional integer bounds round inward; an open number bound
-  steps inside by min(0.1, window/4).
+  over a finite item domain (`boolean`, `enum`, `const`, `null`, a bounded
+  `integer`) smaller than `minItems`; `not.type` covering every declared
+  type; an `allOf` branch bounding `additionalProperties` that does not
+  declare every sibling property; a header `const`/`enum` no member of which
+  is read as sent (whitespace at an end, a control character, a comma in a
+  list/object header); a path or header `pattern` none of whose strings
+  survives the wire; an exploded form object whose `minProperties` its
+  declared properties cannot meet; `oneOf` over `integer` and `number` whose
+  number branch admits no value outside the integer branch. Every refusal
+  over a schema names the operation and the parameter/body
+  (`... for operation "op", query parameter "limit": <reason>`). Fractional
+  integer bounds round inward; an open number bound steps to the adjacent
+  double; a float is spelled as `json_encode` spells it and a decimal
+  multiple as the validator computes it. Object cardinality is met by
+  construction; `oneOf` over one `integer` and one `number` branch keeps a
+  value only when exactly one branch admits it. Header enum members keep an
+  interior space and obs-text; a query `+` stays `%2B` under `allowReserved`.
+  A multipart part under a JSON media type carries the JSON encoding of its
+  value; `text/*`/`application/octet-stream` parts carry it verbatim; any
+  other part media type fails closed.
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
   builds the request target against the operation's first effective server
   (relative server -> path-only URI, absolute server -> absolute URI);
@@ -55,7 +70,10 @@ Public API:
   time; pass the selected credentials as the optional third argument to
   `RequestMaterializer::materialize`.
 - `NegativeRequestCaseArbitrary::forOperation(Operation)` removes one required
-  request component and records `misuse.kind = 'missing-required'`. It is the
+  query/header/cookie/body component and records `misuse.kind =
+  'missing-required'`; a path parameter is never the target (omitting it
+  leaves the template literal in the target, which a string schema accepts),
+  and an operation with no other required component is skipped. It is the
   only category that needs a required component: every value category below
   writes its invalid value into the case, so an optional parameter the valid
   case leaves out is present in the negative one and is judged by its schema
@@ -133,7 +151,14 @@ Public API:
   skipped (an OAS 3.0 `nullable` property keeps its other keywords' cases),
   and a body declared under several media types is mutated on
   its JSON alternative only. Nested properties are not reached.
-- `UnsupportedGeneration` for unsupported schema/body/parameter input.
+- `UnsupportedGeneration` for unsupported schema/body/parameter input;
+  `InvalidCase` (`InvalidArgumentException`) for a hand-written case that
+  lacks the exported shape — a missing key is named (`Case is missing the
+  "misuse" key`) by `checkValid()`, `checkNegative()`, `reproduce()`,
+  `redact()` and `RequestMaterializer::materialize()`. Every exception of the
+  package (`UnsupportedGeneration`, `InvalidCase`, `SuiteConfigurationError`,
+  `CheckFailed`, `OperationPropertyFailed`, `CredentialsUnavailable`,
+  `CoverageIncomplete`) implements the marker `OpenApiPropertyTestingException`.
 - `ContractSuite::fromContract(Contract, RequestFactoryInterface, StreamFactoryInterface)`
   builds the framework-neutral suite model. Fluent configuration:
   `operations(list)` (explicit allow-list, unknown keys throw),
@@ -185,13 +210,19 @@ Public API:
   oracle from exact status codes or `NXX` ranges;
   `forOperation(string $operationKey, ...)` overrides selectors per operation;
   `accepts(string $operationKey, int $status): bool`.
-- `ContractSuite::reproduce(string $operationKey, array $case, RedactionPolicy)`
-  renders a redacted curl command; credentials are never applied there.
-- `RequestReproducer::curl(Operation, array $case, RedactionPolicy)` is the
-  `@internal` standalone form; `RedactionPolicy(headers, queryParameters, cookies,
-  bodyPaths)` names extra redactions on top of the default header set
-  (Authorization, Proxy-Authorization, Cookie, Set-Cookie). Body previews are
-  byte-bounded and UTF-8 safe.
+- `ContractSuite::redaction(RedactionPolicy)` configures the policy the suite
+  renders every case through: `reproduce()` by default and the minimal case
+  `OperationPropertyFailed` prints. `ContractSuite::redact(array $case): array`
+  returns the case with it applied, shape preserved.
+- `ContractSuite::reproduce(string $operationKey, array $case, ?RedactionPolicy)`
+  renders a redacted curl command (the configured policy unless one is given);
+  credentials are never applied there.
+- `RequestReproducer::curl(Operation, array $case, RedactionPolicy)` /
+  `redact(array $case, RedactionPolicy)` are the `@internal` standalone forms;
+  `RedactionPolicy(headers, queryParameters, cookies, bodyPaths)` names extra
+  redactions on top of the default header set (Authorization,
+  Proxy-Authorization, Set-Cookie — not Cookie: cookies are named one by one).
+  Body previews are byte-bounded and UTF-8 safe.
 - `SuiteConfigurationError` for selection/transport misconfiguration;
   `CheckFailed` for built-in check failures.
 - `ResponseCaseArbitrary::forOperation(Operation, int $status): ArbitraryInterface`
@@ -226,7 +257,10 @@ Public API:
   runs the valid phase always and the negative phase when the operation has a
   constructible misuse category; a falsified phase throws
   `OperationPropertyFailed` (operation key, phase, `CounterExample`, redacted
-  curl reproducer). `PROPERTY_RUNS` overrides runs, `PROPERTY_SEED` fixes the
+  curl reproducer; the message prints the minimal case through the suite's
+  redaction policy, `$counterExample` keeps it as generated;
+  `forCounterExample()`/`forExample()` take the redacted case as their last
+  argument). `PROPERTY_RUNS` overrides runs, `PROPERTY_SEED` fixes the
   seed (an explicit `seed:` wins and disables corpus replay), `PROPERTY_DB`
   names a directory corpus or `redis://host[:port][/key-prefix]` shared corpus;
   Redis uses ext-redis or predis and connects lazily.
@@ -249,7 +283,9 @@ Public API:
   (stable, `statuses` always a JSON object). Statuses are diagnostics, not a
   gate. Merge per-process reports outside the package.
 
-`RequestCaseData` has `operationKey`, separate path/query/headers/cookies maps,
+`CaseData` (`@psalm-import-type CaseData from ContractSuite`; parts
+`ParameterMap`, `BodyData`, `PartData`, `MisuseData`) has `operationKey`,
+separate path/query/headers/cookies maps,
 an optional JSON-compatible body: `{mediaType, encoding: 'json'|'raw'|'form', value}`
 or `{mediaType, encoding: 'multipart', boundary, parts}` (binary parts use base64), and
 `misuse: null`; `encoding: 'raw'` appears only in malformed-JSON negative cases.
