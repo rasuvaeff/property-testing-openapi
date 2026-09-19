@@ -261,6 +261,17 @@ final readonly class ScalarArbitraries
         }
 
         $decimals = $this->decimals((float) $multiple);
+        // `round($k * $m, $decimals)` is the decimal multiple it means only
+        // while `$k * $m` needs no more significant digits than a double
+        // holds; past 2^53 / 10^decimals the rounding can land on a
+        // neighbouring decimal that is no multiple, and the contract says so.
+        // Refused here rather than discovered on a rejected case (#133). A
+        // multiple that divides one (`1`, `0.5`, `0.25`) is exempt: every
+        // double past 2^53 is an integer, and an integer is a multiple of it.
+        $reach = max(abs($min), abs($max));
+        if (fmod(1.0, (float) $multiple) !== 0.0 && $reach * (float) (10 ** $decimals) > (float) (2 ** 53)) {
+            throw UnsupportedGeneration::forSchema(sprintf('number multipleOf %s cannot be spelled exactly up to %s: the multiples need more than the %d significant digits a double holds', json_encode($multiple, JSON_THROW_ON_ERROR), json_encode($reach, JSON_THROW_ON_ERROR), PHP_FLOAT_DIG));
+        }
 
         return Gen::map(
             Gen::intBetween($first, $last),

@@ -384,13 +384,19 @@ final class ZooContracts
                     'responses' => ['204' => []],
                 ]],
                 // Every integer is also a number: a value is valid for the
-                // union only when exactly one branch admits it (#121).
+                // union only when exactly one branch admits it (#121) — and
+                // whether the number branch admits an integer is the
+                // contract's verdict, not a copy of it: `0.7` over a wide
+                // integer branch is where the copy disagreed (#132).
                 '/amounts' => ['post' => [
                     'operationId' => 'amounts.create',
                     'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
                         'type' => 'object',
-                        'required' => ['amount'],
-                        'properties' => ['amount' => ['oneOf' => [['type' => 'integer', 'minimum' => -9, 'maximum' => 9], ['type' => 'number', 'minimum' => 0, 'maximum' => 9, 'multipleOf' => 0.5]]]],
+                        'required' => ['amount', 'step'],
+                        'properties' => [
+                            'amount' => ['oneOf' => [['type' => 'integer', 'minimum' => -9, 'maximum' => 9], ['type' => 'number', 'minimum' => 0, 'maximum' => 9, 'multipleOf' => 0.5]]],
+                            'step' => ['oneOf' => [['type' => 'integer', 'minimum' => -100000, 'maximum' => 100000], ['type' => 'number', 'minimum' => 0, 'maximum' => 100000, 'multipleOf' => 0.7]]],
+                        ],
                     ]]]],
                     'responses' => ['204' => []],
                 ]],

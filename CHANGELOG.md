@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.15.2 — 2026-09-19
+
+- **Fixed.** Whether the `number` branch of a `oneOf` admits an integer was
+  judged by a copy of the contract's old float `multipleOf` rule; with
+  0.12.1 the contract judges on the decimals and the two disagreed on 4670
+  of the integers in ±100000 for `multipleOf: 0.7` — the generator kept
+  `58254` on the `integer` branch, the contract saw it on both, and a case
+  called valid was rejected. The verdict is the contract's now:
+  `SchemaCheck::isMultipleOf()` (openapi-contract 0.12.2, required as
+  `^0.12.2`). The zoo's `amounts.create` carries `step` (`0.7` beside a wide
+  integer branch) and the contract's corpus is re-recorded (#132).
+- **Fixed.** A `number` schema whose bound is so wide that its decimal
+  multiples need more significant digits than a double holds
+  (`|bound| × 10^decimals > 2^53`) fails closed at compile time instead of
+  rounding onto a neighbouring decimal that is no multiple; a multiple that
+  divides one (`1`, `0.5`, `0.25`) is exempt, every double that wide being
+  an integer. A property pins that every generated multiple is one to the
+  contract (#133).
+- **CI.** `static-analysis.yml` runs `composer rector` on every PR: 0.15.0
+  shipped with a rule red in a test its last commit added, and nothing
+  before the next PR ran rector.
+
 ## 0.15.1 — 2026-09-19
 
 - **Changed.** Requires `rasuvaeff/openapi-contract` `^0.12.1`, which judges

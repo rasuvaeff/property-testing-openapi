@@ -6,6 +6,9 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
@@ -16,6 +19,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\PropertyTesting\Random;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -190,6 +194,47 @@ final class WireAgreementTest
         // The number branch refuses the negative integers, so those stay valid
         // for the integer branch; 0..5 are admitted by both and never drawn.
         Assert::same(array_keys($kinds), ['float', 'negative int']);
+
+        // `0.7` over a wide integer branch: the old float copy of the verdict
+        // kept 58254 on the integer branch and the contract rejected the case
+        // (#132). The verdict is the contract's now.
+        $kinds = [];
+        foreach ($this->validCases($this->jsonBodyContract(['oneOf' => [['type' => 'integer', 'minimum' => -100000, 'maximum' => 100000], ['type' => 'number', 'minimum' => 0, 'maximum' => 100000, 'multipleOf' => 0.7]]]), 'things.create', 300) as $case) {
+            $value = $case['body']['value'] ?? null;
+            $kinds[is_int($value) ? ($value < 0 ? 'negative int' : 'int') : 'float'] = true;
+        }
+        ksort($kinds);
+        Assert::same(array_keys($kinds), ['float', 'int', 'negative int']);
+    }
+
+    /**
+     * A generated decimal multiple is the decimal multiple the contract judges
+     * it to be — for every index in the range and every multiple a document
+     * spells (#133).
+     */
+    #[Property(runs: 300)]
+    public function everyGeneratedMultipleIsOneToTheContract(float $multiple, int $maximum): void
+    {
+        $schema = ['type' => 'number', 'minimum' => -$maximum, 'maximum' => $maximum, 'multipleOf' => $multiple];
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: $maximum) as $value) {
+            Assert::true(is_float($value) && SchemaCheck::isMultipleOf($value, $multiple), sprintf('%s is a multiple of %s', json_encode($value), json_encode($multiple)));
+        }
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function everyGeneratedMultipleIsOneToTheContractGenerators(): array
+    {
+        return [
+            'multiple' => Gen::elements([0.1, 0.3, 0.7, 0.07, 0.001, 2.5, 0.25, 0.125, 1.5]),
+            'maximum' => Gen::intBetween(1, 1_000_000_000),
+        ];
+    }
+
+    public function aMultipleTheDoubleCannotSpellUpToTheBoundIsRefused(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.list", query parameter "v": number multipleOf 0.001 cannot be spelled exactly up to 100000000000000: the multiples need more than the 15 significant digits a double holds');
+
+        (new RequestCaseArbitrary())->forOperation($this->parameterContract([['name' => 'v', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'number', 'multipleOf' => 0.001, 'minimum' => 0, 'maximum' => 1e14]]])->operation('things.list'));
     }
 
     public function oneOfOverIntegerAndNumberFailsClosedWhenNoValueCanBeKeptApart(): void
