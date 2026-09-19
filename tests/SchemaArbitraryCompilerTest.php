@@ -565,6 +565,8 @@ final class SchemaArbitraryCompilerTest
         yield 'both exclusive leave one of three' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 2, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true], 2, false];
         yield 'both exclusive leave one, one item' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 2, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true], 1, true];
         yield 'an unbounded integer is not finite' => [['type' => 'integer', 'minimum' => 0], 4, true];
+        yield 'a bounded number is not finite' => [['type' => 'number', 'minimum' => 0, 'maximum' => 1], 4, true];
+        yield 'a domain away from zero is its own size' => [['type' => 'integer', 'minimum' => 5, 'maximum' => 6], 3, false];
     }
 
     /**
@@ -635,8 +637,8 @@ final class SchemaArbitraryCompilerTest
             'oneOf over integer and number admits no value exactly one branch accepts',
             null,
         ];
-        yield 'a third, disjoint branch is kept' => [
-            [['type' => 'integer', 'minimum' => -3, 'maximum' => -1], ['type' => 'number', 'minimum' => 0, 'maximum' => 1], ['type' => 'string', 'const' => 's']],
+        yield 'a third, disjoint branch is kept wherever it is declared' => [
+            [['type' => 'string', 'const' => 's'], ['type' => 'integer', 'minimum' => -3, 'maximum' => -1], ['type' => 'number', 'minimum' => 0, 'maximum' => 1]],
             null,
             static fn(mixed $v): bool => is_string($v) || (is_float($v) ? floor($v) !== $v : $v < 0),
             ['float', 'int', 'string'],

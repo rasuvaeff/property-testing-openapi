@@ -151,8 +151,9 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
 
 ## Mutation gate: known equivalent classes
 
-`composer mutation` (minMsi 92, against a measured 93.05% — see the comment
-in `infection.json5` for why the gate is set below the score and not at it)
+`composer mutation` (minMsi 91, against a measured 91.96% on 4040 mutants
+after the 0.15.0 wave — see the comment in `infection.json5` for why the
+gate is set below the score and not at it)
 leaves a stable set of escaped mutants that
 are equivalent by analysis — do not chase them, and re-classify anything new:
 `Gen::frequency` weight bumps that scale every pair uniformly, values in
@@ -303,6 +304,30 @@ native-limit exclusive guards survive a schema without the opposite bound —
 message — so the provider carries the both-bounds-at-the-limit cases that make
 the overflow observable as a `TypeError` instead. 
 
+
+The 1.0-readiness wave (2026-09-19, 0.15.0) adds: the probe loops of
+`RequestCaseArbitrary::yieldsSomething()` and
+`CompositionArbitraries::yieldsSomething()` (budget and bound variants answer
+the same question, as `fitsLengthWindow()`'s do); the `floor`/`ceil`/`round`
+choice in the non-integral test of the numeric `oneOf` (`f(v) !== v` detects
+a fractional part whichever `f` is) and in `numberBranchAdmits()` (the product
+equals the value only when the quotient is exact, whichever way it is
+rounded), together with its `<` → `<=` on the `1e-14` tolerance and the
+`(float)` casts on operands a float already touches; `++$numeric` → `--`,
+since the count is only compared with zero; the `(float)` cast and the `<=`
+in `ScalarArbitraries::multipleOf()` for the same reasons; the `&&` → `||`
+between `array_key_exists('const')` and the header-safety of the const (an
+absent key reads as `null`, which is safe, and the mutant differs only by a
+PHP warning); the `CaseShape::assert()` calls in `checkValid()` and
+`reproduce()`, which the materializer repeats on the same case and so throw
+the same `InvalidCase` a step later (the one in `redact()` is not repeated and
+stays killed); the four `||`/`&&` rewrites inside `CaseShape`'s misuse guard,
+which agree on every non-array and every array missing a member; the
+`declaredFloor` ternary in `ContainerArbitraries::object()`, whose two arms
+coincide once the earlier `minProperties`-versus-declared refusal has run;
+the `present ?? true` default on an optional that always carries `present`;
+and the `(path || header) && pattern` guard on the compile-time probe, whose
+widening only probes arbitraries no filter can exhaust.
 
 ## The contract package is the other half of the oracle
 

@@ -286,7 +286,12 @@ final class WireAgreementTest
     {
         Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.create", request body "application/x-www-form-urlencoded": form property "t" is an exploded object whose minProperties 1 cannot be met by its 0 declared properties, and its wire form carries no undeclared member');
 
-        (new RequestCaseArbitrary())->forOperation($this->formBodyContract(['type' => 'object', 'properties' => ['t' => ['type' => 'object', 'minProperties' => 1]]])->operation('things.create'));
+        (new RequestCaseArbitrary())->forOperation($this->formBodyContract(['type' => 'object', 'properties' => [
+            'name' => ['type' => 'string'],
+            'plain' => ['type' => 'object', 'properties' => ['k' => ['type' => 'string']]],
+            'flat' => ['type' => 'object', 'minProperties' => 1],
+            't' => ['type' => 'object', 'minProperties' => 1],
+        ], 'required' => ['flat']], ['flat' => ['explode' => false]])->operation('things.create'));
     }
 
     /**
@@ -355,6 +360,7 @@ final class WireAgreementTest
         $contract = $this->formBodyContract(['type' => 'object', 'required' => ['t', 'u'], 'properties' => [
             't' => ['type' => 'object', 'minProperties' => 2, 'properties' => ['x' => ['type' => 'integer'], 'y' => ['type' => 'integer']]],
             'u' => ['type' => 'object', 'properties' => ['z' => ['type' => 'integer']]],
+            'w' => ['type' => 'object'],
         ]]);
 
         foreach ($this->validCases($contract, 'things.create', 30) as $case) {
@@ -396,14 +402,17 @@ final class WireAgreementTest
         return $cases;
     }
 
-    /** @param array<string, mixed> $schema */
-    private function formBodyContract(array $schema): Contract
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, array<string, mixed>> $encoding
+     */
+    private function formBodyContract(array $schema, array $encoding = []): Contract
     {
         return Contract::fromArray([
             'openapi' => '3.1.0',
             'paths' => ['/things' => ['post' => [
                 'operationId' => 'things.create',
-                'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => ['schema' => $schema]]],
+                'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => ['schema' => $schema, 'encoding' => $encoding]]],
                 'responses' => ['201' => []],
             ]]],
         ]);
