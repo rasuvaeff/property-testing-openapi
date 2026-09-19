@@ -24,7 +24,7 @@ before it reaches a transport.
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.12 and `rasuvaeff/property-testing-core` ^0.10–^0.11
+- `rasuvaeff/openapi-contract` ^0.12.1 and `rasuvaeff/property-testing-core` ^0.10–^0.11
 - `psr/http-message`, `psr/http-factory` and `psr/http-server-handler`
   implementations — a PSR-17 factory materializes requests, and `ContractSuite`
   drives a PSR-15 handler in process
@@ -129,7 +129,7 @@ the same way.
 | Keyword | Generation |
 |---|---|
 | `type` (single or list), `const`, `enum`, `nullable` (OAS 3.0) | supported; a type list is a weighted union |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the validator computes it (`ext-bcmath` changes the contract's own verdict — openapi-contract#151) |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1 |
 | `minLength`, `maxLength` (capped at 64), `pattern` (PCRE subset) | supported |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
 | `items`, `minItems`, `maxItems` (capped at 16), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |

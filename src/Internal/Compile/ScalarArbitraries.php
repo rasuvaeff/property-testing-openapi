@@ -269,31 +269,19 @@ final readonly class ScalarArbitraries
     }
 
     /**
-     * The `$index`-th multiple, spelled as the decimal it means where the
-     * validator agrees that it is one.
+     * The `$index`-th multiple, spelled as the decimal it means.
      *
      * `3 * 0.1` is `0.30000000000000004`, and `0.3` is the number a reader of
      * the JSON text recognises, so the product is rounded back to the
-     * precision the multiple carries. But the validator does not read the
-     * text: it divides the double it parsed, rounds, multiplies back and
-     * tolerates `1e-14` — and from about `64` upwards one ulp of a double is
-     * already more than that, so the rounded decimal and the product disagree
-     * in a third of the draws for `0.1` and the case is rejected as a
-     * multipleOf violation (#117). Where the decimal spelling is not the
-     * product to that tolerance, the product goes, which is the value the
-     * validator computes and therefore accepts by construction.
-     *
-     * With `ext-bcmath` loaded the contract evaluates `multipleOf` in decimal
-     * arithmetic over the double's own expansion, and no spelling can make a
-     * double that is not a decimal multiple into one; that verdict is the
-     * contract's (openapi-contract#151), not something a generator can meet.
+     * precision the multiple carries. The contract judges `multipleOf` on
+     * that decimal since 0.12.1 (openapi-contract#151): `64.1` is a multiple
+     * of `0.1` and `64.10000000000001` is not, whatever extension the machine
+     * has loaded. Before that its float path demanded the product from
+     * about `64` upward and rejected the decimal, which is what #117 was.
      */
     private static function multipleOf(int $index, float $multiple, int $decimals): float
     {
-        $product = (float) $index * $multiple;
-        $decimal = round($product, $decimals);
-
-        return abs($decimal - round($decimal / $multiple) * $multiple) < 1e-14 ? $decimal : $product;
+        return round((float) $index * $multiple, $decimals);
     }
 
     private function ceilDiv(int $dividend, int $divisor): int

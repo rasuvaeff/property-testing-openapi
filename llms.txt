@@ -29,7 +29,7 @@ Public API:
   (`... for operation "op", query parameter "limit": <reason>`). Fractional
   integer bounds round inward; an open number bound steps to the adjacent
   double; a float is spelled as `json_encode` spells it and a decimal
-  multiple as the validator computes it. Object cardinality is met by
+  multiple as the decimal it means (`64.1`, never `64.10000000000001`). Object cardinality is met by
   construction; `oneOf` over one `integer` and one `number` branch keeps a
   value only when exactly one branch admits it. Header enum members keep an
   interior space and obs-text; a query `+` stays `%2B` under `allowReserved`.

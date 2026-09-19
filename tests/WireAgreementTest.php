@@ -90,12 +90,6 @@ final class WireAgreementTest
     #[DataProvider('preciseNumberProvider')]
     public function numericParametersSurviveTheWireAtFullPrecision(array $schema): void
     {
-        if (isset($schema['multipleOf']) && extension_loaded('bcmath')) {
-            // With bcmath the contract evaluates multipleOf in decimal
-            // arithmetic over the double's binary expansion, and its verdict
-            // is not one a generator can meet (openapi-contract#151).
-            return;
-        }
         $contract = $this->parameterContract([['name' => 'v', 'in' => 'query', 'required' => true, 'schema' => $schema]]);
 
         $this->validCases($contract, 'things.list', 200);
@@ -105,6 +99,7 @@ final class WireAgreementTest
     {
         yield 'a decimal multiple of a large number' => [['type' => 'number', 'multipleOf' => 0.001, 'minimum' => 1e11, 'maximum' => 1e12]];
         yield 'a decimal multiple past the tolerance of one ulp' => [['type' => 'number', 'multipleOf' => 0.1, 'minimum' => 0, 'maximum' => 10000]];
+        yield 'a decimal multiple of a decimal at a hundred' => [['type' => 'number', 'multipleOf' => 0.7, 'minimum' => 100, 'maximum' => 200]];
         yield 'a window narrower than fourteen digits' => [['type' => 'number', 'minimum' => 0.123456789012345, 'maximum' => 0.1234567890123456]];
         yield 'an integer beyond fourteen digits' => [['type' => 'integer', 'minimum' => 123456789012345678, 'maximum' => 123456789012345680]];
     }
