@@ -8,6 +8,7 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
@@ -27,6 +28,9 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
  * @api
  *
  * @psalm-import-type CompiledMediaType from Operation
+ * @psalm-import-type CaseData from ContractSuite
+ * @psalm-import-type PartData from ContractSuite
+ * @psalm-import-type MisuseData from ContractSuite
  */
 final readonly class RequestMaterializer
 {
@@ -56,19 +60,10 @@ final readonly class RequestMaterializer
         return new self($this->requests, $this->streams, $baseUri);
     }
 
-    /**
-     * @param array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{mediaType: string, encoding: 'json'|'raw'|'form', value: mixed}|array{mediaType: string, encoding: 'multipart', boundary: string, parts: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>},
-     *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
-     * } $case
-     */
+    /** @param CaseData $case */
     public function materialize(Operation $operation, array $case, ?Credentials $credentials = null): RequestInterface
     {
+        CaseShape::assert($case);
         if ($case['operationKey'] !== $operation->key) {
             throw new InvalidCase(sprintf('Request case targets "%s", not "%s"', $case['operationKey'], $operation->key));
         }
@@ -330,7 +325,7 @@ final readonly class RequestMaterializer
         return $operation->requestBody['content'][$mediaType]['encoding'] ?? [];
     }
 
-    /** @param list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}> $parts */
+    /** @param list<PartData> $parts */
     private function multipartBody(array $parts, string $boundary): string
     {
         if ($boundary === '' || strlen($boundary) > 70 || preg_match("/^[0-9A-Za-z'()+_,.\/:=? -]+\\z/", $boundary) !== 1) {
@@ -370,7 +365,7 @@ final readonly class RequestMaterializer
      * body is still encoded with the declared JSON schema so the media type is
      * the only deviation.
      *
-     * @param null|array{kind: non-empty-string, location: non-empty-string, name: string} $misuse
+     * @param null|MisuseData $misuse
      * @return array<string, mixed>
      */
     private function bodySchema(Operation $operation, string $mediaType, ?array $misuse): array

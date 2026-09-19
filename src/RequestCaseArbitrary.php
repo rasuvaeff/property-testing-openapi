@@ -26,15 +26,7 @@ use Rasuvaeff\PropertyTesting\Random;
  * template segment after percent-decoding. Request bodies are generated
  * from the request direction of their schema, without `readOnly` members.
  *
- * @psalm-type RequestCaseData = array{
- *     operationKey: string,
- *     path: array<string, string|list<string>|array<string, string>>,
- *     query: array<string, string|list<string>|array<string, string>>,
- *     headers: array<string, string|list<string>|array<string, string>>,
- *     cookies: array<string, string|list<string>|array<string, string>>,
- *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
- *     misuse: null,
- * }
+ * @psalm-import-type CaseData from ContractSuite
  *
  * @api
  */
@@ -61,7 +53,7 @@ final readonly class RequestCaseArbitrary
         $this->requestSchemas = new RequestSchemas();
     }
 
-    /** @return ArbitraryInterface<RequestCaseData> */
+    /** @return ArbitraryInterface<CaseData> */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
         $arbitrary = Gen::map(Gen::record([
@@ -80,15 +72,7 @@ final readonly class RequestCaseArbitrary
             'misuse' => null,
         ]);
 
-        /** @var ArbitraryInterface<array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * }> $arbitrary */
+        /** @var ArbitraryInterface<CaseData> $arbitrary */
         return $arbitrary;
     }
 

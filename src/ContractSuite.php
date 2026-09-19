@@ -11,6 +11,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 
 /**
@@ -23,14 +24,24 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
  * a selection that names an unsafe operation without that gate fails closed
  * instead of silently filtering it out.
  *
+ * The case shape is declared here once and imported everywhere else
+ * (`@psalm-import-type CaseData from ContractSuite`); a case that does not
+ * have it is refused at every `@api` entry point with {@see InvalidCase}
+ * naming the missing key (#128). A valid case carries `misuse: null`, a
+ * negative one the misuse it was built with.
+ *
+ * @psalm-type ParameterMap = array<string, string|list<string>|array<string, string>>
+ * @psalm-type PartData = array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}
+ * @psalm-type BodyData = array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<PartData>, value?: mixed}
+ * @psalm-type MisuseData = array{kind: non-empty-string, location: non-empty-string, name: string}
  * @psalm-type CaseData = array{
  *     operationKey: string,
- *     path: array<string, string|list<string>|array<string, string>>,
- *     query: array<string, string|list<string>|array<string, string>>,
- *     headers: array<string, string|list<string>|array<string, string>>,
- *     cookies: array<string, string|list<string>|array<string, string>>,
- *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
- *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
+ *     path: ParameterMap,
+ *     query: ParameterMap,
+ *     headers: ParameterMap,
+ *     cookies: ParameterMap,
+ *     body: null|BodyData,
+ *     misuse: null|MisuseData,
  * }
  *
  * @psalm-import-type CoverageData from NegativeRequestCaseArbitrary
@@ -225,17 +236,7 @@ final class ContractSuite
         return $keys;
     }
 
-    /**
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: null,
-     * }>
-     */
+    /** @return ArbitraryInterface<CaseData> */
     public function validCases(string $operationKey): ArbitraryInterface
     {
         return $this->valid->forOperation($this->requireSelected($operationKey));
@@ -336,6 +337,7 @@ final class ContractSuite
      */
     public function checkValid(string $operationKey, array $case): void
     {
+        CaseShape::assert($case);
         if ($case['misuse'] !== null) {
             throw new \InvalidArgumentException('A valid check requires a case without misuse metadata');
         }
@@ -368,6 +370,7 @@ final class ContractSuite
      */
     public function checkNegative(string $operationKey, array $case): void
     {
+        CaseShape::assert($case);
         if ($case['misuse'] === null) {
             throw new \InvalidArgumentException('A negative check requires a case with misuse metadata');
         }
@@ -396,6 +399,8 @@ final class ContractSuite
      */
     public function reproduce(string $operationKey, array $case, ?RedactionPolicy $policy = null): string
     {
+        CaseShape::assert($case);
+
         return (new RequestReproducer($this->materializer))->curl($this->requireSelected($operationKey), $case, $policy ?? $this->redaction ?? new RedactionPolicy());
     }
 
@@ -409,6 +414,8 @@ final class ContractSuite
      */
     public function redact(array $case): array
     {
+        CaseShape::assert($case);
+
         return (new RequestReproducer($this->materializer))->redact($case, $this->redaction ?? new RedactionPolicy());
     }
 

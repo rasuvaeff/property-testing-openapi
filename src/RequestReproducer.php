@@ -27,6 +27,9 @@ use Rasuvaeff\OpenApiContract\Operation;
  * prints as the minimal case, so a secret the policy names appears in
  * neither (#124).
  *
+ * @psalm-import-type CaseData from ContractSuite
+ * @psalm-import-type BodyData from ContractSuite
+ *
  * @internal Reach it through {@see ContractSuite::reproduce()} and
  *           {@see ContractSuite::redact()}.
  */
@@ -43,15 +46,7 @@ final readonly class RequestReproducer
     ) {}
 
     /**
-     * @param array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
-     * } $case
+     * @param CaseData $case
      */
     public function curl(Operation $operation, array $case, RedactionPolicy $policy = new RedactionPolicy()): string
     {
@@ -73,24 +68,8 @@ final readonly class RequestReproducer
     }
 
     /**
-     * @param array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
-     * } $case
-     * @return array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
-     * }
+     * @param CaseData $case
+     * @return CaseData
      */
     public function redact(array $case, RedactionPolicy $policy): array
     {
@@ -127,9 +106,9 @@ final readonly class RequestReproducer
     }
 
     /**
-     * @param array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed} $body
+     * @param BodyData $body
      * @param list<non-empty-string> $paths
-     * @return array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed}
+     * @return BodyData
      */
     private function redactBodyValue(array $body, array $paths): array
     {
@@ -146,9 +125,9 @@ final readonly class RequestReproducer
     }
 
     /**
-     * @param array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed} $body
+     * @param BodyData $body
      * @param list<non-empty-string> $paths
-     * @return array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed}
+     * @return BodyData
      */
     private function redactBodyParts(array $body, array $paths): array
     {

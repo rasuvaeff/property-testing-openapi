@@ -17,7 +17,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
  * whose names run 0, 1, … without a gap — in a JSON-compatible PHP value that
  * is a list, and a list is what a negative case sends when it means to
  * violate an object schema. Distinguishing them would need a marker in
- * `RequestCaseData`, which has to stay data-only.
+ * `CaseData`, which has to stay data-only.
  *
  * @internal
  */
