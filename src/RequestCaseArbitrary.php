@@ -411,7 +411,7 @@ final readonly class RequestCaseArbitrary
 
                 return [
                     'name' => $name,
-                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->scalar($partValue),
+                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->partText((string) $name, $partValue, $contentType),
                     'encoding' => $binary ? 'base64' : 'text',
                     'contentType' => $contentType,
                     'headers' => $headers,
@@ -432,6 +432,27 @@ final readonly class RequestCaseArbitrary
     private function multipartContentType(array $schema): string
     {
         return ($schema['format'] ?? null) === 'binary' ? 'application/octet-stream' : 'text/plain';
+    }
+
+    /**
+     * The text of a non-binary part, as its media type reads it. A `text/*`
+     * or `application/octet-stream` part is the value verbatim; a JSON part
+     * carries the JSON encoding of the value — the validator decodes it as
+     * JSON, so a bare `abc` under `application/json` is a decoding failure,
+     * not a string (#122). A media type this package can write neither way
+     * fails closed: a body it cannot vouch for is not a valid case.
+     */
+    private function partText(string $name, mixed $value, string $contentType): string
+    {
+        $normalized = MediaType::normalize($contentType);
+        if (MediaType::isJson($normalized)) {
+            return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+        if (str_starts_with($normalized, 'text/') || $normalized === 'application/octet-stream') {
+            return $this->scalar($value);
+        }
+
+        throw new UnsupportedGeneration(sprintf('Multipart property "%s" declares content type "%s", which this generator can write neither as text nor as JSON', $name, $contentType));
     }
 
     /**

@@ -220,11 +220,18 @@ final readonly class ParameterSerializer
         return $this->encode($name) . '=' . ($valueIsEncoded ? $value : $this->encode($value, $allowReserved));
     }
 
-    /** @var list<string> */
-    private const array RESERVED_ENCODED = ['%3A', '%2F', '%3F', '%5B', '%5D', '%40', '%21', '%24', '%27', '%28', '%29', '%2A', '%2B', '%2C', '%3B'];
+    /**
+     * RFC 3986 reserved characters `allowReserved` may hand back raw — all of
+     * them except `+`, which stays `%2B`: a raw plus in a query is read as a
+     * space by the validator and by every SAPI (`parse_str()`), so handing it
+     * back would not widen the wire but change what it says (#119).
+     *
+     * @var list<string>
+     */
+    private const array RESERVED_ENCODED = ['%3A', '%2F', '%3F', '%5B', '%5D', '%40', '%21', '%24', '%27', '%28', '%29', '%2A', '%2C', '%3B'];
 
     /** @var list<string> */
-    private const array RESERVED_RAW = [':', '/', '?', '[', ']', '@', '!', '$', "'", '(', ')', '*', '+', ',', ';'];
+    private const array RESERVED_RAW = [':', '/', '?', '[', ']', '@', '!', '$', "'", '(', ')', '*', ',', ';'];
 
     /**
      * @param string $keepEncoded reserved characters this style uses as a

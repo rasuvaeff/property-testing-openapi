@@ -260,16 +260,40 @@ final readonly class ScalarArbitraries
             throw UnsupportedGeneration::forSchema('number multipleOf leaves no value');
         }
 
-        // `3 * 0.1` is `0.30000000000000004`. Our own oracle tolerates that,
-        // but a server checking `fmod` without a tolerance does not, and the
-        // failure would be reported against the user's API. Round back to the
-        // precision the multiple itself carries.
         $decimals = $this->decimals((float) $multiple);
 
         return Gen::map(
             Gen::intBetween($first, $last),
-            static fn(mixed $value): float => round((float) $value * (float) $multiple, $decimals),
+            static fn(mixed $value): float => self::multipleOf((int) $value, (float) $multiple, $decimals),
         );
+    }
+
+    /**
+     * The `$index`-th multiple, spelled as the decimal it means where the
+     * validator agrees that it is one.
+     *
+     * `3 * 0.1` is `0.30000000000000004`, and `0.3` is the number a reader of
+     * the JSON text recognises, so the product is rounded back to the
+     * precision the multiple carries. But the validator does not read the
+     * text: it divides the double it parsed, rounds, multiplies back and
+     * tolerates `1e-14` — and from about `64` upwards one ulp of a double is
+     * already more than that, so the rounded decimal and the product disagree
+     * in a third of the draws for `0.1` and the case is rejected as a
+     * multipleOf violation (#117). Where the decimal spelling is not the
+     * product to that tolerance, the product goes, which is the value the
+     * validator computes and therefore accepts by construction.
+     *
+     * With `ext-bcmath` loaded the contract evaluates `multipleOf` in decimal
+     * arithmetic over the double's own expansion, and no spelling can make a
+     * double that is not a decimal multiple into one; that verdict is the
+     * contract's (openapi-contract#151), not something a generator can meet.
+     */
+    private static function multipleOf(int $index, float $multiple, int $decimals): float
+    {
+        $product = (float) $index * $multiple;
+        $decimal = round($product, $decimals);
+
+        return abs($decimal - round($decimal / $multiple) * $multiple) < 1e-14 ? $decimal : $product;
     }
 
     private function ceilDiv(int $dividend, int $divisor): int
