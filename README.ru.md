@@ -24,7 +24,7 @@ styles и JSON, form-urlencoded или multipart request body, после чег
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.12 и `rasuvaeff/property-testing-core` ^0.5–^0.11
+- `rasuvaeff/openapi-contract` ^0.12 и `rasuvaeff/property-testing-core` ^0.10–^0.11
 - реализации `psr/http-message`, `psr/http-factory` и
   `psr/http-server-handler`: PSR-17 factory материализует запросы, а
   `ContractSuite` гоняет PSR-15 handler в процессе

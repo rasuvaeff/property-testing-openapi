@@ -236,6 +236,26 @@ final class ResponseCaseArbitraryTest
         Assert::same($case['headers'], ['X-F' => '0.5', 'X-N' => 'null', 'X-B' => 'true']);
     }
 
+    /**
+     * A comma separates only the members of a list header; a scalar response
+     * header carries it as sent, and a list member carrying one is dropped
+     * from its enum (#129).
+     */
+    public function aCommaSeparatesOnlyTheMembersOfAListHeader(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['headers' => [
+            'X-Expr' => ['required' => true, 'schema' => ['type' => 'string', 'enum' => ['a,b']]],
+            'X-Kinds' => ['required' => true, 'schema' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'string', 'enum' => ['x,y', 'z']]]],
+        ]]]);
+
+        foreach (range(1, 10) as $seed) {
+            $case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random($seed))->value;
+
+            Assert::same($case['headers']['X-Expr'], 'a,b');
+            Assert::same(array_unique((array) $case['headers']['X-Kinds']), ['z']);
+        }
+    }
+
     public function rejectsAStatusOutsideTheHttpRange(): void
     {
         Expect::exception(\InvalidArgumentException::class);

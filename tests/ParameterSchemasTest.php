@@ -258,6 +258,10 @@ final class ParameterSchemasTest
         Assert::true($schemas->isHeaderSafe(['a', 'b c']));
         Assert::true($schemas->isHeaderSafe('a,b'));
         Assert::false($schemas->isHeaderSafe('a,b', delimited: true));
+        Assert::false($schemas->isHeaderSafe(['a,b' => 'c'], delimited: true));
+        Assert::false($schemas->isHeaderSafe([' a' => 'c']));
+        Assert::true($schemas->isHeaderSafe(['a b' => 'c d']));
+        Assert::true($schemas->isHeaderSafe([1 => 'c']));
         Assert::false($schemas->isHeaderSafe(['a', 'b,c'], delimited: true));
         Assert::false($schemas->isHeaderSafe(' a'));
         Assert::false($schemas->isHeaderSafe('a '));
@@ -276,6 +280,8 @@ final class ParameterSchemasTest
 
         Assert::same($schemas->forLocation(['type' => 'string', 'enum' => ['New York', ' padded', 'plain', "a\nb", 'žluť']], 'header', 'simple')['enum'], ['New York', 'plain', 'žluť']);
         Assert::same($schemas->forLocation(['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a,b', 'c d']]], 'header', 'simple')['items']['enum'], ['c d']);
+        Assert::same($schemas->forLocation(['type' => 'object', 'additionalProperties' => ['type' => 'string', 'enum' => ['a,b', 'c d']]], 'header', 'simple')['additionalProperties']['enum'], ['c d']);
+        Assert::same($schemas->forLocation(['type' => 'string', 'enum' => ['a,b', 'c d']], 'header', 'simple')['enum'], ['a,b', 'c d']);
 
         try {
             $schemas->forLocation(['type' => 'string', 'enum' => [' a', 'b ']], 'header', 'simple');

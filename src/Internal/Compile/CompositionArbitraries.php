@@ -97,10 +97,10 @@ final readonly class CompositionArbitraries
      * valid only when exactly one branch admits it: a non-integral float, or
      * an integer the number branch's own keywords reject (#121). The number
      * branch is generated without integral values; the integer branch keeps
-     * only what the number branch's bounds and multiple refuse, and is left
-     * out when they refuse nothing. A number branch that carries a keyword
-     * this cannot read is refused, because an integer it may admit cannot be
-     * told from one it does not.
+     * only what the number branch's bounds and multiple refuse. A branch
+     * left with nothing is left out, and the union is refused when both are.
+     * A number branch that carries a keyword this cannot read is refused,
+     * because an integer it may admit cannot be told from one it does not.
      *
      * @param list<array<string, mixed>> $branches
      */
@@ -113,21 +113,24 @@ final readonly class CompositionArbitraries
             }
         }
         $pairs = [];
+        $numeric = 0;
         foreach ($branches as $index => $branch) {
             if ($index === $numberIndex) {
-                $floats = Gen::filter($this->compiler->compile($branch), static fn(mixed $value): bool => is_float($value) && floor($value) !== $value);
-                if (!$this->yieldsSomething($floats)) {
-                    throw UnsupportedGeneration::forSchema('oneOf number branch admits no value outside the integer branch');
-                }
-                $pairs[] = [1, $floats];
+                $kept = Gen::filter($this->compiler->compile($branch), static fn(mixed $value): bool => is_float($value) && floor($value) !== $value);
             } elseif ($index === $integerIndex) {
-                $integers = Gen::filter($this->compiler->compile($branch), fn(mixed $value): bool => is_int($value) && !$this->numberBranchAdmits($value, $number));
-                if ($this->yieldsSomething($integers)) {
-                    $pairs[] = [1, $integers];
-                }
+                $kept = Gen::filter($this->compiler->compile($branch), fn(mixed $value): bool => is_int($value) && !$this->numberBranchAdmits($value, $number));
             } else {
                 $pairs[] = [1, $this->compiler->compile($branch)];
+
+                continue;
             }
+            if ($this->yieldsSomething($kept)) {
+                $pairs[] = [1, $kept];
+                ++$numeric;
+            }
+        }
+        if ($numeric === 0) {
+            throw UnsupportedGeneration::forSchema('oneOf over integer and number admits no value exactly one branch accepts');
         }
 
         return Gen::frequency($pairs);

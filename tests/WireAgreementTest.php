@@ -6,7 +6,10 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
@@ -31,6 +34,9 @@ use Testo\Test;
 #[Covers(NegativeRequestCaseArbitrary::class)]
 #[Covers(SchemaArbitraryCompiler::class)]
 #[Covers(ContainerArbitraries::class)]
+#[Covers(CompositionArbitraries::class)]
+#[Covers(ScalarArbitraries::class)]
+#[Covers(ParameterSchemas::class)]
 #[Covers(WireValue::class)]
 final class WireAgreementTest
 {
@@ -193,9 +199,9 @@ final class WireAgreementTest
 
     public function oneOfOverIntegerAndNumberFailsClosedWhenNoValueCanBeKeptApart(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.create", request body "application/json": oneOf number branch admits no value outside the integer branch');
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.create", request body "application/json": oneOf over integer and number admits no value exactly one branch accepts');
 
-        (new RequestCaseArbitrary())->forOperation($this->jsonBodyContract(['oneOf' => [['type' => 'integer'], ['type' => 'number', 'multipleOf' => 2]]])->operation('things.create'));
+        (new RequestCaseArbitrary())->forOperation($this->jsonBodyContract(['oneOf' => [['type' => 'integer', 'minimum' => 2, 'maximum' => 2], ['type' => 'number', 'multipleOf' => 2]]])->operation('things.create'));
     }
 
     /**
@@ -281,6 +287,81 @@ final class WireAgreementTest
         Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.create", request body "application/x-www-form-urlencoded": form property "t" is an exploded object whose minProperties 1 cannot be met by its 0 declared properties, and its wire form carries no undeclared member');
 
         (new RequestCaseArbitrary())->forOperation($this->formBodyContract(['type' => 'object', 'properties' => ['t' => ['type' => 'object', 'minProperties' => 1]]])->operation('things.create'));
+    }
+
+    /**
+     * A comma is a member separator only in a list or object header; a
+     * scalar header carries it as sent, and an object header drops a member
+     * whose key or value carries one (#129).
+     */
+    public function aCommaSeparatesOnlyTheMembersOfAListOrObjectHeader(): void
+    {
+        $contract = $this->parameterContract([
+            ['name' => 'X-Expr', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'enum' => ['a,b']]],
+            ['name' => 'X-Map', 'in' => 'header', 'required' => true, 'style' => 'simple', 'explode' => true, 'schema' => ['type' => 'object', 'minProperties' => 1, 'properties' => ['k' => ['type' => 'string', 'enum' => ['x,y', 'z']]], 'additionalProperties' => false]],
+        ]);
+
+        foreach ($this->validCases($contract, 'things.list', 40) as $case) {
+            Assert::same($case['headers']['X-Expr'], 'a,b');
+            Assert::same($case['headers']['X-Map'], ['k' => 'z']);
+        }
+    }
+
+    /**
+     * A JSON part is written with slashes and non-ASCII unescaped, as the
+     * JSON body encoder writes a body (#122).
+     */
+    public function aJsonMultipartPartKeepsSlashesAndUnicodeUnescaped(): void
+    {
+        $contract = $this->multipartContract(['meta' => ['type' => 'string', 'const' => 'a/é']], ['meta' => ['contentType' => 'application/json']]);
+
+        foreach ($this->validCases($contract, 'uploads.create', 3) as $case) {
+            Assert::same($case['body']['parts'][0]['value'] ?? null, '"a/é"');
+        }
+    }
+
+    /**
+     * Only an exploded object is written as flat pairs: with `explode: false`
+     * the object travels as one `name=k,v,k,v` value the contract attributes
+     * to it, undeclared members included, so nothing is stripped (#120).
+     */
+    public function aNonExplodedFormObjectKeepsItsUndeclaredMembers(): void
+    {
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/things' => ['post' => [
+                'operationId' => 'things.create',
+                'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => [
+                    'schema' => ['type' => 'object', 'required' => ['t'], 'properties' => ['t' => ['type' => 'object', 'minProperties' => 1, 'maxProperties' => 2, 'additionalProperties' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 3]]]],
+                    'encoding' => ['t' => ['explode' => false]],
+                ]]],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
+
+        foreach ($this->validCases($contract, 'things.create', 30) as $case) {
+            Assert::true(count($case['body']['value']['t']) >= 1);
+        }
+    }
+
+    /**
+     * An exploded object whose declared properties exactly meet its
+     * `minProperties` is generated, and one without any `minProperties` is
+     * generated too — only a floor the declared members cannot reach is
+     * refused (#120).
+     */
+    public function anExplodedFormObjectMeetingItsFloorWithDeclaredMembersIsGenerated(): void
+    {
+        $contract = $this->formBodyContract(['type' => 'object', 'required' => ['t', 'u'], 'properties' => [
+            't' => ['type' => 'object', 'minProperties' => 2, 'properties' => ['x' => ['type' => 'integer'], 'y' => ['type' => 'integer']]],
+            'u' => ['type' => 'object', 'properties' => ['z' => ['type' => 'integer']]],
+        ]]);
+
+        foreach ($this->validCases($contract, 'things.create', 30) as $case) {
+            $names = array_keys($case['body']['value']['t']);
+            sort($names);
+            Assert::same($names, ['x', 'y']);
+        }
     }
 
     public function aPartUnderAMediaTypeThatIsNeitherTextNorJsonFailsClosed(): void

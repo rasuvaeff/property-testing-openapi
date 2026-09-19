@@ -19,6 +19,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
@@ -32,6 +33,7 @@ use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Understudy;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -710,6 +712,57 @@ final class ContractSuiteTest
         Assert::same($suite->redact($case), ['operationKey' => 'pets.get', 'path' => ['id' => '3'], 'query' => ['limit' => '[redacted]'], 'headers' => ['Authorization' => '[redacted]', 'X-Trace' => 't1'], 'cookies' => [], 'body' => null, 'misuse' => null]);
         Assert::same($this->suite()->operations(['pets.get'])->redact($case)['query'], ['limit' => '7']);
         Assert::same($suite->reproduce('pets.get', $case), "curl -X GET '/pets/3'");
+    }
+
+    /**
+     * The configured policy is what `reproduce()` renders by default, an
+     * explicit one wins for that call, and no policy at all leaves the
+     * default header set only (#124).
+     */
+    public function reproduceRendersThroughTheConfiguredPolicyUnlessOneIsGiven(): void
+    {
+        $factory = new Psr17Factory();
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/pets' => ['get' => [
+                'operationId' => 'pets.list',
+                'parameters' => [
+                    ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer']],
+                    ['name' => 'X-Api-Key', 'in' => 'header', 'schema' => ['type' => 'string']],
+                ],
+                'responses' => ['204' => []],
+            ]]],
+        ]);
+        $case = ['operationKey' => 'pets.list', 'path' => [], 'query' => ['limit' => '7'], 'headers' => ['X-Api-Key' => 'sk-live'], 'cookies' => [], 'body' => null, 'misuse' => null];
+        $bare = ContractSuite::fromContract($contract, $factory, $factory)->operations(['pets.list']);
+        $configured = $bare->redaction(new RedactionPolicy(headers: ['X-Api-Key'], queryParameters: ['limit']));
+
+        Assert::same($bare->reproduce('pets.list', $case), "curl -X GET '/pets?limit=7' -H 'X-Api-Key: sk-live'");
+        Assert::same($configured->reproduce('pets.list', $case), "curl -X GET '/pets?limit=%5Bredacted%5D' -H 'X-Api-Key: [redacted]'");
+        Assert::same($configured->reproduce('pets.list', $case, new RedactionPolicy(headers: ['X-Api-Key'])), "curl -X GET '/pets?limit=7' -H 'X-Api-Key: [redacted]'");
+        Assert::same($bare->reproduce('pets.list', $case, new RedactionPolicy(queryParameters: ['limit'])), "curl -X GET '/pets?limit=%5Bredacted%5D' -H 'X-Api-Key: sk-live'");
+    }
+
+    /**
+     * Every entry point that takes a case checks its shape first (#128).
+     */
+    #[DataProvider('caseEntryPointProvider')]
+    public function everyCaseEntryPointRefusesACaseWithoutMisuse(\Closure $entry): void
+    {
+        Expect::exception(InvalidCase::class)->withMessage('Case is missing the "misuse" key');
+
+        $suite = $this->suite()->operations(['pets.get'])->transport(new CallableTransport(static fn(): Response => new Response(204)));
+        $case = ['operationKey' => 'pets.get', 'path' => ['id' => '3'], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null];
+
+        $entry($suite, $case);
+    }
+
+    public static function caseEntryPointProvider(): iterable
+    {
+        yield 'checkValid' => [static fn(ContractSuite $suite, array $case) => $suite->checkValid('pets.get', $case)];
+        yield 'checkNegative' => [static fn(ContractSuite $suite, array $case) => $suite->checkNegative('pets.get', $case)];
+        yield 'reproduce' => [static fn(ContractSuite $suite, array $case) => $suite->reproduce('pets.get', $case)];
+        yield 'redact' => [static fn(ContractSuite $suite, array $case) => $suite->redact($case)];
     }
 
     public function zooOperationsTheGeneratorCannotServeFailClosedAtSelection(): void

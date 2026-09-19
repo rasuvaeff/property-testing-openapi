@@ -343,6 +343,7 @@ final class SchemaArbitraryCompilerTest
         yield 'integer multiple' => [2, 0];
         yield 'one decimal' => [0.1, 1];
         yield 'two decimals' => [0.25, 2];
+        yield 'a multiple whose quotient lands just above an integer' => [0.7, 1];
         yield 'three decimals' => [0.125, 3];
     }
 
@@ -493,6 +494,168 @@ final class SchemaArbitraryCompilerTest
             Assert::true(count($value) >= 2 && count($value) <= 3);
             Assert::true(array_diff(array_keys($value), ['id', 'label', 'active']) === []);
         }
+    }
+
+    /**
+     * The cardinality is met by construction: with three optionals under
+     * `minProperties: 2, maxProperties: 2` every draw has exactly two, not
+     * a filtered fraction of the draws (#123).
+     */
+    public function meetsObjectCardinalityByConstruction(): void
+    {
+        $arbitrary = (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'minProperties' => 2,
+            'maxProperties' => 2,
+            'additionalProperties' => false,
+            'properties' => ['a' => ['const' => 1], 'b' => ['const' => 2], 'c' => ['const' => 3]],
+        ]);
+
+        $seen = [];
+        foreach (Gen::sample($arbitrary, count: 80, seed: 31) as $value) {
+            Assert::true(is_array($value) && count($value) === 2);
+            $names = array_keys($value);
+            sort($names);
+            $seen[implode('', $names)] = true;
+        }
+        ksort($seen);
+        Assert::same(array_keys($seen), ['ab', 'ac', 'bc']);
+
+        $floor = (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'minProperties' => 3,
+            'additionalProperties' => false,
+            'properties' => ['a' => ['const' => 1], 'b' => ['const' => 2], 'c' => ['const' => 3]],
+        ]);
+        foreach (Gen::sample($floor, count: 20, seed: 37) as $value) {
+            Assert::true(is_array($value));
+            ksort($value);
+            Assert::same($value, ['a' => 1, 'b' => 2, 'c' => 3]);
+        }
+    }
+
+    /**
+     * A bounded integer item domain is finite: `uniqueItems` with a
+     * `minItems` it cannot fill fails closed at compile time, and exclusive
+     * bounds shrink the domain by one each (#123).
+     */
+    #[DataProvider('integerDomainProvider')]
+    public function boundsTheUniqueItemsDomainOfABoundedInteger(array $items, int $minItems, bool $accepted): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $schema = ['type' => 'array', 'uniqueItems' => true, 'minItems' => $minItems, 'maxItems' => 4, 'items' => $items];
+
+        if (!$accepted) {
+            Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: uniqueItems cannot fill minItems from the finite item domain');
+            $compiler->compile($schema);
+
+            return;
+        }
+        foreach (Gen::sample($compiler->compile($schema), count: 10, seed: 41) as $value) {
+            Assert::true(is_array($value) && count($value) >= $minItems && count(array_unique($value)) === count($value));
+        }
+    }
+
+    public static function integerDomainProvider(): iterable
+    {
+        yield 'two values, two items' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 1], 2, true];
+        yield 'two values, three items' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 1], 3, false];
+        yield 'exclusive maximum leaves two of three' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 2, 'exclusiveMaximum' => true], 3, false];
+        yield 'exclusive minimum leaves two of three' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 2, 'exclusiveMinimum' => true], 3, false];
+        yield 'both exclusive leave one of three' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 2, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true], 2, false];
+        yield 'both exclusive leave one, one item' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 2, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true], 1, true];
+        yield 'an unbounded integer is not finite' => [['type' => 'integer', 'minimum' => 0], 4, true];
+    }
+
+    /**
+     * `oneOf` over one `integer` and one `number` branch keeps a value only
+     * when exactly one branch admits it; every other overlap, and a number
+     * branch this cannot read, is refused (#121).
+     */
+    #[DataProvider('numericOneOfProvider')]
+    public function keepsAnIntegerAndANumberOneOfBranchApart(array $branches, ?string $refusal, ?\Closure $holds, array $kinds = []): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        if ($refusal !== null) {
+            Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: ' . $refusal);
+            $compiler->compile(['oneOf' => $branches]);
+
+            return;
+        }
+        $seen = [];
+        foreach (Gen::sample($compiler->compile(['oneOf' => $branches]), count: 120, seed: 43) as $value) {
+            Assert::true($holds !== null && $holds($value), json_encode($value, JSON_THROW_ON_ERROR));
+            $seen[get_debug_type($value)] = true;
+        }
+        ksort($seen);
+        Assert::same(array_keys($seen), $kinds);
+    }
+
+    public static function numericOneOfProvider(): iterable
+    {
+        yield 'the number branch excludes the negative integers by its minimum' => [
+            [['type' => 'integer', 'minimum' => -3, 'maximum' => 3], ['type' => 'number', 'minimum' => 0, 'maximum' => 3]],
+            null,
+            static fn(mixed $v): bool => is_float($v) ? floor($v) !== $v && $v >= 0 : (is_int($v) && $v < 0),
+            ['float', 'int'],
+        ];
+        yield 'an exclusive minimum keeps the boundary integer for the integer branch' => [
+            [['type' => 'integer', 'minimum' => 0, 'maximum' => 0], ['type' => 'number', 'minimum' => 0, 'maximum' => 3, 'exclusiveMinimum' => true]],
+            null,
+            static fn(mixed $v): bool => is_float($v) ? floor($v) !== $v : $v === 0,
+            ['float', 'int'],
+        ];
+        yield 'an exclusive maximum keeps the boundary integer for the integer branch' => [
+            [['type' => 'integer', 'minimum' => 3, 'maximum' => 3], ['type' => 'number', 'minimum' => 0, 'maximum' => 3, 'exclusiveMaximum' => true]],
+            null,
+            static fn(mixed $v): bool => is_float($v) ? floor($v) !== $v : $v === 3,
+            ['float', 'int'],
+        ];
+        yield 'a half-step multipleOf on the number branch admits every integer' => [
+            [['type' => 'integer', 'minimum' => 0, 'maximum' => 3], ['type' => 'number', 'minimum' => 0, 'maximum' => 3.5, 'multipleOf' => 0.5]],
+            null,
+            static fn(mixed $v): bool => is_float($v) && floor($v) !== $v,
+            ['float'],
+        ];
+        yield 'a decimal multipleOf on the number branch frees the integers it skips' => [
+            [['type' => 'integer', 'minimum' => 0, 'maximum' => 3], ['type' => 'number', 'minimum' => 0, 'maximum' => 3.5, 'multipleOf' => 0.7]],
+            null,
+            static fn(mixed $v): bool => is_float($v) ? floor($v) !== $v : in_array($v, [1, 2, 3], strict: true),
+            ['float', 'int'],
+        ];
+        yield 'a whole multipleOf on the number branch leaves only the odd integers' => [
+            [['type' => 'integer', 'minimum' => 1, 'maximum' => 3], ['type' => 'number', 'minimum' => 0, 'maximum' => 4, 'multipleOf' => 2]],
+            null,
+            static fn(mixed $v): bool => $v === 1 || $v === 3,
+            ['int'],
+        ];
+        yield 'nothing left on either side is refused' => [
+            [['type' => 'integer', 'minimum' => 2, 'maximum' => 2], ['type' => 'number', 'minimum' => 0, 'maximum' => 4, 'multipleOf' => 2]],
+            'oneOf over integer and number admits no value exactly one branch accepts',
+            null,
+        ];
+        yield 'a third, disjoint branch is kept' => [
+            [['type' => 'integer', 'minimum' => -3, 'maximum' => -1], ['type' => 'number', 'minimum' => 0, 'maximum' => 1], ['type' => 'string', 'const' => 's']],
+            null,
+            static fn(mixed $v): bool => is_string($v) || (is_float($v) ? floor($v) !== $v : $v < 0),
+            ['float', 'int', 'string'],
+        ];
+        yield 'two integer branches are not a pair' => [
+            [['type' => 'integer', 'minimum' => 0, 'maximum' => 1], ['type' => 'integer', 'minimum' => 5, 'maximum' => 6], ['type' => 'number']],
+            'oneOf branches must be provably disjoint',
+            null,
+        ];
+        yield 'a type list is not a pair' => [
+            [['type' => ['integer', 'string']], ['type' => 'number']],
+            'oneOf branches must be provably disjoint',
+            null,
+        ];
+        yield 'a number keyword this cannot read is refused' => [
+            [['type' => 'integer'], ['type' => 'number', 'not' => ['const' => 2]]],
+            'oneOf over integer and number cannot read number keyword "not" to keep the branches apart',
+            null,
+        ];
     }
 
     public function rejectsImpossibleObjectCardinality(): void

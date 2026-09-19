@@ -13,9 +13,12 @@ factories take one more argument, the `RequestCaseData` /
 `NegativeRequestCaseData` psalm aliases are gone, and case-shape errors are a
 type of their own.
 
-- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.12` and accepts
-  `rasuvaeff/property-testing-core` `^0.11` (develops against
-  `rasuvaeff/property-testing-testo` `^0.11` too). The directional schema
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.12` and
+  `rasuvaeff/property-testing-core` `^0.10 || ^0.11` (develops against
+  `rasuvaeff/property-testing-testo` `^0.10 || ^0.11`): the compile-time
+  probes catch `GenerationExhaustedException` by name, which exists since the
+  core's 0.10 contract freeze, so `^0.5`–`^0.9` are no longer accepted. The
+  directional schema
   rewrite is delegated to `SchemaCheck::effective()` — this package's own
   copy never recursed into `additionalProperties` — and the request body and
   responses arrive as the contract's typed shapes, so the guards that

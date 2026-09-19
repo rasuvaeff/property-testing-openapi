@@ -100,6 +100,7 @@ final class OperationPropertyTest
         $suite = $this->suite(static fn(): Response => new Response(500), [
             ['name' => 'X-Api-Key', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'const' => 'sk-live-secret']],
             ['name' => 'token', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'const' => 'tok-secret']],
+            ['name' => 'X-Trace', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'const' => 'a/b']],
         ])->redaction(new RedactionPolicy(headers: ['X-Api-Key'], queryParameters: ['token']));
 
         try {
@@ -107,7 +108,7 @@ final class OperationPropertyTest
             Assert::true(actual: false, message: 'Expected a falsified valid phase');
         } catch (OperationPropertyFailed $failure) {
             Assert::string($failure->getMessage())->notContains('sk-live-secret')->notContains('tok-secret');
-            Assert::string($failure->getMessage())->contains('"X-Api-Key":"[redacted]"')->contains('"token":"[redacted]"');
+            Assert::string($failure->getMessage())->contains('"X-Api-Key":"[redacted]"')->contains('"token":"[redacted]"')->contains('"X-Trace":"a/b"');
             Assert::string($failure->reproducer)->notContains('sk-live-secret')->notContains('tok-secret');
             $shrunk = $failure->counterExample->shrunkArguments['case'] ?? null;
             Assert::true(is_array($shrunk));

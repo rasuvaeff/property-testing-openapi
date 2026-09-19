@@ -359,6 +359,16 @@ final class RequestMaterializerTest
         (new RequestMaterializer($factory, $factory))->materialize($this->bodyOperation([]), $this->bodyCase('other', null));
     }
 
+    public function refusesACaseMissingAKeyByName(): void
+    {
+        Expect::exception(InvalidCase::class)->withMessage('Case is missing the "cookies" key');
+
+        $factory = new Psr17Factory();
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op');
+
+        (new RequestMaterializer($factory, $factory))->materialize($operation, ['operationKey' => 'op', 'path' => [], 'query' => [], 'headers' => [], 'body' => null, 'misuse' => null]);
+    }
+
     public function rejectsMissingBodyContentDefinition(): void
     {
         Expect::exception(InvalidCase::class)->withMessage('Request body media type "application/json" is not declared');

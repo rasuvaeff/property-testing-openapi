@@ -79,6 +79,7 @@ final class ExceptionsTest
         Assert::same($refusal->getMessage(), 'Unsupported OpenAPI schema generation: minLength exceeds maxLength');
         Assert::same($placed->getMessage(), 'Unsupported OpenAPI schema generation for operation "pets.list", query parameter "limit": minLength exceeds maxLength');
         Assert::same($placed->getPrevious(), $refusal);
+        Assert::same($placed->getCode(), 0);
         Assert::same($placed->inOperation('other', 'body')->getMessage(), 'Unsupported OpenAPI schema generation for operation "other", body: minLength exceeds maxLength');
     }
 
