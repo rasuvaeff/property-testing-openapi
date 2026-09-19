@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Added.** A schema that refers to itself — a tree whose `children` are
+  trees — is generated. `rasuvaeff/openapi-contract` 0.13 compiles such a
+  schema to `$defs` plus a local `{$ref: '#/$defs/<name>'}` for every
+  reference back into the cycle; the generator unfolds the def three levels
+  below the root and ends at a leaf where the recursive member is left out —
+  an optional property omitted, an array that may be empty left empty, a
+  branch of `anyOf`/`oneOf` skipped, a member of an `allOf` inlined as the
+  def's body. A def whose only way down is a required member that is the def
+  itself has no finite instance and is refused (`recursive schema "…" has no
+  finite instance`), as is a def that is an `allOf` member of itself; a
+  `$ref` to anything but the schema's own `$defs` is refused by name. The
+  JSON body encoder follows the same references, so a nested empty object
+  three levels down is still written as `{}`. The zoo gains `tree.create`;
+  the recorded corpus grows by its 25 cases.
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.13`.
+
 ## 0.15.2 — 2026-09-19
 
 - **Fixed.** Whether the `number` branch of a `oneOf` admits an integer was

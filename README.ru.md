@@ -24,7 +24,7 @@ styles и JSON, form-urlencoded или multipart request body, после чег
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.12.1 и `rasuvaeff/property-testing-core` ^0.10–^0.11
+- `rasuvaeff/openapi-contract` ^0.13 и `rasuvaeff/property-testing-core` ^0.10–^0.11
 - реализации `psr/http-message`, `psr/http-factory` и
   `psr/http-server-handler`: PSR-17 factory материализует запросы, а
   `ContractSuite` гоняет PSR-15 handler в процессе
@@ -135,7 +135,8 @@ request-направлению схемы — `readOnly`-свойства ухо
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
 | `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
 | `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed |
-| `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
+| `$defs` + локальный `$ref` (`#/$defs/…`) — скомпилированная контрактом форма схемы, ссылающейся на саму себя: дерево, чьи `children` тоже деревья | поддерживается; def разворачивается на три уровня под корнем и заканчивается листом, который опускает рекурсивный член (необязательное свойство пропущено, массив, которому можно быть пустым, пуст, ветка выбора пропущена); def, единственный путь вниз которого — обязательный член, равный самому def, не имеет конечного экземпляра и fail-closed; `$ref` куда-либо кроме собственных `$defs` схемы — fail-closed |
+| `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
 
 Каждая невыполнимая комбинация, которую компилятор способен распознать,
 отвергается при компиляции; то, что остаётся вероятностным (`pattern`, редко

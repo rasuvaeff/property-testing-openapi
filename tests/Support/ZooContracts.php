@@ -30,6 +30,7 @@ final class ZooContracts
         'encoded.create', 'mixed.create', 'numeric.create', 'headers.get', 'verified.get',
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
         'labels.get', 'sparse.create', 'amounts.create', 'settings.create', 'precise.get',
+        'tree.create',
     ];
 
     /**
@@ -442,7 +443,28 @@ final class ZooContracts
                     ],
                     'responses' => ['204' => []],
                 ]],
+                // A schema that refers to itself: the contract compiles it to
+                // `$defs` plus a local `$ref` for the reference back, and the
+                // generator unfolds it a bounded number of levels — the leaf
+                // leaves `children` empty and `parent` out. `id` is readOnly
+                // at every depth.
+                '/tree' => ['post' => [
+                    'operationId' => 'tree.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]]],
+                    'responses' => ['201' => ['description' => 'created', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]]]],
+                ]],
             ],
+            'components' => ['schemas' => ['Node' => [
+                'type' => 'object',
+                'required' => ['id', 'name'],
+                'additionalProperties' => false,
+                'properties' => [
+                    'id' => ['type' => 'integer', 'readOnly' => true],
+                    'name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+                    'parent' => ['$ref' => '#/components/schemas/Node'],
+                    'children' => ['type' => 'array', 'maxItems' => 2, 'items' => ['$ref' => '#/components/schemas/Node']],
+                ],
+            ]]],
         ];
     }
 
@@ -537,6 +559,7 @@ final class ZooContracts
             return match (true) {
                 str_starts_with($path, '/strings/') => new Response(200, ['Content-Type' => 'application/json'], '{}'),
                 $path === '/users' => new Response(201, ['Content-Type' => 'application/json'], '{"id":1,"name":"Ann","profile":{"slug":"ann","createdAt":"2024-01-01T00:00:00Z"}}'),
+                $path === '/tree' => new Response(201, ['Content-Type' => 'application/json'], '{"id":1,"name":"root","children":[{"id":2,"name":"leaf","children":[]}]}'),
                 $path === '/health' => new Response(200, ['Content-Type' => 'text/plain'], 'ok'),
                 $path === '/version' => new Response(200, ['Content-Type' => 'text/plain; charset=utf-8'], 'v1'),
                 str_starts_with($path, '/files/') => new Response(200, ['Content-Type' => 'application/octet-stream'], "\x00\x01"),

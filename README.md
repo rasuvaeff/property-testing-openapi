@@ -24,7 +24,7 @@ before it reaches a transport.
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.12.1 and `rasuvaeff/property-testing-core` ^0.10–^0.11
+- `rasuvaeff/openapi-contract` ^0.13 and `rasuvaeff/property-testing-core` ^0.10–^0.11
 - `psr/http-message`, `psr/http-factory` and `psr/http-server-handler`
   implementations — a PSR-17 factory materializes requests, and `ContractSuite`
   drives a PSR-15 handler in process
@@ -137,7 +137,8 @@ the same way.
 | `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
 | `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches; a branch bounding `additionalProperties` must declare every sibling property) | supported |
 | `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed |
-| `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
+| `$defs` + local `$ref` (`#/$defs/…`) — the contract's compiled form of a schema that refers to itself, a tree whose `children` are trees | supported; the def unfolds three levels below the root and ends at a leaf that leaves the recursive member out (an optional property omitted, an array that may be empty left empty, a branch of a choice skipped); a def whose only way down is a required member that is the def itself has no finite instance and fails closed; a `$ref` to anything but the schema's own `$defs` fails closed |
+| `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
 
 Every unsatisfiable combination the compiler can recognise is refused at
 compile time; what remains probabilistic (a `pattern` that rarely matches its

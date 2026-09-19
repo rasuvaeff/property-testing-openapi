@@ -26,6 +26,7 @@ final readonly class CompositionArbitraries
     public function __construct(
         private SchemaArbitraryCompiler $compiler,
         private SchemaFacts $facts,
+        private Definitions $definitions,
     ) {}
 
     /** @param array<string, mixed> $schema */
@@ -39,7 +40,9 @@ final readonly class CompositionArbitraries
             $schemas = $this->schemaBranches($schema[$keyword], $keyword);
 
             if ($keyword === 'allOf') {
-                return $this->compiler->compile($this->mergeAllOf($schemas));
+                [$schemas, $inlined] = $this->inlineReferences($schemas);
+
+                return $this->definitions->inlining($inlined, fn(): ArbitraryInterface => $this->compiler->compile($this->mergeAllOf($schemas)));
             }
             if ($keyword === 'oneOf' && !$this->areDisjoint($schemas)) {
                 $numeric = $this->integerAndNumberBranches($schemas);
@@ -52,7 +55,15 @@ final readonly class CompositionArbitraries
 
             $pairs = [];
             foreach ($schemas as $branch) {
-                $pairs[] = [1, $this->compiler->compile($branch)];
+                try {
+                    $pairs[] = [1, $this->compiler->compile($branch)];
+                } catch (Unproducible) {
+                    // The leaf of a recursive def: the branch that would hold
+                    // more of it is skipped, the others still choose.
+                }
+            }
+            if ($pairs === []) {
+                throw new Unproducible($keyword);
             }
 
             return Gen::frequency($pairs);
@@ -447,6 +458,31 @@ final readonly class CompositionArbitraries
         }
 
         return $schemas;
+    }
+
+    /**
+     * A member of a conjunction that is a reference into the schema's
+     * `$defs` — the contract's form for a 3.1 `$ref` with asserting siblings
+     * — is merged as the def's body: the conjunction is what the generated
+     * value has to satisfy, and a reference to a def is that def. The names
+     * inlined are reported so a body that puts itself into its own
+     * conjunction is refused rather than inlined without end.
+     *
+     * @param list<array<string, mixed>> $branches
+     * @return array{list<array<string, mixed>>, list<string>}
+     */
+    private function inlineReferences(array $branches): array
+    {
+        $inlined = [];
+        foreach ($branches as $index => $branch) {
+            if (array_key_exists('$ref', $branch)) {
+                [$name, $body] = $this->definitions->target($branch['$ref']);
+                $branches[$index] = $body;
+                $inlined[] = $name;
+            }
+        }
+
+        return [$branches, $inlined];
     }
 
     /**

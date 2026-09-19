@@ -304,3 +304,10 @@ Object generation supports bounded `minProperties`, `maxProperties`, and
 boolean or schema-valued `additionalProperties`.
 The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
 other negative assertions fail closed.
+A schema that refers to itself arrives from the contract as `$defs` plus a
+local `{$ref: '#/$defs/<name>'}` per reference back; the def unfolds three
+levels below the root and ends at a leaf that leaves the recursive member out
+(optional property omitted, array that may be empty left empty, branch of a
+choice skipped). A def whose only way down is a required member that is the
+def itself has no finite instance and fails closed; so does a `$ref` to
+anything but the schema's own `$defs`.
