@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
 /**
@@ -78,10 +79,10 @@ final readonly class ParameterSerializer
     public static function assertTransmittableHeader(string $name, string $value): void
     {
         if (preg_match('/\A[!#$%&\'*+\-.^_`|~0-9A-Za-z]+\z/', $name) !== 1) {
-            throw new UnsupportedGeneration(sprintf('Header name "%s" is invalid', $name));
+            throw new InvalidCase(sprintf('Header name "%s" is invalid', $name));
         }
         if ($value !== '' && preg_match('/\A[\x21-\x7e\x80-\xff](?:[\x20-\x7e\x80-\xff]*[\x21-\x7e\x80-\xff])?\z/', $value) !== 1) {
-            throw new UnsupportedGeneration(sprintf('Header "%s" carries a value no HTTP field can', $name));
+            throw new InvalidCase(sprintf('Header "%s" carries a value no HTTP field can', $name));
         }
     }
 
@@ -181,14 +182,14 @@ final readonly class ParameterSerializer
     private function delimited(string $name, string|array $value, string $delimiter, string $wireDelimiter, bool $allowReserved): string
     {
         if (is_string($value) || !array_is_list($value)) {
-            throw new UnsupportedGeneration('Delimited query parameters require a list value');
+            throw new InvalidCase('Delimited query parameters require a list value');
         }
         $items = $this->list($value);
         foreach ($items as $item) {
             // The style has no escape for its own separator: an item carrying
             // one is unrepresentable, not merely awkward to encode.
             if (str_contains($item, $delimiter)) {
-                throw new UnsupportedGeneration(sprintf('Delimited query parameter values cannot contain "%s"', $delimiter));
+                throw new InvalidCase(sprintf('Delimited query parameter values cannot contain "%s"', $delimiter));
             }
         }
 
@@ -202,7 +203,7 @@ final readonly class ParameterSerializer
         // empty deepObject has no pairs on the wire, so preserve it as the
         // valid empty object rather than rejecting it as a list.
         if (is_string($value) || ($value !== [] && array_is_list($value))) {
-            throw new UnsupportedGeneration('deepObject parameters require an object value');
+            throw new InvalidCase('deepObject parameters require an object value');
         }
 
         /** @var array<array-key, mixed> $value */
@@ -267,11 +268,11 @@ final readonly class ParameterSerializer
     private function list(array $value): array
     {
         if (!array_is_list($value)) {
-            throw new UnsupportedGeneration('Parameter requires a list value');
+            throw new InvalidCase('Parameter requires a list value');
         }
         foreach ($value as $item) {
             if (!is_string($item)) {
-                throw new UnsupportedGeneration('Parameter list values must be strings');
+                throw new InvalidCase('Parameter list values must be strings');
             }
         }
 
@@ -294,12 +295,12 @@ final readonly class ParameterSerializer
     private function object(array $value): array
     {
         if ($value !== [] && array_is_list($value)) {
-            throw new UnsupportedGeneration('Parameter requires an object value');
+            throw new InvalidCase('Parameter requires an object value');
         }
         $result = [];
         foreach ($value as $key => $item) {
             if (!is_string($item)) {
-                throw new UnsupportedGeneration('Parameter object keys and values must be strings');
+                throw new InvalidCase('Parameter object keys and values must be strings');
             }
             // A numeric member name arrives as an integer array key. It is a
             // name the document wrote, not a malformed key — the cast that

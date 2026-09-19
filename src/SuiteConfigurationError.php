@@ -9,4 +9,4 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
  *
  * @api
  */
-final class SuiteConfigurationError extends \LogicException {}
+final class SuiteConfigurationError extends \LogicException implements OpenApiPropertyTestingException {}

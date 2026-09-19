@@ -8,13 +8,17 @@ use Rasuvaeff\PropertyTesting\CounterExample;
 
 /**
  * One operation property falsified: carries the shrunk minimal case and the
- * redacted curl reproducer alongside the engine's counterexample rendering.
- * A document example that failed is reported under its name, unshrunk, with
- * a counterexample of zero runs.
+ * redacted curl reproducer alongside the engine's counterexample. A document
+ * example that failed is reported under its name, unshrunk, with a
+ * counterexample of zero runs.
+ *
+ * The message prints the case through the suite's redaction policy, the same
+ * one the reproducer went through; `$counterExample` keeps the case as
+ * generated, for code that needs it rather than a log that must not (#124).
  *
  * @api
  */
-final class OperationPropertyFailed extends \RuntimeException
+final class OperationPropertyFailed extends \RuntimeException implements OpenApiPropertyTestingException
 {
     /** @param 'valid'|'negative' $phase */
     private function __construct(
@@ -31,7 +35,9 @@ final class OperationPropertyFailed extends \RuntimeException
 
     /**
      * @param 'valid'|'negative' $phase
-     * @param array<string, mixed> $case
+     * @param array<string, mixed> $case the case as generated
+     * @param array<string, mixed> $redactedCase the case as the message may
+     *        print it
      */
     public static function forExample(
         string $operationKey,
@@ -40,6 +46,7 @@ final class OperationPropertyFailed extends \RuntimeException
         array $case,
         string $reproducer,
         \Throwable $failure,
+        array $redactedCase,
     ): self {
         $cause = $failure->getPrevious() ?? $failure;
         $counterExample = new CounterExample(
@@ -57,7 +64,7 @@ final class OperationPropertyFailed extends \RuntimeException
                 $phase,
                 $example,
                 $cause->getMessage(),
-                json_encode($case, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                json_encode($redactedCase, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 $reproducer,
             ),
             $operationKey,
@@ -69,13 +76,18 @@ final class OperationPropertyFailed extends \RuntimeException
         );
     }
 
-    /** @param 'valid'|'negative' $phase */
+    /**
+     * @param 'valid'|'negative' $phase
+     * @param array<string, mixed> $redactedCase the shrunk case as the
+     *        message may print it
+     */
     public static function forCounterExample(
         string $operationKey,
         string $phase,
         CounterExample $counterExample,
         string $reproducer,
         \Throwable $failure,
+        array $redactedCase,
     ): self {
         $cause = $counterExample->failure ?? $failure;
 
@@ -87,7 +99,7 @@ final class OperationPropertyFailed extends \RuntimeException
                 $counterExample->runsBeforeFailure,
                 $counterExample->seed,
                 $cause->getMessage(),
-                $counterExample->toJson(),
+                json_encode($redactedCase, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 $reproducer,
             ),
             $operationKey,

@@ -16,6 +16,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -43,7 +44,7 @@ final class RequestCaseArbitraryTest
 {
     public function multipartEncodingRejectsHeaderInjection(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
+        Expect::exception(InvalidCase::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
 
         $operation = new Operation(
             key: 'upload.create',
@@ -76,7 +77,7 @@ final class RequestCaseArbitraryTest
 
     public function multipartEncodingRejectsContentTypeInjection(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "Content-Type" carries a value no HTTP field can');
+        Expect::exception(InvalidCase::class)->withMessage('Header "Content-Type" carries a value no HTTP field can');
 
         $operation = new Operation(
             key: 'upload.create',

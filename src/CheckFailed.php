@@ -18,13 +18,19 @@ use Rasuvaeff\OpenApiContract\ValidationResultFormatter;
  *
  * @api
  */
-final class CheckFailed extends \RuntimeException
+final class CheckFailed extends \RuntimeException implements OpenApiPropertyTestingException
 {
     /**
-     * The structured validation result behind the message, when the failure
-     * is a validation outcome; assigned by the factory, `null` otherwise.
+     * @param ValidationResult|null $result the structured validation result
+     *        behind the message when the failure is a validation outcome,
+     *        `null` otherwise
      */
-    public ?ValidationResult $result = null;
+    private function __construct(
+        string $message,
+        public readonly ?ValidationResult $result = null,
+    ) {
+        parent::__construct($message);
+    }
 
     public static function invalidGeneratedRequest(string $operationKey, ValidationResult $result): self
     {
@@ -53,10 +59,7 @@ final class CheckFailed extends \RuntimeException
 
     private static function withResult(string $message, ValidationResult $result): self
     {
-        $failure = new self($message);
-        $failure->result = $result;
-
-        return $failure;
+        return new self($message, $result);
     }
 
     private static function diagnostics(string $headline, ValidationResult $result): string

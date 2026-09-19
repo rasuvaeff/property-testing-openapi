@@ -22,7 +22,13 @@ use Rasuvaeff\OpenApiContract\Operation;
  * {@see RedactionPolicy::$cookies} unobservable, which is to say inert. It is
  * not in the default set for that reason.
  *
- * @internal Reach it through {@see ContractSuite::reproduce()}.
+ * Redaction is applied to the case, not to the request: {@see redact()} is
+ * what {@see curl()} renders, and it is also what {@see OperationProperty}
+ * prints as the minimal case, so a secret the policy names appears in
+ * neither (#124).
+ *
+ * @internal Reach it through {@see ContractSuite::reproduce()} and
+ *           {@see ContractSuite::redact()}.
  */
 final readonly class RequestReproducer
 {
@@ -49,16 +55,13 @@ final readonly class RequestReproducer
      */
     public function curl(Operation $operation, array $case, RedactionPolicy $policy = new RedactionPolicy()): string
     {
-        $case = $this->redactCase($case, $policy);
-        $request = $this->materializer->materialize($operation, $case);
+        $request = $this->materializer->materialize($operation, $this->redact($case, $policy));
 
-        $redactedHeaders = array_merge(self::DEFAULT_REDACTED_HEADERS, array_map(strtolower(...), $policy->headers));
         $parts = ['curl', '-X', $request->getMethod(), $this->quote((string) $request->getUri())];
         foreach (array_keys($request->getHeaders()) as $name) {
             $name = (string) $name;
-            $value = in_array(strtolower($name), $redactedHeaders, strict: true) ? self::REDACTED : $request->getHeaderLine($name);
             $parts[] = '-H';
-            $parts[] = $this->quote($name . ': ' . $value);
+            $parts[] = $this->quote($name . ': ' . $request->getHeaderLine($name));
         }
         $body = (string) $request->getBody();
         if ($body !== '') {
@@ -89,8 +92,14 @@ final readonly class RequestReproducer
      *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
      * }
      */
-    private function redactCase(array $case, RedactionPolicy $policy): array
+    public function redact(array $case, RedactionPolicy $policy): array
     {
+        $redactedHeaders = array_merge(self::DEFAULT_REDACTED_HEADERS, array_map(strtolower(...), $policy->headers));
+        foreach (array_keys($case['headers']) as $name) {
+            if (in_array(strtolower($name), $redactedHeaders, strict: true)) {
+                $case['headers'][$name] = $this->redactedLike($case['headers'][$name]);
+            }
+        }
         foreach ($policy->queryParameters as $name) {
             if (array_key_exists($name, $case['query'])) {
                 $case['query'][$name] = $this->redactedLike($case['query'][$name]);

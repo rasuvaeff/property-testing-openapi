@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
-use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 
 /**
  * Encodes a JSON-compatible logical value as a JSON document, turning maps
@@ -105,10 +105,10 @@ final readonly class JsonBodyEncoder
     private function memberMap(mixed $value, string $message): array
     {
         if (!is_array($value)) {
-            throw new UnsupportedGeneration($message);
+            throw new InvalidCase($message);
         }
         if ($value !== [] && array_is_list($value)) {
-            throw new UnsupportedGeneration($message);
+            throw new InvalidCase($message);
         }
 
         /** @var array<array-key, mixed> $result */

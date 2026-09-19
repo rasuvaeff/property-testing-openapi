@@ -21,6 +21,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
+use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ZooContracts;
@@ -704,6 +705,21 @@ final class ContractSuiteTest
         }
     }
 
+    /**
+     * The configured policy is what `redact()` applies and what
+     * `reproduce()` renders by default; the wire-level check of the
+     * reproducer under a declared secret is in `OperationPropertyTest` (#124).
+     */
+    public function appliesTheConfiguredRedactionPolicy(): void
+    {
+        $suite = $this->suite()->operations(['pets.get'])->redaction(new RedactionPolicy(queryParameters: ['limit']));
+        $case = ['operationKey' => 'pets.get', 'path' => ['id' => '3'], 'query' => ['limit' => '7'], 'headers' => ['Authorization' => 'Bearer x', 'X-Trace' => 't1'], 'cookies' => [], 'body' => null, 'misuse' => null];
+
+        Assert::same($suite->redact($case), ['operationKey' => 'pets.get', 'path' => ['id' => '3'], 'query' => ['limit' => '[redacted]'], 'headers' => ['Authorization' => '[redacted]', 'X-Trace' => 't1'], 'cookies' => [], 'body' => null, 'misuse' => null]);
+        Assert::same($this->suite()->operations(['pets.get'])->redact($case)['query'], ['limit' => '7']);
+        Assert::same($suite->reproduce('pets.get', $case), "curl -X GET '/pets/3'");
+    }
+
     public function zooOperationsTheGeneratorCannotServeFailClosedAtSelection(): void
     {
         $factory = new Psr17Factory();
@@ -712,15 +728,15 @@ final class ContractSuiteTest
             ->allowUnsafeOperations();
 
         foreach ([
-            'uuid.get' => 'format "uuid" cannot satisfy the length window',
-            'links.get' => 'path parameter format "uri" always carries a slash',
-            'conflict.create' => 'allOf branch bounding additionalProperties cannot admit sibling property "b"',
+            'uuid.get' => 'for operation "uuid.get", path parameter "id": format "uuid" cannot satisfy the length window',
+            'links.get' => 'for operation "links.get", path parameter "href": path parameter format "uri" always carries a slash',
+            'conflict.create' => 'for operation "conflict.create", request body "application/json": allOf branch bounding additionalProperties cannot admit sibling property "b"',
         ] as $key => $message) {
             try {
                 $suite->validCases($key);
                 Assert::true(actual: false, message: 'Expected unsupported generation exception');
             } catch (UnsupportedGeneration $exception) {
-                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation: ' . $message);
+                Assert::same($exception->getMessage(), 'Unsupported OpenAPI schema generation ' . $message);
             }
         }
     }

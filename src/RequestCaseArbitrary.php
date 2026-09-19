@@ -98,8 +98,13 @@ final readonly class RequestCaseArbitrary
                 continue;
             }
             $separator = ParameterSchemas::separatorOf($location, $parameter['style'], $parameter['schema']);
-            $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
-            $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
+
+            try {
+                $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
+                $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
+            } catch (UnsupportedGeneration $refusal) {
+                throw $refusal->inOperation($operation->key, sprintf('%s parameter "%s"', $location, $parameter['name']));
+            }
             if ($location === 'path') {
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isPathSafe($value));
             }
@@ -166,33 +171,15 @@ final readonly class RequestCaseArbitrary
             }
             $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
-            if (MediaType::isJson($mediaType)) {
-                /** @var ArbitraryInterface<mixed> $json */
-                $json = Gen::map($this->bodySchemas->compile($schema), static fn(mixed $value): array => [
-                    'mediaType' => $mediaType,
-                    'encoding' => 'json',
-                    'value' => $value,
-                ]);
-                $bodies[] = [1, $json];
-            } elseif ($normalized === 'application/x-www-form-urlencoded') {
-                $this->assertObjectSchema($schema, 'Form request body schema must be an object');
-                $this->assertFormEncoding($definition['encoding'] ?? []);
-                /** @var ArbitraryInterface<mixed> $form */
-                $form = Gen::map($this->bodySchemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
-                    'mediaType' => $mediaType,
-                    'encoding' => 'form',
-                    'value' => $value,
-                ]);
-                $bodies[] = [1, $form];
-            } elseif (str_starts_with($normalized, 'multipart/')) {
-                $this->assertObjectSchema($schema, 'Multipart request body schema must be an object');
-                $this->assertMultipartEncoding($definition['encoding'] ?? []);
-                /**
-                 * @var array<string, mixed> $definition
-                 * @var ArbitraryInterface<mixed> $multipart
-                 */
-                $multipart = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
-                $bodies[] = [1, $multipart];
+
+            /** @var array<string, mixed> $definition */
+            try {
+                $body = $this->bodyArbitrary($mediaType, $normalized, $schema, $definition);
+            } catch (UnsupportedGeneration $refusal) {
+                throw $refusal->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
+            }
+            if ($body instanceof ArbitraryInterface) {
+                $bodies[] = [1, $body];
             }
         }
         if ($bodies === []) {
@@ -213,6 +200,48 @@ final readonly class RequestCaseArbitrary
         // wrapping it and reading the shape back — which is what dropped
         // multipart, the one encoding that carries parts instead of a value.
         return Gen::nullable($body);
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $definition
+     * @return null|ArbitraryInterface<mixed> `null` for a media type this
+     *         package does not generate
+     */
+    private function bodyArbitrary(string $mediaType, string $normalized, array $schema, array $definition): ?ArbitraryInterface
+    {
+        if (MediaType::isJson($mediaType)) {
+            /** @var ArbitraryInterface<mixed> $json */
+            $json = Gen::map($this->bodySchemas->compile($schema), static fn(mixed $value): array => [
+                'mediaType' => $mediaType,
+                'encoding' => 'json',
+                'value' => $value,
+            ]);
+
+            return $json;
+        }
+        if ($normalized === 'application/x-www-form-urlencoded') {
+            $this->assertObjectSchema($schema, 'Form request body schema must be an object');
+            $this->assertFormEncoding($definition['encoding'] ?? []);
+            /** @var ArbitraryInterface<mixed> $form */
+            $form = Gen::map($this->bodySchemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
+                'mediaType' => $mediaType,
+                'encoding' => 'form',
+                'value' => $value,
+            ]);
+
+            return $form;
+        }
+        if (str_starts_with($normalized, 'multipart/')) {
+            $this->assertObjectSchema($schema, 'Multipart request body schema must be an object');
+            $this->assertMultipartEncoding($definition['encoding'] ?? []);
+            /** @var ArbitraryInterface<mixed> $multipart */
+            $multipart = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
+
+            return $multipart;
+        }
+
+        return null;
     }
 
     private function included(ArbitraryInterface $value): ArbitraryInterface

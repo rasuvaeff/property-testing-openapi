@@ -57,6 +57,8 @@ final class ContractSuite
 
     private ?OperationCoverage $coverage = null;
 
+    private ?RedactionPolicy $redaction = null;
+
     private function __construct(
         private readonly Contract $contract,
         private RequestMaterializer $materializer,
@@ -168,6 +170,23 @@ final class ContractSuite
     {
         $suite = clone $this;
         $suite->coverage = $coverage;
+
+        return $suite;
+    }
+
+    /**
+     * The redaction policy every rendering of a case goes through: the curl
+     * reproducer of {@see reproduce()} and the minimal case
+     * {@see OperationProperty} prints when a phase is falsified. Without it
+     * only the default header set (`Authorization`, `Proxy-Authorization`,
+     * `Set-Cookie`) is redacted, and a secret the document carries in a
+     * query parameter, a cookie, an `X-Api-Key` header or a body member is
+     * printed as generated (#124).
+     */
+    public function redaction(RedactionPolicy $policy): self
+    {
+        $suite = clone $this;
+        $suite->redaction = $policy;
 
         return $suite;
     }
@@ -370,13 +389,27 @@ final class ContractSuite
 
     /**
      * Redacted curl reproducer for one case of a selected operation.
-     * Credentials are never applied here.
+     * Credentials are never applied here. The policy defaults to the one
+     * configured through {@see redaction()}.
      *
      * @param CaseData $case
      */
-    public function reproduce(string $operationKey, array $case, RedactionPolicy $policy = new RedactionPolicy()): string
+    public function reproduce(string $operationKey, array $case, ?RedactionPolicy $policy = null): string
     {
-        return (new RequestReproducer($this->materializer))->curl($this->requireSelected($operationKey), $case, $policy);
+        return (new RequestReproducer($this->materializer))->curl($this->requireSelected($operationKey), $case, $policy ?? $this->redaction ?? new RedactionPolicy());
+    }
+
+    /**
+     * The case with the configured redaction applied: the default header set
+     * and everything the policy names is replaced by the redaction marker,
+     * shape preserved. This is the form a failure message may print.
+     *
+     * @param CaseData $case
+     * @return CaseData
+     */
+    public function redact(array $case): array
+    {
+        return (new RequestReproducer($this->materializer))->redact($case, $this->redaction ?? new RedactionPolicy());
     }
 
     private function requireSelected(string $operationKey): Operation

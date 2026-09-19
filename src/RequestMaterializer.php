@@ -70,7 +70,7 @@ final readonly class RequestMaterializer
     public function materialize(Operation $operation, array $case, ?Credentials $credentials = null): RequestInterface
     {
         if ($case['operationKey'] !== $operation->key) {
-            throw new \InvalidArgumentException(sprintf('Request case targets "%s", not "%s"', $case['operationKey'], $operation->key));
+            throw new InvalidCase(sprintf('Request case targets "%s", not "%s"', $case['operationKey'], $operation->key));
         }
         $path = $operation->path;
         $query = [];
@@ -130,7 +130,7 @@ final readonly class RequestMaterializer
         if ($body['encoding'] === 'raw') {
             $rawValue = $body['value'] ?? null;
             if (!is_string($rawValue)) {
-                throw new UnsupportedGeneration('Raw request body value must be a string');
+                throw new InvalidCase('Raw request body value must be a string');
             }
             $payload = $rawValue;
         } elseif ($body['encoding'] === 'form') {
@@ -140,7 +140,7 @@ final readonly class RequestMaterializer
             $parts = $body['parts'] ?? null;
             $boundary = $body['boundary'] ?? null;
             if (!is_array($parts) || !is_string($boundary)) {
-                throw new UnsupportedGeneration('Multipart request body has an invalid shape');
+                throw new InvalidCase('Multipart request body has an invalid shape');
             }
             $payload = $this->multipartBody($parts, $boundary);
             $body['mediaType'] .= '; boundary=' . $boundary;
@@ -239,17 +239,17 @@ final readonly class RequestMaterializer
     private function formBody(mixed $value, array $schema, array $encoding): string
     {
         if (!is_array($value) || !SchemaShape::isObject($schema)) {
-            throw new UnsupportedGeneration('Form request body value must be an object');
+            throw new InvalidCase('Form request body value must be an object');
         }
         if ($value !== [] && array_is_list($value)) {
-            throw new UnsupportedGeneration('Form request body value must be an object');
+            throw new InvalidCase('Form request body value must be an object');
         }
         /** @var array<array-key, mixed> $value */
         $properties = $this->schemaObject($schema['properties'] ?? [], 'Form object properties must be an object');
         $parts = [];
         foreach (array_keys($value) as $name) {
             if (!is_string($name)) {
-                throw new UnsupportedGeneration('Form object keys must be strings');
+                throw new InvalidCase('Form object keys must be strings');
             }
             $property = $this->schemaObject($properties[$name] ?? [], 'Form object property must be a schema object');
             $configuration = $this->formConfiguration($encoding[$name] ?? null);
@@ -293,7 +293,7 @@ final readonly class RequestMaterializer
     {
         if (SchemaShape::isArray($schema)) {
             if (!is_array($value) || !array_is_list($value)) {
-                throw new UnsupportedGeneration('Form array value must be a list');
+                throw new InvalidCase('Form array value must be a list');
             }
             $items = $this->schemaObject($schema['items'] ?? null, 'Form array items must be a schema object');
 
@@ -301,7 +301,7 @@ final readonly class RequestMaterializer
         }
         if (SchemaShape::isObject($schema)) {
             if (!is_array($value) || ($value !== [] && array_is_list($value))) {
-                throw new UnsupportedGeneration('Form object value must be an object');
+                throw new InvalidCase('Form object value must be an object');
             }
             /** @var array<array-key, mixed> $value */
             $properties = $this->memberMap($schema['properties'] ?? [], 'Form object properties must be an object');
@@ -321,7 +321,7 @@ final readonly class RequestMaterializer
     private function scalarValue(mixed $value): string
     {
         return WireValue::of($value)
-            ?? throw new UnsupportedGeneration('Form scalar value has an unsupported type');
+            ?? throw new InvalidCase('Form scalar value has an unsupported type');
     }
 
     /** @return array<array-key, mixed> */
@@ -334,7 +334,7 @@ final readonly class RequestMaterializer
     private function multipartBody(array $parts, string $boundary): string
     {
         if ($boundary === '' || strlen($boundary) > 70 || preg_match("/^[0-9A-Za-z'()+_,.\/:=? -]+\\z/", $boundary) !== 1) {
-            throw new UnsupportedGeneration('Multipart boundary is invalid');
+            throw new InvalidCase('Multipart boundary is invalid');
         }
         $payload = '';
         foreach ($parts as $part) {
@@ -343,7 +343,7 @@ final readonly class RequestMaterializer
             $contentType = $part['contentType'];
             $value = $part['encoding'] === 'base64' ? base64_decode($part['value'], strict: true) : $part['value'];
             if ($value === false) {
-                throw new UnsupportedGeneration('Multipart base64 value is invalid');
+                throw new InvalidCase('Multipart base64 value is invalid');
             }
             $payload .= '--' . $boundary . "\r\n";
             $payload .= 'Content-Disposition: form-data; name="' . $this->quoteHeader($name) . '"'
@@ -381,7 +381,7 @@ final readonly class RequestMaterializer
             $definition = $this->declaredJsonDefinition($content);
         }
         if ($definition === null) {
-            throw new UnsupportedGeneration(sprintf('Request body media type "%s" is not declared', $mediaType));
+            throw new InvalidCase(sprintf('Request body media type "%s" is not declared', $mediaType));
         }
         $schema = $definition['schema'] ?? [];
         if (!is_array($schema)) {
@@ -436,10 +436,10 @@ final readonly class RequestMaterializer
     private function memberMap(mixed $value, string $message): array
     {
         if (!is_array($value)) {
-            throw new UnsupportedGeneration($message);
+            throw new InvalidCase($message);
         }
         if ($value !== [] && array_is_list($value)) {
-            throw new UnsupportedGeneration($message);
+            throw new InvalidCase($message);
         }
 
         /** @var array<array-key, mixed> $result */

@@ -17,6 +17,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
 use Rasuvaeff\PropertyTesting\OpenApi\Psr15Transport;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
+use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\BodyContracts;
 use Rasuvaeff\PropertyTesting\OpenApi\TransportInterface;
 use Rasuvaeff\PropertyTesting\Property;
@@ -134,7 +135,7 @@ final class TransportTest
 
     public function psr15TransportRefusesANonSeekableFormBodyWithoutAStreamFactory(): void
     {
-        Expect::exception(\LogicException::class)
+        Expect::exception(SuiteConfigurationError::class)
             ->withMessage('Psr15Transport needs a StreamFactoryInterface (fourth constructor argument) to buffer a non-seekable form or multipart body');
         $factory = new Psr17Factory();
         $handler = $this->recorder();
