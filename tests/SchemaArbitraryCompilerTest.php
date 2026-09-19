@@ -587,7 +587,7 @@ final class SchemaArbitraryCompilerTest
         }
         $seen = [];
         foreach (Gen::sample($compiler->compile(['oneOf' => $branches]), count: 120, seed: 43) as $value) {
-            Assert::true($holds !== null && $holds($value), json_encode($value, JSON_THROW_ON_ERROR));
+            Assert::true($holds instanceof \Closure && $holds($value), json_encode($value, JSON_THROW_ON_ERROR));
             $seen[get_debug_type($value)] = true;
         }
         ksort($seen);
