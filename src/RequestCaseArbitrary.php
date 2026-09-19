@@ -266,7 +266,7 @@ final readonly class RequestCaseArbitrary
             $this->assertObjectSchema($schema, 'Form request body schema must be an object');
             $this->assertFormEncoding($definition['encoding'] ?? []);
             /** @var ArbitraryInterface<mixed> $form */
-            $form = Gen::map($this->bodySchemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
+            $form = Gen::map($this->bodySchemas->compile($this->nonEmptyRequiredProperties($this->explodedObjectsWithoutExtras($schema, $definition['encoding'] ?? []))), static fn(mixed $value): array => [
                 'mediaType' => $mediaType,
                 'encoding' => 'form',
                 'value' => $value,
@@ -547,6 +547,47 @@ final readonly class RequestCaseArbitrary
         }
 
         return $schema;
+    }
+
+    /**
+     * A form property with an object schema and `explode: true` (the form
+     * default) is written as flat `member=value` pairs, so its wire form can
+     * carry only the members the document declares: an undeclared member the
+     * generator added would land as a top-level member of the body, where it
+     * collides with a declared property or violates `additionalProperties:
+     * false`. Such an object is generated without extras, and one whose
+     * `minProperties` its declared properties cannot meet fails closed here
+     * rather than as a run-time exhaustion (#120).
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function explodedObjectsWithoutExtras(array $schema, mixed $encoding): array
+    {
+        $properties = is_array($schema['properties'] ?? null) ? (array) $schema['properties'] : [];
+        foreach (array_keys($properties) as $name) {
+            $property = $properties[$name];
+            if (!is_array($property) || array_is_list($property)) {
+                continue;
+            }
+            /** @var array<string, mixed> $property */
+            if (!SchemaShape::isObject($property)) {
+                continue;
+            }
+            $configuration = is_array($encoding) && is_array($encoding[$name] ?? null) ? (array) $encoding[$name] : [];
+            if (($configuration['explode'] ?? true) !== true) {
+                continue;
+            }
+            $declared = is_array($property['properties'] ?? null) ? count((array) $property['properties']) : 0;
+            $minimum = is_int($property['minProperties'] ?? null) ? (int) $property['minProperties'] : 0;
+            if ($minimum > $declared) {
+                throw UnsupportedGeneration::forSchema(sprintf('form property "%s" is an exploded object whose minProperties %d cannot be met by its %d declared properties, and its wire form carries no undeclared member', (string) $name, $minimum, $declared));
+            }
+            $property['additionalProperties'] = false;
+            $properties[$name] = $property;
+        }
+
+        return array_merge($schema, ['properties' => $properties]);
     }
 
     /**

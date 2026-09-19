@@ -258,6 +258,32 @@ final class WireAgreementTest
         ];
     }
 
+    /**
+     * A nested exploded form object is written as flat pairs, so the
+     * contract claims only its declared members for it: an undeclared member
+     * would be read as a top-level one. It is generated without extras, and
+     * a `minProperties` its declared properties cannot meet is refused at
+     * compile time (#120).
+     */
+    public function aNestedExplodedFormObjectCarriesOnlyDeclaredMembers(): void
+    {
+        $contract = $this->formBodyContract(['type' => 'object', 'required' => ['t'], 'additionalProperties' => false, 'properties' => [
+            'name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+            't' => ['type' => 'object', 'minProperties' => 1, 'properties' => ['x' => ['type' => 'integer'], 'y' => ['type' => 'string', 'maxLength' => 3]]],
+        ]]);
+
+        foreach ($this->validCases($contract, 'things.create', 200) as $case) {
+            Assert::same(array_diff(array_keys($case['body']['value']['t']), ['x', 'y']), []);
+        }
+    }
+
+    public function aNestedExplodedFormObjectThatNeedsUndeclaredMembersFailsClosed(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.create", request body "application/x-www-form-urlencoded": form property "t" is an exploded object whose minProperties 1 cannot be met by its 0 declared properties, and its wire form carries no undeclared member');
+
+        (new RequestCaseArbitrary())->forOperation($this->formBodyContract(['type' => 'object', 'properties' => ['t' => ['type' => 'object', 'minProperties' => 1]]])->operation('things.create'));
+    }
+
     public function aPartUnderAMediaTypeThatIsNeitherTextNorJsonFailsClosed(): void
     {
         Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart property "meta" declares content type "application/xml", which this generator can write neither as text nor as JSON');
@@ -310,6 +336,19 @@ final class WireAgreementTest
         }
 
         return $cases;
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function formBodyContract(array $schema): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/things' => ['post' => [
+                'operationId' => 'things.create',
+                'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => ['schema' => $schema]]],
+                'responses' => ['201' => []],
+            ]]],
+        ]);
     }
 
     /** @param array<string, mixed> $schema */
