@@ -199,6 +199,65 @@ final class WireAgreementTest
         (new RequestCaseArbitrary())->forOperation($this->jsonBodyContract(['oneOf' => [['type' => 'integer'], ['type' => 'number', 'multipleOf' => 2]]])->operation('things.create'));
     }
 
+    /**
+     * Three legal documents reached a run-time `GenerationExhausted` the
+     * package's own rules call a defect (#123): a header enum outside ASCII,
+     * a path pattern that always carries a slash, an object whose optionals
+     * outnumber `maxProperties`. The first and the third generate; the
+     * second is refused at compile time, by name.
+     */
+    public function legalDocumentsNeverExhaustAtRunTime(): void
+    {
+        $header = $this->parameterContract([['name' => 'X-Lang', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'enum' => ['žluť', 'New York']]]]);
+        $seen = [];
+        foreach ($this->validCases($header, 'things.list', 40) as $case) {
+            $seen[$case['headers']['X-Lang']] = true;
+        }
+        ksort($seen);
+        Assert::same(array_keys($seen), ['New York', 'žluť']);
+
+        $properties = [];
+        foreach (range('a', 'l') as $name) {
+            $properties[$name] = ['type' => 'integer'];
+        }
+        foreach ($this->validCases($this->jsonBodyContract(['type' => 'object', 'properties' => $properties, 'maxProperties' => 1, 'additionalProperties' => false]), 'things.create', 150) as $case) {
+            Assert::true(count($case['body']['value'] ?? []) <= 1);
+        }
+        foreach ($this->validCases($this->jsonBodyContract(['type' => 'object', 'properties' => $properties, 'minProperties' => 10, 'maxProperties' => 11, 'additionalProperties' => false]), 'things.create', 50) as $case) {
+            $count = count($case['body']['value'] ?? []);
+            Assert::true($count >= 10 && $count <= 11);
+        }
+    }
+
+    #[DataProvider('compileTimeRefusalProvider')]
+    public function unsatisfiableParametersAreRefusedAtCompileTime(array $parameter, string $message, string $path = '/things'): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+
+        (new RequestCaseArbitrary())->forOperation($this->parameterContract([$parameter], $path)->operation('things.list'));
+    }
+
+    public static function compileTimeRefusalProvider(): iterable
+    {
+        yield 'a path pattern that always carries a slash' => [
+            ['name' => 'slug', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'pattern' => '^[a-z]+/[a-z]+$']],
+            'Unsupported OpenAPI schema generation for operation "things.list", path parameter "slug": no value the pattern admits can be carried by a template segment',
+            '/things/{slug}',
+        ];
+        yield 'a header pattern that always starts with a space' => [
+            ['name' => 'X-Pad', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'pattern' => '^ [a-z]+$']],
+            'Unsupported OpenAPI schema generation for operation "things.list", header parameter "X-Pad": no value the pattern admits can be carried by a field value',
+        ];
+        yield 'a header enum no member of which is read as sent' => [
+            ['name' => 'X-Pad', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'enum' => [' a', 'b ']]],
+            'Unsupported OpenAPI schema generation for operation "things.list", header parameter "X-Pad": no header enum member can be carried by a field value as sent',
+        ];
+        yield 'uniqueItems over an integer domain smaller than minItems' => [
+            ['name' => 'ids', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'array', 'uniqueItems' => true, 'minItems' => 3, 'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 1]]],
+            'Unsupported OpenAPI schema generation for operation "things.list", query parameter "ids": uniqueItems cannot fill minItems from the finite item domain',
+        ];
+    }
+
     public function aPartUnderAMediaTypeThatIsNeitherTextNorJsonFailsClosed(): void
     {
         Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart property "meta" declares content type "application/xml", which this generator can write neither as text nor as JSON');

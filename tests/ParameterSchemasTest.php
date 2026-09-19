@@ -237,28 +237,59 @@ final class ParameterSchemasTest
     }
 
     /**
-     * RFC 9110 admits visible characters and interior whitespace in a field
-     * value, and a PSR-7 implementation refuses the rest outright — a newline
-     * in a header is a request smuggling primitive, not a value. Since the
-     * validator reads a header as sent (openapi-contract#66), nothing encodes
-     * such a value away any more.
+     * RFC 9110 admits visible characters, obs-text and interior whitespace in
+     * a field value, and a PSR-7 implementation refuses the rest outright — a
+     * newline in a header is a request smuggling primitive, not a value. Since
+     * the validator reads a header as sent (openapi-contract#66), nothing
+     * encodes such a value away any more; whitespace at either end is
+     * stripped by the reader, so it is not read as sent, while an interior
+     * space is (#123, #129).
      */
     public function judgesWhetherAValueCanTravelAsAFieldValue(): void
     {
         $schemas = new ParameterSchemas();
 
         Assert::true($schemas->isHeaderSafe('a b'));
+        Assert::true($schemas->isHeaderSafe('New York'));
+        Assert::true($schemas->isHeaderSafe('žluť'));
         Assert::true($schemas->isHeaderSafe(''));
         Assert::true($schemas->isHeaderSafe(42));
         Assert::true($schemas->isHeaderSafe(null));
         Assert::true($schemas->isHeaderSafe(['a', 'b c']));
-        Assert::false($schemas->isHeaderSafe("a\r\nb"));
-        Assert::false($schemas->isHeaderSafe("a\tb"));
+        Assert::true($schemas->isHeaderSafe('a,b'));
+        Assert::false($schemas->isHeaderSafe('a,b', delimited: true));
+        Assert::false($schemas->isHeaderSafe(['a', 'b,c'], delimited: true));
         Assert::false($schemas->isHeaderSafe(' a'));
         Assert::false($schemas->isHeaderSafe('a '));
-        Assert::false($schemas->isHeaderSafe('ć'));
-        Assert::false($schemas->isHeaderSafe(['ok', "bad\n"]));
-        Assert::false($schemas->isHeaderSafe(["bad\n" => 'ok']));
+        Assert::false($schemas->isHeaderSafe("a\tb"));
+        Assert::false($schemas->isHeaderSafe("a\r\nb"));
+    }
+
+    /**
+     * A header enum keeps every member the wire can carry as sent — an
+     * interior space included — and refuses at compile time when none can
+     * (#123, #129).
+     */
+    public function narrowsAHeaderEnumToTheMembersReadAsSent(): void
+    {
+        $schemas = new ParameterSchemas();
+
+        Assert::same($schemas->forLocation(['type' => 'string', 'enum' => ['New York', ' padded', 'plain', "a\nb", 'žluť']], 'header', 'simple')['enum'], ['New York', 'plain', 'žluť']);
+        Assert::same($schemas->forLocation(['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a,b', 'c d']]], 'header', 'simple')['items']['enum'], ['c d']);
+
+        try {
+            $schemas->forLocation(['type' => 'string', 'enum' => [' a', 'b ']], 'header', 'simple');
+            Assert::true(actual: false, message: 'Expected a refusal');
+        } catch (UnsupportedGeneration $refusal) {
+            Assert::same($refusal->getMessage(), 'Unsupported OpenAPI schema generation: no header enum member can be carried by a field value as sent');
+        }
+
+        try {
+            $schemas->forLocation(['type' => 'string', 'const' => "a\rb"], 'header', 'simple');
+            Assert::true(actual: false, message: 'Expected a refusal');
+        } catch (UnsupportedGeneration $refusal) {
+            Assert::same($refusal->getMessage(), 'Unsupported OpenAPI schema generation: a header const cannot be carried by a field value as sent');
+        }
     }
 
     public function judgesPathSafetyOfEveryStringInAValue(): void

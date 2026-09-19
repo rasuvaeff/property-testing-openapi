@@ -139,7 +139,8 @@ final readonly class ResponseCaseArbitrary
             } catch (UnsupportedGeneration $refusal) {
                 throw $refusal->inOperation($operationKey, sprintf('response "%d" header "%s"', $status, $name));
             }
-            $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
+            $delimited = $separator === ', ';
+            $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value, $delimited));
             $value = Gen::map($compiled, fn(mixed $value): string|array => $this->headerValue($value, $name));
             // An optional header takes both branches; `null` stands for "absent"
             // because a present header always carries a string value.

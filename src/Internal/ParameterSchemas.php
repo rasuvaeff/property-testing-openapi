@@ -45,6 +45,10 @@ final readonly class ParameterSchemas
      */
     public function forLocation(array $schema, string $location, string $style = 'form'): array
     {
+        if ($location === 'header') {
+            return $this->rewrite($schema, false, null, header: SchemaShape::isArray($schema) || SchemaShape::isObject($schema) ? 'delimited' : 'scalar');
+        }
+
         return $this->rewrite($schema, $location === 'path', self::separatorOf($location, $style, $schema));
     }
 
@@ -65,11 +69,13 @@ final readonly class ParameterSchemas
     public static function separatorOf(string $location, string $style, array $schema = []): ?string
     {
         if ($location === 'header') {
-            // A space is out whatever the shape: a field value is read with
-            // the optional whitespace stripped from both ends, and a generator
-            // does not control where in a string its space lands. A list or an
-            // object loses the comma too, which is what separates its members
-            // now that nothing escapes it.
+            // A space is out of the generated alphabet whatever the shape: a
+            // field value is read with the optional whitespace stripped from
+            // both ends, and a generator does not control where in a string
+            // its space lands. A list or an object loses the comma too, which
+            // is what separates its members now that nothing escapes it. An
+            // enum member or a const is judged by {@see isHeaderSafe()}
+            // instead — an interior space is read as sent (#129).
             return SchemaShape::isArray($schema) || SchemaShape::isObject($schema) ? ', ' : ' ';
         }
 
@@ -106,28 +112,39 @@ final readonly class ParameterSchemas
     }
 
     /**
-     * Whether every string of a generated value can travel as an HTTP field
-     * value at all. RFC 9110 admits visible characters and interior
-     * whitespace, and a PSR-7 implementation refuses the rest outright — a
-     * newline in a header is a request smuggling primitive, not a value.
+     * Whether every string of a value can travel as an HTTP field value and
+     * be read back as sent. RFC 9110 admits visible characters, obs-text
+     * (`\x80`–`\xff`, which is how a UTF-8 value travels) and interior
+     * whitespace; a PSR-7 implementation refuses the rest outright — a
+     * newline in a header is a request smuggling primitive, not a value. The
+     * whitespace at either end is stripped by the reader, so a string that
+     * starts or ends with it is not read as sent; an interior space is
+     * (#129). A member of a list or an object (`$delimited`) additionally
+     * cannot carry the comma that separates the members, because nothing
+     * escapes it.
      *
-     * The schema rewrite already keeps generated strings inside printable
-     * ASCII; this guards what it cannot see, a `pattern` or a `format` whose
-     * alphabet is its own.
+     * The schema rewrite keeps generated plain strings inside a narrower
+     * alphabet; this is the judgement for what it cannot see — a `pattern`, a
+     * `format`, an enum member or a const, whose alphabet is their own — the
+     * same one {@see ParameterSerializer::assertTransmittableHeader()} makes.
      */
-    public function isHeaderSafe(mixed $value): bool
+    public function isHeaderSafe(mixed $value, bool $delimited = false): bool
     {
         if (is_string($value)) {
-            return preg_match('/\A[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?\z/', $value) === 1 || $value === '';
+            if ($delimited && str_contains($value, ',')) {
+                return false;
+            }
+
+            return preg_match('/\A[\x21-\x7e\x80-\xff](?:[\x20-\x7e\x80-\xff]*[\x21-\x7e\x80-\xff])?\z/', $value) === 1 || $value === '';
         }
         if (!is_array($value)) {
             return true;
         }
         foreach (array_keys($value) as $key) {
-            if (is_string($key) && !$this->isHeaderSafe($key)) {
+            if (is_string($key) && !$this->isHeaderSafe($key, $delimited)) {
                 return false;
             }
-            if (!$this->isHeaderSafe($value[$key])) {
+            if (!$this->isHeaderSafe($value[$key], $delimited)) {
                 return false;
             }
         }
@@ -161,9 +178,11 @@ final readonly class ParameterSchemas
 
     /**
      * @param array<string, mixed> $schema
+     * @param null|'scalar'|'delimited' $header the header shape the value is
+     *        judged by, `null` off the header wire
      * @return array<string, mixed>
      */
-    private function rewrite(array $schema, bool $path, ?string $separator): array
+    private function rewrite(array $schema, bool $path, ?string $separator, ?string $header = null): array
     {
         unset($schema['nullable']);
         $schema = $this->withoutNullType($schema);
@@ -183,11 +202,14 @@ final readonly class ParameterSchemas
         if ($separator !== null) {
             $schema = $this->delimitedItem($schema, $separator);
         }
+        if ($header !== null) {
+            $schema = $this->headerMember($schema, $header === 'delimited');
+        }
         foreach (['items', 'additionalProperties', 'not'] as $keyword) {
             if (is_array($schema[$keyword] ?? null) && !array_is_list((array) $schema[$keyword])) {
                 /** @var array<string, mixed> $nested */
                 $nested = $schema[$keyword];
-                $schema[$keyword] = $this->rewrite($nested, $path, $separator);
+                $schema[$keyword] = $this->rewrite($nested, $path, $separator, $header);
             }
         }
         if (is_array($schema['properties'] ?? null)) {
@@ -197,7 +219,7 @@ final readonly class ParameterSchemas
                 if (is_array($properties[$name]) && !array_is_list($properties[$name])) {
                     /** @var array<string, mixed> $property */
                     $property = $properties[$name];
-                    $properties[$name] = $this->rewrite($property, $path, $separator);
+                    $properties[$name] = $this->rewrite($property, $path, $separator, $header);
                 }
             }
             $schema['properties'] = $properties;
@@ -208,13 +230,13 @@ final readonly class ParameterSchemas
             }
             /** @var list<mixed> $branches */
             $branches = (array) $schema[$keyword];
-            $schema[$keyword] = array_map(function (mixed $branch) use ($path, $separator): mixed {
+            $schema[$keyword] = array_map(function (mixed $branch) use ($path, $separator, $header): mixed {
                 if (!is_array($branch) || array_is_list($branch)) {
                     return $branch;
                 }
 
                 /** @var array<string, mixed> $branch */
-                return $this->rewrite($branch, $path, $separator);
+                return $this->rewrite($branch, $path, $separator, $header);
             }, $branches);
         }
 
@@ -306,6 +328,31 @@ final readonly class ParameterSchemas
             $safe = array_values(array_filter((array) $schema['enum'], fn(mixed $member): bool => $this->isSeparatorSafe($member, $separator)));
             if ($safe === []) {
                 throw UnsupportedGeneration::forSchema(sprintf('no delimited parameter enum member can avoid "%s"', $separator));
+            }
+            $schema['enum'] = $safe;
+        }
+
+        return $schema;
+    }
+
+    /**
+     * A header const or enum member that cannot be read back as sent is
+     * refused at compile time, not discovered as a run-time exhaustion: a
+     * member with whitespace at either end, a control character, or — for a
+     * list or an object — a comma (#123, #129).
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function headerMember(array $schema, bool $delimited): array
+    {
+        if (array_key_exists('const', $schema) && !$this->isHeaderSafe($schema['const'], $delimited)) {
+            throw UnsupportedGeneration::forSchema('a header const cannot be carried by a field value as sent');
+        }
+        if (is_array($schema['enum'] ?? null)) {
+            $safe = array_values(array_filter((array) $schema['enum'], fn(mixed $member): bool => $this->isHeaderSafe($member, $delimited)));
+            if ($safe === []) {
+                throw UnsupportedGeneration::forSchema('no header enum member can be carried by a field value as sent');
             }
             $schema['enum'] = $safe;
         }

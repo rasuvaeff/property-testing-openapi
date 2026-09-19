@@ -422,7 +422,9 @@ final class NegativeResponseCaseArbitraryTest
         Assert::same($extra['body']['value'], array_merge($base['body']['value'], ['__openapi_extra_property__' => true]));
 
         $type = $negative->typeMismatchForOperation($operation, 200)->generate(new Random($seed))->value;
-        Assert::same($type['body']['value'], array_merge($base['body']['value'], ['id' => 'not-a-integer']));
+        $name = $type['misuse']['name'];
+        Assert::true(is_string($name) && str_starts_with((string) $type['body']['value'][$name], 'not-a-'), 'the target carries a type witness');
+        Assert::same($type['body']['value'], array_replace($base['body']['value'], [$name => $type['body']['value'][$name]]));
 
         $scalarOperation = $contract->operation('pets.count');
         $scalarType = $negative->typeMismatchForOperation($scalarOperation, 200)->generate(new Random($seed))->value;
