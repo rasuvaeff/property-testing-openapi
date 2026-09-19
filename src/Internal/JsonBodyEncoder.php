@@ -32,10 +32,27 @@ final readonly class JsonBodyEncoder
     /** @param array<string, mixed> $schema */
     public function jsonValue(mixed $value, array $schema): mixed
     {
+        $defs = $this->schemaObject($schema['$defs'] ?? [], 'Schema $defs must be an object');
+
+        return $this->jsonValueIn($value, $schema, $defs);
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $defs the `$defs` of the schema root: what a
+     *        local `$ref` below it — the contract's form for a schema that
+     *        refers to itself — is read as, so a nested empty object is still
+     *        known to be an object
+     */
+    private function jsonValueIn(mixed $value, array $schema, array $defs): mixed
+    {
+        if (isset($schema['$ref'])) {
+            $schema = $this->dereference($schema['$ref'], $defs);
+        }
         if (SchemaShape::isArray($schema) && is_array($value) && array_is_list($value)) {
             $items = $this->schemaObject($schema['items'] ?? null, 'Array items must be a schema object');
 
-            return array_map(fn(mixed $item): mixed => $this->jsonValue($item, $items), $value);
+            return array_map(fn(mixed $item): mixed => $this->jsonValueIn($item, $items, $defs), $value);
         }
         // `array_is_list()` is not a guess here: a negative case deliberately
         // sends a list where an object is declared, and the wire has to carry
@@ -54,13 +71,32 @@ final readonly class JsonBodyEncoder
                 // normalized back either way, and `json_encode()` renders an
                 // integer key as the string name it came from.
                 $property = $this->schemaObject($properties[$name] ?? $this->additionalSchema($schema), 'Object property must be a schema object');
-                $result = array_replace($result, [$name => $this->jsonValue($value[$name], $property)]);
+                $result = array_replace($result, [$name => $this->jsonValueIn($value[$name], $property, $defs)]);
             }
 
             return (object) $result;
         }
 
         return $value;
+    }
+
+    /**
+     * The def a local reference names — `#/$defs/<name>`, the name
+     * JSON-Pointer-escaped — which is the only `$ref` a compiled schema
+     * carries.
+     *
+     * @param array<string, mixed> $defs
+     * @return array<string, mixed>
+     */
+    private function dereference(mixed $reference, array $defs): array
+    {
+        if (!is_string($reference) || !str_starts_with($reference, '#/$defs/')) {
+            throw new InvalidCase('Schema $ref must be a local reference into $defs');
+        }
+        /** @var non-empty-string $reference */
+        $name = str_replace(['~1', '~0'], ['/', '~'], substr($reference, strlen('#/$defs/')));
+
+        return $this->schemaObject($defs[$name] ?? null, sprintf('Schema $ref "%s" names no $defs member', $reference));
     }
 
     /**

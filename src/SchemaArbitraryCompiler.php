@@ -9,8 +9,10 @@ use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Definitions;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
 
 /**
  * Compiles the explicit JSON-compatible schema subset into shrinkable values.
@@ -19,6 +21,13 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
  */
 final readonly class SchemaArbitraryCompiler
 {
+    /**
+     * How many levels a recursive def unfolds before its leaf: a tree three
+     * nodes deep, the breadth of each level bounded by the containers'
+     * collection budget.
+     */
+    private const int RECURSION_DEPTH = 3;
+
     private SchemaFacts $facts;
 
     private CompositionArbitraries $composition;
@@ -26,6 +35,8 @@ final readonly class SchemaArbitraryCompiler
     private ScalarArbitraries $scalars;
 
     private ContainerArbitraries $containers;
+
+    private Definitions $definitions;
 
     /**
      * @param string $excludedCharacters characters no generated plain string
@@ -42,7 +53,8 @@ final readonly class SchemaArbitraryCompiler
     {
         $facts = new SchemaFacts();
         $this->facts = $facts;
-        $this->composition = new CompositionArbitraries($this, $facts);
+        $this->definitions = new Definitions();
+        $this->composition = new CompositionArbitraries($this, $facts, $this->definitions);
         $this->scalars = new ScalarArbitraries($facts, $excludedCharacters);
         $this->containers = new ContainerArbitraries($this, $facts, $direction);
     }
@@ -52,6 +64,18 @@ final readonly class SchemaArbitraryCompiler
      */
     public function compile(array $schema): ArbitraryInterface
     {
+        if (array_key_exists('$defs', $schema)) {
+            $defs = $schema['$defs'];
+            if (!is_array($defs)) {
+                throw UnsupportedGeneration::forSchema('$defs must be an object of schemas');
+            }
+            unset($schema['$defs']);
+
+            return $this->definitions->within($defs, fn(): ArbitraryInterface => $this->compile($schema));
+        }
+        if (array_key_exists('$ref', $schema)) {
+            return $this->reference($schema['$ref']);
+        }
         $combinator = $this->composition->combinator($schema);
         if ($combinator instanceof ArbitraryInterface) {
             return $combinator;
@@ -114,6 +138,35 @@ final readonly class SchemaArbitraryCompiler
         };
     }
 
+    /**
+     * A local reference into the schema's `$defs`: the compiled form of a
+     * schema that refers to itself. The def unfolds {@see RECURSION_DEPTH}
+     * levels, each compiled with the def's own name bound to the level
+     * below, down to a leaf compiled with the name bound to nothing — where
+     * a reference back to the def is unproducible and the containers around
+     * it leave it out. A def whose leaf has no value at all (a required
+     * member that is the def itself) has no finite instance, and is refused.
+     */
+    private function reference(mixed $reference): ArbitraryInterface
+    {
+        [$name, $body] = $this->definitions->target($reference);
+        if ($this->definitions->isBound($name)) {
+            return $this->definitions->bound($name) ?? throw new Unproducible($name);
+        }
+
+        try {
+            $leaf = $this->definitions->bind($name, null, fn(): ArbitraryInterface => $this->compile($body));
+        } catch (Unproducible) {
+            throw UnsupportedGeneration::forSchema(sprintf('recursive schema "%s" has no finite instance', $name));
+        }
+
+        return Gen::recursive(
+            $leaf,
+            fn(ArbitraryInterface $level): ArbitraryInterface => $this->definitions->bind($name, $level, fn(): ArbitraryInterface => $this->compile($body)),
+            self::RECURSION_DEPTH,
+        );
+    }
+
     /** @param array<string, mixed> $schema */
     private function type(array $schema): string
     {
@@ -142,7 +195,7 @@ final readonly class SchemaArbitraryCompiler
     private function assertSupported(array $schema): void
     {
         foreach ([
-            '$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else',
+            'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else',
             'contains', 'prefixItems', 'patternProperties',
             'propertyNames', 'unevaluatedProperties',
         ] as $keyword) {

@@ -6,12 +6,16 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Definitions;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -26,6 +30,7 @@ use Testo\Test;
 #[Covers(SchemaArbitraryCompiler::class)]
 #[Covers(CompositionArbitraries::class)]
 #[Covers(ContainerArbitraries::class)]
+#[Covers(Definitions::class)]
 #[Covers(ScalarArbitraries::class)]
 #[Covers(SchemaFacts::class)]
 #[Covers(UnsupportedGeneration::class)]
@@ -452,7 +457,7 @@ final class SchemaArbitraryCompilerTest
     /** @return iterable<string, array{string}> */
     public static function unsupportedKeywordCases(): iterable
     {
-        foreach (['$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'contains', 'prefixItems', 'patternProperties', 'propertyNames', 'unevaluatedProperties'] as $keyword) {
+        foreach (['allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'contains', 'prefixItems', 'patternProperties', 'propertyNames', 'unevaluatedProperties'] as $keyword) {
             yield $keyword => [$keyword];
         }
     }
@@ -1013,7 +1018,11 @@ final class SchemaArbitraryCompilerTest
         foreach ([
             [['type' => 'string', 'not' => []], 'not cannot combine const and enum'],
             [['type' => 'string', 'not' => ['x']], 'not must be a schema object'],
-            [['$ref' => []], 'keyword "$ref" is outside the initial support matrix'],
+            [['$ref' => []], '$ref "array" is not a local reference into the schema\'s $defs'],
+            [['$ref' => '#/components/schemas/Node'], '$ref "#/components/schemas/Node" is not a local reference into the schema\'s $defs'],
+            [['$ref' => '#/$defs/Node'], '$ref "#/$defs/Node" names no $defs member'],
+            [['$defs' => 'x', 'type' => 'string'], '$defs must be an object of schemas'],
+            [['$defs' => ['Node' => 'x'], 'type' => 'string'], '$defs member "Node" must be a schema object'],
             [['type' => 'object', 'properties' => ['id']], 'object properties must be an object'],
             [['type' => ['string', 42]], 'a type, properties, or items declaration is required'],
             [['type' => 'string', 'format' => 42], 'format must be a string'],
@@ -1736,6 +1745,147 @@ final class SchemaArbitraryCompilerTest
         Expect::exception(UnsupportedGeneration::class);
 
         (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'additionalProperties' => ['x']]);
+    }
+
+    /**
+     * The contract compiles a schema that refers to itself as `$defs` plus a
+     * local `$ref` for every reference back into the cycle. Generation
+     * unfolds it a bounded number of levels and ends at a leaf that leaves
+     * the recursive member out — so every value is finite, every value
+     * satisfies the schema, and the depth is actually reached.
+     */
+    public function generatesARecursiveSchemaToABoundedDepth(): void
+    {
+        $node = [
+            'type' => 'object',
+            'required' => ['name'],
+            'additionalProperties' => false,
+            'properties' => [
+                'name' => ['type' => 'string', 'maxLength' => 3],
+                'children' => ['type' => 'array', 'maxItems' => 2, 'items' => ['$ref' => '#/$defs/components.schemas.Node', 'type' => 'object']],
+            ],
+        ];
+        $schema = [...$node, '$defs' => ['components.schemas.Node' => $node]];
+        $check = new SchemaCheck();
+        $deepest = 0;
+        $depth = static function (array $value) use (&$depth): int {
+            $below = 0;
+            foreach ($value['children'] ?? [] as $child) {
+                $below = max($below, $depth($child));
+            }
+
+            return 1 + $below;
+        };
+
+        $encoder = new JsonBodyEncoder();
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 200, seed: 7) as $value) {
+            Assert::true(is_array($value));
+            Assert::true($check->accepts(json_decode($encoder->encode($value, $schema)), $schema, SchemaDialect::OpenApi31));
+            $deepest = max($deepest, $depth($value));
+        }
+        // The root, three unfolded levels, and the leaf.
+        Assert::same($deepest, 5);
+    }
+
+    /**
+     * A def name is whatever pointer the contract wrote, JSON-Pointer-escaped
+     * in the `$ref` — a cross-file def is `a.json:Node`, and a name may hold
+     * `/` or `~`; the empty def is the unconstrained schema.
+     */
+    public function readsTheDefNameOffTheEscapedPointer(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'required' => ['a', 'b'],
+            'properties' => [
+                'a' => ['$ref' => '#/$defs/a~1b~0c'],
+                'b' => ['$ref' => '#/$defs/any'],
+            ],
+            '$defs' => ['a/b~c' => ['type' => 'integer', 'minimum' => 3, 'maximum' => 3], 'any' => []],
+        ];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 5, seed: 1) as $value) {
+            Assert::same($value['a'], 3);
+            Assert::true(array_key_exists('b', $value));
+        }
+    }
+
+    /**
+     * The leaf ends the recursion wherever the schema gives it a way out: an
+     * optional member left out, an array allowed to be empty, a branch of a
+     * choice skipped, a def that merely aliases another. A def whose only
+     * way down is a required member that is the def itself has no finite
+     * instance, and is refused with the def named.
+     */
+    #[DataProvider('recursiveShapes')]
+    public function endsTheRecursionWhereTheSchemaAllowsIt(array $defs, array $root, ?string $refusal): void
+    {
+        $schema = [...$root, '$defs' => $defs];
+        if ($refusal !== null) {
+            Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: ' . $refusal);
+        }
+
+        $arbitrary = (new SchemaArbitraryCompiler())->compile($schema);
+
+        $check = new SchemaCheck();
+        $encoder = new JsonBodyEncoder();
+        foreach (Gen::sample($arbitrary, count: 60, seed: 3) as $value) {
+            Assert::true($check->accepts(json_decode($encoder->encode($value, $schema)), $schema, SchemaDialect::OpenApi31));
+        }
+    }
+
+    /** @return iterable<string, array{array<string, array<string, mixed>>, array<string, mixed>, ?string}> */
+    public static function recursiveShapes(): iterable
+    {
+        $ref = ['$ref' => '#/$defs/N', 'type' => 'object'];
+        yield 'optional member' => [
+            ['N' => ['type' => 'object', 'properties' => ['next' => $ref]]],
+            ['type' => 'object', 'properties' => ['next' => $ref]],
+            null,
+        ];
+        yield 'array that may be empty' => [
+            ['N' => ['type' => 'object', 'required' => ['items'], 'properties' => ['items' => ['type' => 'array', 'maxItems' => 2, 'items' => $ref]]]],
+            ['type' => 'object', 'required' => ['items'], 'properties' => ['items' => ['type' => 'array', 'maxItems' => 2, 'items' => $ref]]],
+            null,
+        ];
+        yield 'a choice with a way out' => [
+            ['N' => ['type' => 'object', 'required' => ['v'], 'properties' => ['v' => ['oneOf' => [['type' => 'integer'], $ref]]]]],
+            ['type' => 'object', 'required' => ['v'], 'properties' => ['v' => ['anyOf' => [['type' => 'string'], $ref]]]],
+            null,
+        ];
+        yield 'mutual recursion' => [
+            [
+                'A' => ['type' => 'object', 'properties' => ['b' => ['$ref' => '#/$defs/B', 'type' => 'object']]],
+                'B' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['$ref' => '#/$defs/A', 'type' => 'object'], 'tag' => ['type' => 'string']]],
+            ],
+            ['type' => 'object', 'properties' => ['b' => ['$ref' => '#/$defs/B', 'type' => 'object']]],
+            null,
+        ];
+        yield 'a conjunction with the def' => [
+            ['N' => ['type' => 'object', 'required' => ['n'], 'properties' => ['next' => $ref, 'n' => ['type' => 'integer']]]],
+            ['allOf' => [$ref, ['properties' => ['n' => ['minimum' => 1, 'maximum' => 3]]]]],
+            null,
+        ];
+        yield 'a required member that is the def itself' => [
+            ['N' => ['type' => 'object', 'required' => ['next'], 'properties' => ['next' => $ref]]],
+            ['type' => 'object', 'properties' => ['root' => $ref]],
+            'recursive schema "N" has no finite instance',
+        ];
+        yield 'an array that may not be empty' => [
+            ['N' => ['type' => 'array', 'minItems' => 1, 'items' => $ref]],
+            ['type' => 'array', 'items' => $ref],
+            'recursive schema "N" has no finite instance',
+        ];
+        yield 'a choice with no way out' => [
+            ['N' => ['type' => 'object', 'required' => ['v'], 'properties' => ['v' => ['anyOf' => [$ref, ['$ref' => '#/$defs/N', 'type' => 'object']]]]]],
+            ['type' => 'object', 'properties' => ['root' => $ref]],
+            'recursive schema "N" has no finite instance',
+        ];
+        yield 'a def in its own conjunction' => [
+            ['N' => ['allOf' => [$ref]]],
+            ['type' => 'object', 'properties' => ['root' => $ref]],
+            '$defs member "N" is an allOf member of itself',
+        ];
     }
 
     public function mergesObjectAllOfBranches(): void

@@ -39,7 +39,17 @@ final readonly class ContainerArbitraries
             throw UnsupportedGeneration::forSchema('minItems exceeds maxItems or the generation budget');
         }
 
-        $element = $this->compiler->compile($items);
+        try {
+            $element = $this->compiler->compile($items);
+        } catch (Unproducible $leaf) {
+            // The leaf of a recursive def: the array that holds no more of
+            // it ends the recursion — where the schema lets it be empty.
+            if ($min > 0) {
+                throw $leaf;
+            }
+
+            return Gen::constant(value: []);
+        }
         if (($schema['uniqueItems'] ?? false) !== true) {
             return Gen::arrayOf($element, $min, $max);
         }
@@ -121,7 +131,18 @@ final readonly class ContainerArbitraries
 
                 continue;
             }
-            $compiled = $this->compiler->compile($property);
+
+            $compiled = $this->producible($property);
+            if (!$compiled instanceof \Rasuvaeff\PropertyTesting\ArbitraryInterface) {
+                // The leaf of a recursive def: an optional member that would
+                // hold more of it is left out, a required one gives it up.
+                if (isset($requiredNames[$name])) {
+                    throw new Unproducible($name);
+                }
+                $reserved[$name] = true;
+
+                continue;
+            }
             $shape[$name] = isset($requiredNames[$name]) ? $compiled : $this->optionalProperty($compiled);
         }
         foreach (array_keys($requiredNames) as $name) {
@@ -242,6 +263,21 @@ final readonly class ContainerArbitraries
      * An optional property carries a value whether or not it is present, so
      * the cardinality pass can bring an absent one in without a second draw.
      */
+    /**
+     * The member's arbitrary, or `null` where the member is the leaf of a
+     * recursive def and has no value at this depth.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function producible(array $schema): ?ArbitraryInterface
+    {
+        try {
+            return $this->compiler->compile($schema);
+        } catch (Unproducible) {
+            return null;
+        }
+    }
+
     private function optionalProperty(ArbitraryInterface $compiled): ArbitraryInterface
     {
         return Gen::record(['present' => Gen::bool(), 'value' => $compiled]);
