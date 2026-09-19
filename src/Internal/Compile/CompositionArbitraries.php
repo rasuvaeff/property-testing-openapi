@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
+use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
@@ -149,14 +150,11 @@ final readonly class CompositionArbitraries
             return false;
         }
         $multiple = $this->positiveNumber($number['multipleOf'] ?? null);
-        if (is_int($multiple)) {
-            return $value % $multiple === 0;
-        }
-        if (is_float($multiple)) {
-            return abs((float) $value - round((float) $value / $multiple) * $multiple) < 1e-14;
-        }
 
-        return true;
+        // The contract's own verdict, never a copy of it: the copy this held
+        // was the float rule the contract left in 0.12.1, and it disagreed
+        // on 4670 of the integers in ±100000 for `0.7` (#132).
+        return $multiple === null || SchemaCheck::isMultipleOf($value, $multiple);
     }
 
     private function positiveNumber(mixed $value): int|float|null

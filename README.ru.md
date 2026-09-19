@@ -127,13 +127,13 @@ request-направлению схемы — `readOnly`-свойства ухо
 | Keyword | Генерация |
 |---|---|
 | `type` (один или список), `const`, `enum`, `nullable` (OAS 3.0) | поддержано; список типов — взвешенное объединение |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1 |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1; граница настолько широкая, что кратным нужно больше значащих цифр, чем держит double, падает fail-closed |
 | `minLength`, `maxLength` (не более 64), `pattern` (подмножество PCRE) | поддержано |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
 | `items`, `minItems`, `maxItems` (не более 16), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
 | `properties`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано; кардинальность выполняется по построению (optional сверх потолка выпадает, нужный для пола — добавляется) |
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
-| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
+| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
 | `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed |
 | `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
 

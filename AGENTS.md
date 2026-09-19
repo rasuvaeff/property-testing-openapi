@@ -96,7 +96,16 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   product is the clean decimal (`round($k * $m, $decimals)`), which is what
   the contract judges by since 0.12.1 — on every machine, bcmath or not
   (openapi-contract#151). Never emit the float product `64.10000000000001`:
-  it is not a decimal multiple of `0.1` and the contract says so.
+  it is not a decimal multiple of `0.1` and the contract says so. A bound
+  past which the multiples need more significant digits than a double holds
+  is refused at compile time (#133).
+- **Never predict a contract verdict with a copy of its rule.** Whether the
+  `number` branch of a `oneOf` admits an integer is
+  `SchemaCheck::isMultipleOf()` (openapi-contract 0.12.2); the float copy
+  this held disagreed on 4670 integers in ±100000 for `0.7` and was found
+  by a delta review, not by the zoo (#132). Same shape as the
+  `DirectionalSchemas` copy before it: when the generator needs a verdict,
+  ask the contract to export it.
 - The end-to-end oracle for the valid phase is `tests/Support/ZooContracts.php`
   + `ContractSuiteTest::zooValidCasesPassTheBuiltInChecks`: one operation per
   schema feature, checked through materialize → validate → transport →

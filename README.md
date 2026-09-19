@@ -129,13 +129,13 @@ the same way.
 | Keyword | Generation |
 |---|---|
 | `type` (single or list), `const`, `enum`, `nullable` (OAS 3.0) | supported; a type list is a weighted union |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1 |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1; a bound so wide that the multiples need more significant digits than a double holds fails closed |
 | `minLength`, `maxLength` (capped at 64), `pattern` (PCRE subset) | supported |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
 | `items`, `minItems`, `maxItems` (capped at 16), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
 | `properties`, `required`, `minProperties`, `maxProperties` (capped at 16), `additionalProperties` (boolean or schema) | supported; the cardinality is met by construction (an optional past the ceiling is left out, one needed for the floor brought in) |
 | `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
-| `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it), `allOf` (mergeable branches; a branch bounding `additionalProperties` must declare every sibling property) | supported |
+| `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches; a branch bounding `additionalProperties` must declare every sibling property) | supported |
 | `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed |
 | `$ref`, `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
 
