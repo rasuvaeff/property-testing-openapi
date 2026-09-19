@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
+use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * Produces valid, corpus-safe request cases for one compiled operation.
@@ -23,21 +26,20 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
  * template segment after percent-decoding. Request bodies are generated
  * from the request direction of their schema, without `readOnly` members.
  *
- * @psalm-type RequestCaseData = array{
- *     operationKey: string,
- *     path: array<string, string|list<string>|array<string, string>>,
- *     query: array<string, string|list<string>|array<string, string>>,
- *     headers: array<string, string|list<string>|array<string, string>>,
- *     cookies: array<string, string|list<string>|array<string, string>>,
- *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
- *     misuse: null,
- * }
+ * @psalm-import-type CaseData from ContractSuite
  *
  * @api
  */
 final readonly class RequestCaseArbitrary
 {
+    private const int PROBES = 8;
+
+    private const int PROBE_SEED = 11;
+
     private SchemaArbitraryCompiler $schemas;
+
+    /** The body compiler: a request never carries a `readOnly` member. */
+    private SchemaArbitraryCompiler $bodySchemas;
 
     private ParameterSchemas $parameterSchemas;
 
@@ -46,11 +48,12 @@ final readonly class RequestCaseArbitrary
     public function __construct()
     {
         $this->schemas = new SchemaArbitraryCompiler();
+        $this->bodySchemas = new SchemaArbitraryCompiler(direction: SchemaDirection::Request);
         $this->parameterSchemas = new ParameterSchemas();
         $this->requestSchemas = new RequestSchemas();
     }
 
-    /** @return ArbitraryInterface<RequestCaseData> */
+    /** @return ArbitraryInterface<CaseData> */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
         $arbitrary = Gen::map(Gen::record([
@@ -69,15 +72,7 @@ final readonly class RequestCaseArbitrary
             'misuse' => null,
         ]);
 
-        /** @var ArbitraryInterface<array{
-         *     operationKey: string,
-         *     path: array<string, string|list<string>|array<string, string>>,
-         *     query: array<string, string|list<string>|array<string, string>>,
-         *     headers: array<string, string|list<string>|array<string, string>>,
-         *     cookies: array<string, string|list<string>|array<string, string>>,
-         *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-         *     misuse: null,
-         * }> $arbitrary */
+        /** @var ArbitraryInterface<CaseData> $arbitrary */
         return $arbitrary;
     }
 
@@ -93,22 +88,35 @@ final readonly class RequestCaseArbitrary
                 continue;
             }
             $separator = ParameterSchemas::separatorOf($location, $parameter['style'], $parameter['schema']);
-            $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
-            $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
+
+            try {
+                $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
+                $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
+            } catch (UnsupportedGeneration $refusal) {
+                throw $refusal->inOperation($operation->key, sprintf('%s parameter "%s"', $location, $parameter['name']));
+            }
             if ($location === 'path') {
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isPathSafe($value));
             }
             if ($location === 'header') {
                 // Same division of labour as the path: the rewrite narrows the
                 // alphabet, this refuses what a `pattern` or a `format` can
-                // still put outside an HTTP field value.
-                $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
-            }
-            if ($separator !== null) {
+                // still put outside an HTTP field value — or, for a list or
+                // an object, on its separating comma.
+                $delimited = $separator === ', ';
+                $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value, $delimited));
+            } elseif ($separator !== null) {
                 // The rewrite and the narrowed alphabet construct values
                 // without those characters; this only guards what neither can
                 // see, a `pattern`, whose alphabet is the pattern's own.
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isSeparatorSafe($value, $separator));
+            }
+            if (($location === 'path' || $location === 'header') && $this->mentionsPattern($schema) && !$this->yieldsSomething($compiled)) {
+                // The rewrite cannot see inside a pattern; the filter above
+                // can, and a pattern none of whose strings survives the wire
+                // is refused here, by name, instead of exhausting mid-run.
+                throw UnsupportedGeneration::forSchema(sprintf('no value the pattern admits can be carried by a %s', $location === 'path' ? 'template segment' : 'field value'))
+                    ->inOperation($operation->key, sprintf('%s parameter "%s"', $location, $parameter['name']));
             }
             $value = Gen::map(
                 $compiled,
@@ -123,6 +131,34 @@ final readonly class RequestCaseArbitrary
         }
 
         return Gen::map(Gen::record($shape), fn(array $values): array => $this->includedValues($values));
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function mentionsPattern(array $schema): bool
+    {
+        return str_contains(json_encode($schema, JSON_THROW_ON_ERROR), '"pattern"');
+    }
+
+    /**
+     * Whether a filtered arbitrary produces anything, judged the way the
+     * compiler's pattern probe does: deterministic draws, each with the
+     * filter's own retry budget, so an arbitrary that fails here is one that
+     * would have exhausted mid-run.
+     */
+    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
+    {
+        $random = new Random(self::PROBE_SEED);
+        for ($probe = 0; $probe < self::PROBES; ++$probe) {
+            try {
+                $arbitrary->generate($random);
+
+                return true;
+            } catch (GenerationExhaustedException) {
+                continue;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -149,43 +185,27 @@ final readonly class RequestCaseArbitrary
         /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
         $bodies = [];
         foreach ($content as $mediaType => $definition) {
-            if (!is_string($mediaType) || !is_array($definition)) {
-                continue;
-            }
+            // A media type without a schema, or with the `true` schema, admits
+            // any value — the contract reads both as unconstrained. Only the
+            // `false` schema admits nothing, and nothing can be generated for it.
             $schema = $definition['schema'] ?? [];
-            if (!is_array($schema) || array_is_list($schema)) {
-                throw new UnsupportedGeneration('JSON request body schema must be an object');
+            if ($schema === true) {
+                $schema = [];
             }
-            /** @var array<string, mixed> $schema */
+            if ($schema === false) {
+                throw new UnsupportedGeneration(sprintf('Request body "%s" declares the false schema, which admits no value', $mediaType));
+            }
             $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
-            if (MediaType::isJson($mediaType)) {
-                /** @var ArbitraryInterface<mixed> $json */
-                $json = Gen::map($this->schemas->compile($schema), static fn(mixed $value): array => [
-                    'mediaType' => $mediaType,
-                    'encoding' => 'json',
-                    'value' => $value,
-                ]);
-                $bodies[] = [1, $json];
-            } elseif ($normalized === 'application/x-www-form-urlencoded') {
-                $this->assertObjectSchema($schema, 'Form request body schema must be an object');
-                $this->assertFormEncoding($definition['encoding'] ?? []);
-                /** @var ArbitraryInterface<mixed> $form */
-                $form = Gen::map($this->schemas->compile($this->nonEmptyRequiredProperties($schema)), static fn(mixed $value): array => [
-                    'mediaType' => $mediaType,
-                    'encoding' => 'form',
-                    'value' => $value,
-                ]);
-                $bodies[] = [1, $form];
-            } elseif (str_starts_with($normalized, 'multipart/')) {
-                $this->assertObjectSchema($schema, 'Multipart request body schema must be an object');
-                $this->assertMultipartEncoding($definition['encoding'] ?? []);
-                /**
-                 * @var array<string, mixed> $definition
-                 * @var ArbitraryInterface<mixed> $multipart
-                 */
-                $multipart = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
-                $bodies[] = [1, $multipart];
+
+            /** @var array<string, mixed> $definition */
+            try {
+                $body = $this->bodyArbitrary($mediaType, $normalized, $schema, $definition);
+            } catch (UnsupportedGeneration $refusal) {
+                throw $refusal->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
+            }
+            if ($body instanceof ArbitraryInterface) {
+                $bodies[] = [1, $body];
             }
         }
         if ($bodies === []) {
@@ -206,6 +226,48 @@ final readonly class RequestCaseArbitrary
         // wrapping it and reading the shape back — which is what dropped
         // multipart, the one encoding that carries parts instead of a value.
         return Gen::nullable($body);
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $definition
+     * @return null|ArbitraryInterface<mixed> `null` for a media type this
+     *         package does not generate
+     */
+    private function bodyArbitrary(string $mediaType, string $normalized, array $schema, array $definition): ?ArbitraryInterface
+    {
+        if (MediaType::isJson($mediaType)) {
+            /** @var ArbitraryInterface<mixed> $json */
+            $json = Gen::map($this->bodySchemas->compile($schema), static fn(mixed $value): array => [
+                'mediaType' => $mediaType,
+                'encoding' => 'json',
+                'value' => $value,
+            ]);
+
+            return $json;
+        }
+        if ($normalized === 'application/x-www-form-urlencoded') {
+            $this->assertObjectSchema($schema, 'Form request body schema must be an object');
+            $this->assertFormEncoding($definition['encoding'] ?? []);
+            /** @var ArbitraryInterface<mixed> $form */
+            $form = Gen::map($this->bodySchemas->compile($this->nonEmptyRequiredProperties($this->explodedObjectsWithoutExtras($schema, $definition['encoding'] ?? []))), static fn(mixed $value): array => [
+                'mediaType' => $mediaType,
+                'encoding' => 'form',
+                'value' => $value,
+            ]);
+
+            return $form;
+        }
+        if (str_starts_with($normalized, 'multipart/')) {
+            $this->assertObjectSchema($schema, 'Multipart request body schema must be an object');
+            $this->assertMultipartEncoding($definition['encoding'] ?? []);
+            /** @var ArbitraryInterface<mixed> $multipart */
+            $multipart = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
+
+            return $multipart;
+        }
+
+        return null;
     }
 
     private function included(ArbitraryInterface $value): ArbitraryInterface
@@ -302,6 +364,10 @@ final readonly class RequestCaseArbitrary
                 throw new UnsupportedGeneration('Multipart properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
+            if (($property['readOnly'] ?? false) === true) {
+                // Owned by the response: declared, typed, never sent.
+                continue;
+            }
             $required = isset($requiredNames[$name]);
             // A required container has to be generated non-empty here as well
             // as for a form body: an empty array becomes zero parts, and a
@@ -367,7 +433,7 @@ final readonly class RequestCaseArbitrary
         // shape removed here is one no client sends on purpose, and refusing
         // it costs a percent of draws.
         return Gen::filter(
-            $this->schemas->compile($schema),
+            $this->bodySchemas->compile($schema),
             static fn(mixed $value): bool => !is_string($value) || trim($value) === $value,
         );
     }
@@ -400,7 +466,7 @@ final readonly class RequestCaseArbitrary
 
                 return [
                     'name' => $name,
-                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->scalar($partValue),
+                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->partText((string) $name, $partValue, $contentType),
                     'encoding' => $binary ? 'base64' : 'text',
                     'contentType' => $contentType,
                     'headers' => $headers,
@@ -424,6 +490,27 @@ final readonly class RequestCaseArbitrary
     }
 
     /**
+     * The text of a non-binary part, as its media type reads it. A `text/*`
+     * or `application/octet-stream` part is the value verbatim; a JSON part
+     * carries the JSON encoding of the value — the validator decodes it as
+     * JSON, so a bare `abc` under `application/json` is a decoding failure,
+     * not a string (#122). A media type this package can write neither way
+     * fails closed: a body it cannot vouch for is not a valid case.
+     */
+    private function partText(string $name, mixed $value, string $contentType): string
+    {
+        $normalized = MediaType::normalize($contentType);
+        if (MediaType::isJson($normalized)) {
+            return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+        if (str_starts_with($normalized, 'text/') || $normalized === 'application/octet-stream') {
+            return $this->scalar($value);
+        }
+
+        throw new UnsupportedGeneration(sprintf('Multipart property "%s" declares content type "%s", which this generator can write neither as text nor as JSON', $name, $contentType));
+    }
+
+    /**
      * RFC 6570 treats an empty list or map as undefined, so the materializer
      * omits it; a required container therefore has to be generated non-empty.
      *
@@ -444,6 +531,47 @@ final readonly class RequestCaseArbitrary
         }
 
         return $schema;
+    }
+
+    /**
+     * A form property with an object schema and `explode: true` (the form
+     * default) is written as flat `member=value` pairs, so its wire form can
+     * carry only the members the document declares: an undeclared member the
+     * generator added would land as a top-level member of the body, where it
+     * collides with a declared property or violates `additionalProperties:
+     * false`. Such an object is generated without extras, and one whose
+     * `minProperties` its declared properties cannot meet fails closed here
+     * rather than as a run-time exhaustion (#120).
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function explodedObjectsWithoutExtras(array $schema, mixed $encoding): array
+    {
+        $properties = is_array($schema['properties'] ?? null) ? (array) $schema['properties'] : [];
+        foreach (array_keys($properties) as $name) {
+            $property = $properties[$name];
+            if (!is_array($property) || array_is_list($property)) {
+                continue;
+            }
+            /** @var array<string, mixed> $property */
+            if (!SchemaShape::isObject($property)) {
+                continue;
+            }
+            $configuration = is_array($encoding) && is_array($encoding[$name] ?? null) ? (array) $encoding[$name] : [];
+            if (($configuration['explode'] ?? true) !== true) {
+                continue;
+            }
+            $declared = is_array($property['properties'] ?? null) ? count((array) $property['properties']) : 0;
+            $minimum = is_int($property['minProperties'] ?? null) ? (int) $property['minProperties'] : 0;
+            if ($minimum > $declared) {
+                throw UnsupportedGeneration::forSchema(sprintf('form property "%s" is an exploded object whose minProperties %d cannot be met by its %d declared properties, and its wire form carries no undeclared member', (string) $name, $minimum, $declared));
+            }
+            $property['additionalProperties'] = false;
+            $properties[$name] = $property;
+        }
+
+        return array_merge($schema, ['properties' => $properties]);
     }
 
     /**

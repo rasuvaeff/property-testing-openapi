@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
+use Rasuvaeff\OpenApiContract\SchemaDirection;
+
 /**
- * The request-direction view of a schema: `readOnly` properties are not
- * part of a request, so they leave `properties` and `required` the way the
- * contract validator drops them before checking a request body.
+ * The request-direction view of a schema, exactly as the contract validator
+ * reads a request body: a `readOnly` property is not required on a request.
  *
  * @internal
  */
@@ -23,7 +24,7 @@ final readonly class RequestSchemas
      */
     public function effective(array $schema): array
     {
-        return $this->schemas->effective($schema, 'readOnly');
+        return $this->schemas->effective($schema, SchemaDirection::Request);
     }
 
     /**
@@ -33,6 +34,6 @@ final readonly class RequestSchemas
      */
     public function value(mixed $value, array $schema): mixed
     {
-        return $this->schemas->value($value, $schema, 'readOnly');
+        return $this->schemas->value($value, $schema, SchemaDirection::Request);
     }
 }

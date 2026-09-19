@@ -10,7 +10,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
  *
  * @api
  */
-final class CoverageIncomplete extends \RuntimeException
+final class CoverageIncomplete extends \RuntimeException implements OpenApiPropertyTestingException
 {
     private function __construct(
         public readonly CoverageReport $report,

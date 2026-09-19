@@ -29,6 +29,7 @@ final class ZooContracts
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
         'encoded.create', 'mixed.create', 'numeric.create', 'headers.get', 'verified.get',
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
+        'labels.get', 'sparse.create', 'amounts.create', 'settings.create', 'precise.get',
     ];
 
     /**
@@ -352,6 +353,78 @@ final class ZooContracts
                             'token' => ['type' => 'string', 'pattern' => '^[0-9a-f]{8}$'],
                         ],
                     ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A header enum member is read as the wire reads it: an
+                // interior space and obs-text (a UTF-8 member) are field
+                // values, and the reader strips only the whitespace at the
+                // ends (#123, #129).
+                '/labels' => ['get' => [
+                    'operationId' => 'labels.get',
+                    'parameters' => [
+                        ['name' => 'X-City', 'in' => 'header', 'required' => true,
+                            'schema' => ['type' => 'string', 'enum' => ['New York', 'žluť', 'plain']]],
+                        ['name' => 'X-Kinds', 'in' => 'header', 'style' => 'simple', 'explode' => false,
+                            'schema' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 2, 'items' => ['type' => 'string', 'enum' => ['big apple', 'a,b', 'c']]]],
+                    ],
+                    'responses' => ['204' => []],
+                ]],
+                // Twelve optionals under `maxProperties: 1`: the cardinality
+                // is met by construction, not by filtering independent
+                // presence choices until three runs in four exhaust (#123).
+                '/sparse' => ['post' => [
+                    'operationId' => 'sparse.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'minProperties' => 1,
+                        'maxProperties' => 1,
+                        'additionalProperties' => false,
+                        'properties' => array_fill_keys(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'], ['type' => 'integer']),
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // Every integer is also a number: a value is valid for the
+                // union only when exactly one branch admits it (#121).
+                '/amounts' => ['post' => [
+                    'operationId' => 'amounts.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['amount'],
+                        'properties' => ['amount' => ['oneOf' => [['type' => 'integer', 'minimum' => -9, 'maximum' => 9], ['type' => 'number', 'minimum' => 0, 'maximum' => 9, 'multipleOf' => 0.5]]]],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A nested exploded form object is written as flat pairs, so
+                // its wire form carries only the members the document
+                // declares (#120).
+                '/settings' => ['post' => [
+                    'operationId' => 'settings.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/x-www-form-urlencoded' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['theme'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4],
+                            'theme' => ['type' => 'object', 'minProperties' => 1, 'properties' => ['mode' => ['type' => 'string', 'enum' => ['dark', 'light']], 'size' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 3]]],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A float goes on the wire as the shortest decimal that reads
+                // back as the same double (#117); `+` stays encoded under
+                // allowReserved (#119). No decimal `multipleOf` here: with
+                // ext-bcmath loaded — as it is on the CI runners — the
+                // contract's verdict on one is its own (openapi-contract#151),
+                // and this operation is recorded into the contract's corpus.
+                // `WireAgreementTest` pins the float-mode agreement and skips
+                // under bcmath.
+                '/precise' => ['get' => [
+                    'operationId' => 'precise.get',
+                    'parameters' => [
+                        ['name' => 'v', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'number', 'minimum' => 0.123456789012345, 'maximum' => 0.1234567890123456]],
+                        ['name' => 'big', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 123456789012345678, 'maximum' => 123456789012345680]],
+                        ['name' => 'expr', 'in' => 'query', 'required' => true, 'allowReserved' => true, 'schema' => ['type' => 'string', 'enum' => ['a+b', 'c d', 'e&f', 'g/h']]],
+                    ],
                     'responses' => ['204' => []],
                 ]],
                 '/unions/{id}' => ['get' => [

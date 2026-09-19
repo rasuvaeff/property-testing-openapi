@@ -11,6 +11,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 
 /**
@@ -23,14 +24,24 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
  * a selection that names an unsafe operation without that gate fails closed
  * instead of silently filtering it out.
  *
+ * The case shape is declared here once and imported everywhere else
+ * (`@psalm-import-type CaseData from ContractSuite`); a case that does not
+ * have it is refused at every `@api` entry point with {@see InvalidCase}
+ * naming the missing key (#128). A valid case carries `misuse: null`, a
+ * negative one the misuse it was built with.
+ *
+ * @psalm-type ParameterMap = array<string, string|list<string>|array<string, string>>
+ * @psalm-type PartData = array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}
+ * @psalm-type BodyData = array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<PartData>, value?: mixed}
+ * @psalm-type MisuseData = array{kind: non-empty-string, location: non-empty-string, name: string}
  * @psalm-type CaseData = array{
  *     operationKey: string,
- *     path: array<string, string|list<string>|array<string, string>>,
- *     query: array<string, string|list<string>|array<string, string>>,
- *     headers: array<string, string|list<string>|array<string, string>>,
- *     cookies: array<string, string|list<string>|array<string, string>>,
- *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
- *     misuse: null|array{kind: non-empty-string, location: non-empty-string, name: string},
+ *     path: ParameterMap,
+ *     query: ParameterMap,
+ *     headers: ParameterMap,
+ *     cookies: ParameterMap,
+ *     body: null|BodyData,
+ *     misuse: null|MisuseData,
  * }
  *
  * @psalm-import-type CoverageData from NegativeRequestCaseArbitrary
@@ -56,6 +67,8 @@ final class ContractSuite
     private ?RejectionPolicy $rejectionPolicy = null;
 
     private ?OperationCoverage $coverage = null;
+
+    private ?RedactionPolicy $redaction = null;
 
     private function __construct(
         private readonly Contract $contract,
@@ -173,6 +186,23 @@ final class ContractSuite
     }
 
     /**
+     * The redaction policy every rendering of a case goes through: the curl
+     * reproducer of {@see reproduce()} and the minimal case
+     * {@see OperationProperty} prints when a phase is falsified. Without it
+     * only the default header set (`Authorization`, `Proxy-Authorization`,
+     * `Set-Cookie`) is redacted, and a secret the document carries in a
+     * query parameter, a cookie, an `X-Api-Key` header or a body member is
+     * printed as generated (#124).
+     */
+    public function redaction(RedactionPolicy $policy): self
+    {
+        $suite = clone $this;
+        $suite->redaction = $policy;
+
+        return $suite;
+    }
+
+    /**
      * The configured coverage record restricted to the resolved selection.
      */
     public function coverageReport(): CoverageReport
@@ -206,17 +236,7 @@ final class ContractSuite
         return $keys;
     }
 
-    /**
-     * @return ArbitraryInterface<array{
-     *     operationKey: string,
-     *     path: array<string, string|list<string>|array<string, string>>,
-     *     query: array<string, string|list<string>|array<string, string>>,
-     *     headers: array<string, string|list<string>|array<string, string>>,
-     *     cookies: array<string, string|list<string>|array<string, string>>,
-     *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
-     *     misuse: null,
-     * }>
-     */
+    /** @return ArbitraryInterface<CaseData> */
     public function validCases(string $operationKey): ArbitraryInterface
     {
         return $this->valid->forOperation($this->requireSelected($operationKey));
@@ -317,6 +337,7 @@ final class ContractSuite
      */
     public function checkValid(string $operationKey, array $case): void
     {
+        CaseShape::assert($case);
         if ($case['misuse'] !== null) {
             throw new \InvalidArgumentException('A valid check requires a case without misuse metadata');
         }
@@ -349,6 +370,7 @@ final class ContractSuite
      */
     public function checkNegative(string $operationKey, array $case): void
     {
+        CaseShape::assert($case);
         if ($case['misuse'] === null) {
             throw new \InvalidArgumentException('A negative check requires a case with misuse metadata');
         }
@@ -370,13 +392,31 @@ final class ContractSuite
 
     /**
      * Redacted curl reproducer for one case of a selected operation.
-     * Credentials are never applied here.
+     * Credentials are never applied here. The policy defaults to the one
+     * configured through {@see redaction()}.
      *
      * @param CaseData $case
      */
-    public function reproduce(string $operationKey, array $case, RedactionPolicy $policy = new RedactionPolicy()): string
+    public function reproduce(string $operationKey, array $case, ?RedactionPolicy $policy = null): string
     {
-        return (new RequestReproducer($this->materializer))->curl($this->requireSelected($operationKey), $case, $policy);
+        CaseShape::assert($case);
+
+        return (new RequestReproducer($this->materializer))->curl($this->requireSelected($operationKey), $case, $policy ?? $this->redaction ?? new RedactionPolicy());
+    }
+
+    /**
+     * The case with the configured redaction applied: the default header set
+     * and everything the policy names is replaced by the redaction marker,
+     * shape preserved. This is the form a failure message may print.
+     *
+     * @param CaseData $case
+     * @return CaseData
+     */
+    public function redact(array $case): array
+    {
+        CaseShape::assert($case);
+
+        return (new RequestReproducer($this->materializer))->redact($case, $this->redaction ?? new RedactionPolicy());
     }
 
     private function requireSelected(string $operationKey): Operation

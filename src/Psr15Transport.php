@@ -95,7 +95,7 @@ final readonly class Psr15Transport implements TransportInterface
         } elseif ($this->streams instanceof StreamFactoryInterface) {
             $stream = $this->streams->createStream($contents);
         } else {
-            throw new \LogicException('Psr15Transport needs a StreamFactoryInterface (fourth constructor argument) to buffer a non-seekable form or multipart body');
+            throw new SuiteConfigurationError('Psr15Transport needs a StreamFactoryInterface (fourth constructor argument) to buffer a non-seekable form or multipart body');
         }
         $serverRequest = $serverRequest->withBody($stream);
         if ($form) {

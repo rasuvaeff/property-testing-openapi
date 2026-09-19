@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
@@ -21,6 +22,7 @@ final readonly class ContainerArbitraries
     public function __construct(
         private SchemaArbitraryCompiler $compiler,
         private SchemaFacts $facts,
+        private ?SchemaDirection $direction = null,
     ) {}
 
     /** @param array<string, mixed> $schema */
@@ -64,6 +66,16 @@ final readonly class ContainerArbitraries
             return count(array_unique(array_map(serialize(...), (array) $items['enum'])));
         }
 
+        if (($items['type'] ?? null) === 'integer' && is_int($items['minimum'] ?? null) && is_int($items['maximum'] ?? null)) {
+            // An upper bound on the domain, not its size: a multipleOf would
+            // thin it further. Enough to refuse `minItems: 3` over `0..1`
+            // before a run-time exhaustion does (#123).
+            $minimum = (int) $items['minimum'] + ((($items['exclusiveMinimum'] ?? false) === true) ? 1 : 0);
+            $maximum = (int) $items['maximum'] - ((($items['exclusiveMaximum'] ?? false) === true) ? 1 : 0);
+
+            return max(0, $maximum - $minimum + 1);
+        }
+
         return match ($items['type'] ?? null) {
             'boolean' => 2,
             'null' => 1,
@@ -93,12 +105,22 @@ final readonly class ContainerArbitraries
             }
             $requiredNames[$name] = true;
         }
+        $omitted = $this->direction?->foreignFlag();
+        /** @var array<array-key, true> $reserved */
+        $reserved = [];
         /** @var array<string, true> $requiredNames */
         foreach ($properties as $name => $property) {
             if (!is_array($property) || array_is_list($property)) {
                 throw UnsupportedGeneration::forSchema('object properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
+            if ($omitted !== null && ($property[$omitted] ?? false) === true) {
+                // Owned by the other direction: never sent, still declared.
+                $reserved[$name] = true;
+                unset($requiredNames[$name]);
+
+                continue;
+            }
             $compiled = $this->compiler->compile($property);
             $shape[$name] = isset($requiredNames[$name]) ? $compiled : $this->optionalProperty($compiled);
         }
@@ -112,10 +134,21 @@ final readonly class ContainerArbitraries
             throw UnsupportedGeneration::forSchema('required properties exceed maxProperties');
         }
 
+        $additional = $this->facts->additionalPropertiesSchema($schema);
+        if ($additional === false && $minProperties > count($shape)) {
+            throw UnsupportedGeneration::forSchema('minProperties requires additional properties, but additionalProperties is false');
+        }
+        // The declared optionals meet the cardinality by construction: an
+        // optional past `maxProperties` is left out, an optional needed for
+        // `minProperties` is brought in — declared ones first, extras only for
+        // what they cannot cover. A filter here drew twelve independent
+        // presence choices against `maxProperties: 1` and exhausted three
+        // runs in four (#123).
+        $declaredFloor = $additional === false ? $minProperties : min($minProperties, count($shape));
         /** @var ArbitraryInterface<array<string, mixed>> $base */
         $base = $shape === []
             ? Gen::constant(value: [])
-            : Gen::map(Gen::record($shape), static function (array $values) use ($requiredNames): array {
+            : Gen::map(Gen::record($shape), static function (array $values) use ($requiredNames, $declaredFloor, $maxProperties): array {
                 /** @var array<string, mixed> $typed */
                 $typed = [];
                 foreach (array_keys($values) as $name) {
@@ -125,19 +158,11 @@ final readonly class ContainerArbitraries
                     $typed = array_replace($typed, [$name => $values[$name]]);
                 }
 
-                return self::objectValues($typed, $requiredNames);
+                return self::objectValues($typed, $requiredNames, $declaredFloor, $maxProperties);
             });
 
-        // Keep optional-property branches within maxProperties. Additional
-        // properties are materialized only when minProperties requires them;
-        // this keeps generated objects small while still honoring cardinality.
-        $base = Gen::filter($base, static fn(array $values): bool => count($values) <= $maxProperties);
-        $additional = $this->facts->additionalPropertiesSchema($schema);
-        if ($additional === false && $minProperties > count($shape)) {
-            throw UnsupportedGeneration::forSchema('minProperties requires additional properties, but additionalProperties is false');
-        }
         if ($additional === false || $minProperties <= 0 && $shape !== []) {
-            return Gen::filter($base, static fn(array $values): bool => count($values) >= $minProperties);
+            return $base;
         }
 
         $keyAlphabet = 'abcdefghijklmnopqrstuvwxyz';
@@ -145,7 +170,7 @@ final readonly class ContainerArbitraries
         $key = Gen::map(
             Gen::filter(
                 Gen::stringFrom($keyAlphabet, minLength: 1, maxLength: 8),
-                static fn(string $name): bool => !array_key_exists($name, $shape),
+                static fn(string $name): bool => !array_key_exists($name, $shape) && !isset($reserved[$name]),
             ),
             static fn(string $name): string => $name,
         );
@@ -213,25 +238,29 @@ final readonly class ContainerArbitraries
         return $result;
     }
 
+    /**
+     * An optional property carries a value whether or not it is present, so
+     * the cardinality pass can bring an absent one in without a second draw.
+     */
     private function optionalProperty(ArbitraryInterface $compiled): ArbitraryInterface
     {
-        /** @var ArbitraryInterface<array{present: bool, value: mixed}> $absent */
-        $absent = Gen::map(Gen::constant(value: false), static fn(bool $present): array => ['present' => $present, 'value' => null]);
-        /** @var ArbitraryInterface<array{present: bool, value: mixed}> $present */
-        $present = Gen::map($compiled, static fn(mixed $value): array => ['present' => true, 'value' => $value]);
-
-        return Gen::frequency([[1, $absent], [1, $present]]);
+        return Gen::record(['present' => Gen::bool(), 'value' => $compiled]);
     }
 
     /**
      * @param array<array-key, mixed> $values
      * @param array<array-key, true> $requiredNames
+     * @param int $declaredFloor the member count the declared optionals have
+     *        to reach, absent ones brought in in declaration order
+     * @param int $maxProperties the member count past which a present
+     *        optional is left out, last declared first
      * @return array<array-key, mixed> keyed by member name; a numeric name is
      *         an integer key, because that is the only way PHP can hold it
      */
-    private static function objectValues(array $values, array $requiredNames): array
+    private static function objectValues(array $values, array $requiredNames, int $declaredFloor, int $maxProperties): array
     {
         $result = [];
+        $absent = [];
         foreach (array_keys($values) as $name) {
             // A numeric property name arrives as an integer key and is kept as
             // one: it normalizes back the moment it is used as an array key,
@@ -241,9 +270,21 @@ final readonly class ContainerArbitraries
                 $result = array_replace($result, [$name => $values[$name]]);
                 continue;
             }
-            if (is_array($values[$name]) && ($values[$name]['present'] ?? false) === true && array_key_exists('value', $values[$name])) {
-                $result = array_replace($result, [$name => $values[$name]['value']]);
+            $optional = $values[$name];
+            if (!is_array($optional) || !array_key_exists('value', $optional)) {
+                throw new \LogicException('Generated optional property has an invalid shape');
             }
+            if (($optional['present'] ?? false) === true && count($result) < $maxProperties) {
+                $result = array_replace($result, [$name => $optional['value']]);
+            } else {
+                $absent = array_replace($absent, [$name => $optional['value']]);
+            }
+        }
+        foreach (array_keys($absent) as $name) {
+            if (count($result) >= $declaredFloor) {
+                break;
+            }
+            $result = array_replace($result, [$name => $absent[$name]]);
         }
 
         return $result;

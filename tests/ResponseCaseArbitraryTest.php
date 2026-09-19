@@ -148,46 +148,22 @@ final class ResponseCaseArbitraryTest
         $body = (new ResponseCaseArbitrary())->jsonBody($operation, 200);
 
         Assert::same($body['mediaType'] ?? null, 'application/json');
-        Assert::true(!array_key_exists('secret', $body['schema']['properties'] ?? ['secret' => true]));
+        // The `writeOnly` property stays declared — the contract still types
+        // it — and only stops being required; the generator never emits it.
+        Assert::true(array_key_exists('secret', $body['schema']['properties'] ?? []));
         Assert::same($body['schema']['required'] ?? null, ['id', 'name', 'status', 'kind', 'tags']);
         Assert::same((new ResponseCaseArbitrary())->jsonBody(ResponseContracts::pets()->operation('ping'), 204), null);
     }
 
-    public function writeOnlyPropertiesLeaveNestedSchemasToo(): void
+    public function writeOnlyPropertiesAreNeverGeneratedAndTheirNamesStayReserved(): void
     {
-        $schema = (new ResponseSchemas())->effective([
-            'type' => 'object',
-            'required' => ['w', 'a'],
-            'properties' => [
-                'w' => ['type' => 'string', 'writeOnly' => true],
-                'a' => ['type' => 'array', 'items' => ['type' => 'object', 'required' => ['w', 'x'], 'properties' => ['x' => ['type' => 'string'], 'w' => ['type' => 'string', 'writeOnly' => true]]]],
-                'c' => ['allOf' => [['type' => 'object', 'properties' => ['w' => ['writeOnly' => true, 'type' => 'string'], 'k' => ['type' => 'string']]], 'not-a-schema']],
-                'd' => ['oneOf' => [['type' => 'object', 'properties' => ['w' => ['writeOnly' => true, 'type' => 'string']]]]],
-            ],
-        ]);
+        $operation = ResponseContracts::pets()->operation('pets.get');
 
-        Assert::same($schema['required'], ['a']);
-        Assert::same(array_keys($schema['properties']), ['a', 'c', 'd']);
-        Assert::same($schema['properties']['a']['items']['required'], ['x']);
-        Assert::same(array_keys($schema['properties']['a']['items']['properties']), ['x']);
-        Assert::same(array_keys($schema['properties']['c']['allOf'][0]['properties']), ['k']);
-        Assert::same($schema['properties']['c']['allOf'][1], 'not-a-schema');
-        // Dropping the last property drops `properties` itself — the same
-        // reading `openapi-contract` applies, so an empty map never forbids
-        // what the document left open.
-        Assert::false(array_key_exists('properties', $schema['properties']['d']['oneOf'][0]));
-    }
+        foreach (range(1, 40) as $seed) {
+            $case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random($seed))->value;
 
-    public function malformedSchemaShapesPassThroughTheResponseView(): void
-    {
-        $schemas = new ResponseSchemas();
-
-        Assert::same($schemas->effective(['properties' => 'x']), ['properties' => 'x']);
-        Assert::same($schemas->effective(['items' => 'x']), ['items' => 'x']);
-        Assert::same($schemas->effective(['properties' => ['bad' => ['x'], 'w' => ['type' => 'string', 'writeOnly' => true], 'k' => ['type' => 'string']], 'required' => ['w', 'k', 7]]), ['properties' => ['bad' => ['x'], 'k' => ['type' => 'string']], 'required' => ['k', 7]]);
-        Assert::same($schemas->effective(['properties' => ['a' => ['type' => 'string']], 'required' => 'x']), ['properties' => ['a' => ['type' => 'string']], 'required' => 'x']);
-        Assert::same($schemas->effective(['items' => ['a', 'b']]), ['items' => ['a', 'b']]);
-        Assert::same($schemas->effective(['allOf' => 'x']), ['allOf' => 'x']);
+            Assert::false(array_key_exists('secret', (array) ($case['body']['value'] ?? [])));
+        }
     }
 
     #[DataProvider('unsupportedProvider')]
@@ -258,6 +234,26 @@ final class ResponseCaseArbitraryTest
         $case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random(3))->value;
 
         Assert::same($case['headers'], ['X-F' => '0.5', 'X-N' => 'null', 'X-B' => 'true']);
+    }
+
+    /**
+     * A comma separates only the members of a list header; a scalar response
+     * header carries it as sent, and a list member carrying one is dropped
+     * from its enum (#129).
+     */
+    public function aCommaSeparatesOnlyTheMembersOfAListHeader(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['headers' => [
+            'X-Expr' => ['required' => true, 'schema' => ['type' => 'string', 'enum' => ['a,b']]],
+            'X-Kinds' => ['required' => true, 'schema' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'string', 'enum' => ['x,y', 'z']]]],
+        ]]]);
+
+        foreach (range(1, 10) as $seed) {
+            $case = (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random($seed))->value;
+
+            Assert::same($case['headers']['X-Expr'], 'a,b');
+            Assert::same(array_unique((array) $case['headers']['X-Kinds']), ['z']);
+        }
     }
 
     public function rejectsAStatusOutsideTheHttpRange(): void

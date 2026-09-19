@@ -14,6 +14,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\OpenApiOperations;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationProperty;
 use Rasuvaeff\PropertyTesting\OpenApi\OperationPropertyFailed;
+use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
 use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -86,6 +87,48 @@ final class OperationPropertyTest
             Assert::string($failure->reproducer)->contains('/pets/');
             Assert::same($failure->counterExample->seed, 17);
             Assert::same($failure->getCode(), 0);
+        }
+    }
+
+    /**
+     * A secret the policy names is printed neither in the reproducer nor in
+     * the minimal case of the message; the counterexample keeps the case as
+     * generated (#124).
+     */
+    public function printsTheMinimalCaseThroughTheSuiteRedactionPolicy(): void
+    {
+        $suite = $this->suite(static fn(): Response => new Response(500), [
+            ['name' => 'X-Api-Key', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'const' => 'sk-live-secret']],
+            ['name' => 'token', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'const' => 'tok-secret']],
+            ['name' => 'X-Trace', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'const' => 'a/b']],
+        ])->redaction(new RedactionPolicy(headers: ['X-Api-Key'], queryParameters: ['token']));
+
+        try {
+            OperationProperty::check($suite, 'pets.get', runs: 5, seed: 23);
+            Assert::true(actual: false, message: 'Expected a falsified valid phase');
+        } catch (OperationPropertyFailed $failure) {
+            Assert::string($failure->getMessage())->notContains('sk-live-secret')->notContains('tok-secret');
+            Assert::string($failure->getMessage())->contains('"X-Api-Key":"[redacted]"')->contains('"token":"[redacted]"')->contains('"X-Trace":"a/b"');
+            Assert::string($failure->reproducer)->notContains('sk-live-secret')->notContains('tok-secret');
+            $shrunk = $failure->counterExample->shrunkArguments['case'] ?? null;
+            Assert::true(is_array($shrunk));
+            Assert::same($shrunk['headers']['X-Api-Key'] ?? null, 'sk-live-secret');
+        }
+    }
+
+    public function printsAFailedExampleThroughTheSuiteRedactionPolicy(): void
+    {
+        $suite = $this->suite(static fn(): Response => new Response(500), [
+            ['name' => 'X-Api-Key', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string'], 'example' => 'sk-live-secret'],
+        ])->redaction(new RedactionPolicy(headers: ['X-Api-Key']));
+
+        try {
+            OperationProperty::check($suite, 'pets.get', runs: 5, seed: 23);
+            Assert::true(actual: false, message: 'Expected a falsified valid phase');
+        } catch (OperationPropertyFailed $failure) {
+            Assert::same($failure->example, 'example');
+            Assert::string($failure->getMessage())->notContains('sk-live-secret')->contains('"X-Api-Key":"[redacted]"');
+            Assert::same($failure->counterExample->shrunkArguments['case']['headers']['X-Api-Key'] ?? null, 'sk-live-secret');
         }
     }
 
@@ -362,7 +405,8 @@ final class OperationPropertyTest
     }
 
     /** @param callable(Contract, RequestInterface): Response $handler */
-    private function suite(callable $handler): ContractSuite
+    /** @param list<array<string, mixed>> $parameters */
+    private function suite(callable $handler, array $parameters = []): ContractSuite
     {
         $contract = Contract::fromArray([
             'openapi' => '3.1.0',
@@ -372,6 +416,7 @@ final class OperationPropertyTest
                         'operationId' => 'pets.get',
                         'parameters' => [
                             ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 10]],
+                            ...$parameters,
                         ],
                         'responses' => ['204' => [], '400' => []],
                     ],

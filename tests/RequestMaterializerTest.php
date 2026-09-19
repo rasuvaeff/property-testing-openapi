@@ -9,6 +9,7 @@ use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ServerContracts;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -358,36 +359,35 @@ final class RequestMaterializerTest
         (new RequestMaterializer($factory, $factory))->materialize($this->bodyOperation([]), $this->bodyCase('other', null));
     }
 
+    public function refusesACaseMissingAKeyByName(): void
+    {
+        Expect::exception(InvalidCase::class)->withMessage('Case is missing the "cookies" key');
+
+        $factory = new Psr17Factory();
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op');
+
+        (new RequestMaterializer($factory, $factory))->materialize($operation, ['operationKey' => 'op', 'path' => [], 'query' => [], 'headers' => [], 'body' => null, 'misuse' => null]);
+    }
+
     public function rejectsMissingBodyContentDefinition(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
+        Expect::exception(InvalidCase::class)->withMessage('Request body media type "application/json" is not declared');
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
-            $this->bodyOperation(['content' => 'invalid']),
+            $this->bodyOperation(['required' => true]),
             $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'value']),
         );
     }
 
     public function rejectsUndeclaredBodyMediaType(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
+        Expect::exception(InvalidCase::class);
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
             $this->bodyOperation(['content' => ['application/json' => ['schema' => ['type' => 'string']]]]),
             $this->bodyCase('body.test', ['mediaType' => 'application/problem+json', 'encoding' => 'json', 'value' => 'value']),
-        );
-    }
-
-    public function rejectsListBodySchema(): void
-    {
-        Expect::exception(UnsupportedGeneration::class);
-
-        $factory = new Psr17Factory();
-        (new RequestMaterializer($factory, $factory))->materialize(
-            $this->bodyOperation(['content' => ['application/json' => ['schema' => ['invalid']]]]),
-            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'value']),
         );
     }
 
@@ -437,20 +437,9 @@ final class RequestMaterializerTest
         Assert::same($request->getUri()->getQuery(), 'q=a/b:c');
     }
 
-    public function reportsMissingBodyContentWithAnExactMessage(): void
-    {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body content must be an object');
-
-        $factory = new Psr17Factory();
-        (new RequestMaterializer($factory, $factory))->materialize(
-            $this->bodyOperation(['content' => 'invalid']),
-            $this->bodyCase('body.test', ['mediaType' => 'application/json', 'encoding' => 'json', 'value' => 'value']),
-        );
-    }
-
     public function reportsUndeclaredMediaTypeWithAnExactMessage(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body media type "application/problem+json" is not declared');
+        Expect::exception(InvalidCase::class)->withMessage('Request body media type "application/problem+json" is not declared');
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
@@ -515,23 +504,12 @@ final class RequestMaterializerTest
         Assert::same($request->getHeaderLine('Content-Type'), 'application/xml');
     }
 
-    public function fallbackSkipsANonArrayJsonDefinition(): void
-    {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body media type "application/xml" is not declared');
-
-        $factory = new Psr17Factory();
-        (new RequestMaterializer($factory, $factory))->materialize(
-            $this->bodyOperation(['content' => ['application/json' => 'garbage']]),
-            $this->misuseBodyCase('media-type', ['mediaType' => 'application/xml', 'encoding' => 'json', 'value' => ['a' => 'x']]),
-        );
-    }
-
-    public function fallbackContinuesPastANonArrayDefinitionToTheJsonOne(): void
+    public function fallbackContinuesPastANonJsonDefinitionToTheJsonOne(): void
     {
         $factory = new Psr17Factory();
         $request = (new RequestMaterializer($factory, $factory))->materialize(
             $this->bodyOperation(['content' => [
-                'text/csv' => 'garbage',
+                'text/csv' => ['schema' => ['type' => 'string']],
                 'application/json' => ['schema' => ['type' => 'object']],
             ]]),
             $this->misuseBodyCase('media-type', ['mediaType' => 'application/xml', 'encoding' => 'json', 'value' => ['a' => 'x']]),
@@ -677,7 +655,7 @@ final class RequestMaterializerTest
     #[DataProvider('unsafeMultipartPartHeaderProvider')]
     public function rejectsMultipartPartHeadersThatCannotTravel(string $contentType, array $headers, string $message): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+        Expect::exception(InvalidCase::class)->withMessage($message);
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
@@ -719,7 +697,7 @@ final class RequestMaterializerTest
 
     public function rejectsMultipartWithoutParts(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart request body has an invalid shape');
+        Expect::exception(InvalidCase::class)->withMessage('Multipart request body has an invalid shape');
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
@@ -734,7 +712,7 @@ final class RequestMaterializerTest
 
     public function rejectsMultipartWithoutBoundary(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart request body has an invalid shape');
+        Expect::exception(InvalidCase::class)->withMessage('Multipart request body has an invalid shape');
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
@@ -750,7 +728,7 @@ final class RequestMaterializerTest
     #[DataProvider('invalidMultipartBoundaryProvider')]
     public function rejectsInvalidMultipartBoundary(string $boundary): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart boundary is invalid');
+        Expect::exception(InvalidCase::class)->withMessage('Multipart boundary is invalid');
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
@@ -774,7 +752,7 @@ final class RequestMaterializerTest
 
     public function rejectsInvalidMultipartBase64Value(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart base64 value is invalid');
+        Expect::exception(InvalidCase::class)->withMessage('Multipart base64 value is invalid');
 
         $factory = new Psr17Factory();
         (new RequestMaterializer($factory, $factory))->materialize(
@@ -897,12 +875,12 @@ final class RequestMaterializerTest
         Assert::true($contract->validateRequest($delete)->isValid());
     }
 
-    public function fallsBackToTheBasePathProjectionOfAHandBuiltOperation(): void
+    public function aHandBuiltOperationWithoutServersIsMaterializedAgainstTheRoot(): void
     {
-        $operation = new Operation(key: 'legacy.get', operationId: 'legacy.get', method: 'GET', path: '/pets', serverBases: ['/legacy']);
+        $operation = new Operation(key: 'legacy.get', operationId: 'legacy.get', method: 'GET', path: '/pets');
         $request = $this->materializer()->materialize($operation, ['operationKey' => 'legacy.get', 'path' => [], 'query' => [], 'headers' => [], 'cookies' => [], 'body' => null, 'misuse' => null]);
 
-        Assert::same((string) $request->getUri(), '/legacy/pets');
+        Assert::same((string) $request->getUri(), '/pets');
     }
 
     #[DataProvider('baseUriProvider')]

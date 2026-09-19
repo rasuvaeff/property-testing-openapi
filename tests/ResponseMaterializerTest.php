@@ -7,9 +7,9 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ResponseContracts;
-use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -75,7 +75,7 @@ final class ResponseMaterializerTest
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['204' => []]);
 
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
+        Expect::exception(InvalidCase::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
 
         $this->materializer()->materialize($operation, [
             'operationKey' => 'op',
@@ -99,7 +99,7 @@ final class ResponseMaterializerTest
 
     public function rejectsANonStringRawBody(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Raw response body value must be a string');
+        Expect::exception(InvalidCase::class)->withMessage('Raw response body value must be a string');
 
         $this->materializer()->materialize(ResponseContracts::pets()->operation('pets.get'), [
             'operationKey' => 'pets.get', 'status' => 200, 'headers' => [],
@@ -169,7 +169,7 @@ final class ResponseMaterializerTest
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => ['application/json' => ['schema' => ['a']]]]]);
 
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Response JSON schema must be an object');
+        Expect::exception(InvalidCase::class)->withMessage('Response JSON schema must be an object');
 
         $this->materializer()->materialize($operation, [
             'operationKey' => 'op', 'status' => 200, 'headers' => [],

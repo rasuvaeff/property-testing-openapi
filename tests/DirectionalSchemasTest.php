@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
+use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\DirectionalSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
@@ -33,49 +35,32 @@ final class DirectionalSchemasTest
         'anyOf' => [['properties' => ['z' => ['writeOnly' => true]]]],
     ];
 
-    public function requestViewDropsReadOnlyMembersEverywhere(): void
+    /**
+     * The schema view is the contract's own rewrite, not a copy of it: a
+     * property the other direction owns loses its `required` entry and keeps
+     * its subschema, recursively — including under `additionalProperties`,
+     * which the copy this package used to carry never visited.
+     */
+    public function requestViewIsTheContractsRewrite(): void
     {
-        $view = (new RequestSchemas())->effective(self::SCHEMA);
+        $schema = self::SCHEMA + ['additionalProperties' => ['type' => 'object', 'required' => ['at'], 'properties' => ['at' => ['readOnly' => true]]]];
 
-        Assert::same($view, [
-            'type' => 'object',
-            'required' => ['name', 'secret', 7],
-            'properties' => [
-                'name' => ['type' => 'string'],
-                'secret' => ['type' => 'string', 'writeOnly' => true],
-                'nested' => ['type' => 'object', 'required' => [], 'properties' => ['note' => ['type' => 'string']]],
-                'list' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => ['v' => []]]],
-                'bad' => 'not a schema',
-            ],
-            // Dropping the last property drops `properties` itself, as the
-            // contract's own effective schema does: an empty map forbids
-            // nothing, and what the document said about undeclared members
-            // keeps saying it.
-            'oneOf' => [[], 'x'],
-            'allOf' => [[]],
-            'anyOf' => [['properties' => ['z' => ['writeOnly' => true]]]],
-        ]);
+        $view = (new RequestSchemas())->effective($schema);
+
+        Assert::same($view, (new SchemaCheck())->effective($schema, SchemaDirection::Request));
+        Assert::same($view['required'], ['name', 'secret', 7]);
+        Assert::same(array_keys($view['properties']), ['id', 'name', 'secret', 'nested', 'list', 'bad']);
+        Assert::same($view['properties']['nested']['required'], []);
+        Assert::same($view['additionalProperties']['required'], []);
     }
 
-    public function malformedMembersDoNotStopTheWalk(): void
-    {
-        $view = (new RequestSchemas())->effective([
-            'properties' => ['bad' => 'x', 'id' => ['readOnly' => true], 'name' => ['type' => 'string']],
-            'required' => ['bad', 'id', 'name'],
-        ]);
-
-        Assert::same($view, [
-            'properties' => ['bad' => 'x', 'name' => ['type' => 'string']],
-            'required' => ['bad', 'name'],
-        ]);
-    }
-
-    public function responseViewDropsWriteOnlyMembersOnly(): void
+    public function responseViewIsTheContractsRewrite(): void
     {
         $view = (new ResponseSchemas())->effective(self::SCHEMA);
 
+        Assert::same($view, (new SchemaCheck())->effective(self::SCHEMA, SchemaDirection::Response));
         Assert::same($view['required'], ['id', 'name', 7]);
-        Assert::same(array_keys($view['properties']), ['id', 'name', 'nested', 'list', 'bad']);
+        Assert::same(array_keys($view['properties']), ['id', 'name', 'secret', 'nested', 'list', 'bad']);
         Assert::same($view['properties']['nested'], self::SCHEMA['properties']['nested']);
     }
 
@@ -84,8 +69,8 @@ final class DirectionalSchemasTest
         $schemas = new DirectionalSchemas();
 
         foreach ([['type' => 'string'], ['properties' => 'x', 'required' => ['a']], ['items' => ['a']], ['allOf' => 'x'], []] as $schema) {
-            Assert::same($schemas->effective($schema, 'readOnly'), $schema);
-            Assert::same($schemas->effective($schema, 'writeOnly'), $schema);
+            Assert::same($schemas->effective($schema, SchemaDirection::Request), $schema);
+            Assert::same($schemas->effective($schema, SchemaDirection::Response), $schema);
         }
     }
 

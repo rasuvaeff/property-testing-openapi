@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
@@ -41,7 +42,7 @@ final readonly class ResponseCaseArbitrary
 
     public function __construct()
     {
-        $this->schemas = new SchemaArbitraryCompiler();
+        $this->schemas = new SchemaArbitraryCompiler(direction: SchemaDirection::Response);
         $this->responseSchemas = new ResponseSchemas();
         $this->parameterSchemas = new ParameterSchemas();
     }
@@ -59,8 +60,8 @@ final readonly class ResponseCaseArbitrary
     {
         $definition = $this->definition($operation, $status);
         $arbitrary = Gen::map(Gen::record([
-            'headers' => $this->headers($definition),
-            'body' => $this->body($definition),
+            'headers' => $this->headers($definition, $operation->key, $status),
+            'body' => $this->body($definition, $operation->key, $status),
         ]), static fn(array $parts): array => [
             'operationKey' => $operation->key,
             'status' => $status,
@@ -106,7 +107,7 @@ final readonly class ResponseCaseArbitrary
     }
 
     /** @param array<string, mixed> $definition */
-    private function headers(array $definition): ArbitraryInterface
+    private function headers(array $definition, string $operationKey, int $status): ArbitraryInterface
     {
         $headers = $definition['headers'] ?? [];
         if (!is_array($headers)) {
@@ -131,9 +132,15 @@ final readonly class ResponseCaseArbitrary
             // the alphabet to what a field value may carry, and the filter
             // refuses what a `pattern` or a `format` can still put outside it.
             $separator = ParameterSchemas::separatorOf('header', 'simple', $schema);
-            $compiled = (new SchemaArbitraryCompiler($separator ?? ''))
-                ->compile($this->parameterSchemas->forLocation($schema, 'header', 'simple'));
-            $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
+
+            try {
+                $compiled = (new SchemaArbitraryCompiler($separator ?? ''))
+                    ->compile($this->parameterSchemas->forLocation($schema, 'header', 'simple'));
+            } catch (UnsupportedGeneration $refusal) {
+                throw $refusal->inOperation($operationKey, sprintf('response "%d" header "%s"', $status, $name));
+            }
+            $delimited = $separator === ', ';
+            $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value, $delimited));
             $value = Gen::map($compiled, fn(mixed $value): string|array => $this->headerValue($value, $name));
             // An optional header takes both branches; `null` stands for "absent"
             // because a present header always carries a string value.
@@ -182,7 +189,7 @@ final readonly class ResponseCaseArbitrary
     }
 
     /** @param array<string, mixed> $definition */
-    private function body(array $definition): ArbitraryInterface
+    private function body(array $definition, string $operationKey, int $status): ArbitraryInterface
     {
         $media = $this->jsonMedia($definition, 'Response content declares no JSON media type');
         if ($media === null) {
@@ -190,7 +197,13 @@ final readonly class ResponseCaseArbitrary
         }
         $mediaType = $media['mediaType'];
 
-        return Gen::map($this->schemas->compile($media['schema']), static fn(mixed $value): array => [
+        try {
+            $compiled = $this->schemas->compile($media['schema']);
+        } catch (UnsupportedGeneration $refusal) {
+            throw $refusal->inOperation($operationKey, sprintf('response "%d" body "%s"', $status, $mediaType));
+        }
+
+        return Gen::map($compiled, static fn(mixed $value): array => [
             'mediaType' => $mediaType,
             'encoding' => 'json',
             'value' => $value,

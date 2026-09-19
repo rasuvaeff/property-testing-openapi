@@ -46,13 +46,19 @@ final readonly class ParameterTargets
     ) {}
 
     /**
-     * @return non-empty-list<array{location: 'path'|'query'|'header'|'cookie'|'body', name: string}>
+     * Every required component whose absence the validator can observe. A
+     * path parameter is not one: dropping it from the case leaves the
+     * template literal in the request target, which is a string like any
+     * other to a `string` schema, so the category was generated and the
+     * contract accepted a quarter of the "negative" cases (#118).
+     *
+     * @return non-empty-list<array{location: 'query'|'header'|'cookie'|'body', name: string}>
      */
     public function missingRequired(Operation $operation): array
     {
         $targets = [];
         foreach ($operation->parameters as $parameter) {
-            if ($parameter['required']) {
+            if ($parameter['required'] && $parameter['in'] !== 'path') {
                 $targets[] = ['location' => $parameter['in'], 'name' => $parameter['name']];
             }
         }
@@ -60,7 +66,7 @@ final readonly class ParameterTargets
             $targets[] = ['location' => 'body', 'name' => 'body'];
         }
         if ($targets === []) {
-            throw new UnsupportedGeneration(sprintf('Operation "%s" has no required request component to invalidate', $operation->key));
+            throw new UnsupportedGeneration(sprintf('Operation "%s" has no required request component whose absence is observable to invalidate (a path parameter cannot be omitted)', $operation->key));
         }
 
         return $targets;

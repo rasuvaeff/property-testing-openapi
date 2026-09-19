@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
-use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 
 /**
  * Encodes a JSON-compatible logical value as a JSON document, turning maps
@@ -17,7 +17,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  * whose names run 0, 1, … without a gap — in a JSON-compatible PHP value that
  * is a list, and a list is what a negative case sends when it means to
  * violate an object schema. Distinguishing them would need a marker in
- * `RequestCaseData`, which has to stay data-only.
+ * `CaseData`, which has to stay data-only.
  *
  * @internal
  */
@@ -105,10 +105,10 @@ final readonly class JsonBodyEncoder
     private function memberMap(mixed $value, string $message): array
     {
         if (!is_array($value)) {
-            throw new UnsupportedGeneration($message);
+            throw new InvalidCase($message);
         }
         if ($value !== [] && array_is_list($value)) {
-            throw new UnsupportedGeneration($message);
+            throw new InvalidCase($message);
         }
 
         /** @var array<array-key, mixed> $result */

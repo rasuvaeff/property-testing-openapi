@@ -25,18 +25,23 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
  */
 final readonly class ResponseMaterializer
 {
+    private JsonBodyEncoder $json;
+
+    private ParameterSerializer $parameters;
+
     public function __construct(
         private ResponseFactoryInterface $responses,
         private StreamFactoryInterface $streams,
-        private JsonBodyEncoder $json = new JsonBodyEncoder(),
-        private ParameterSerializer $parameters = new ParameterSerializer(),
-    ) {}
+    ) {
+        $this->json = new JsonBodyEncoder();
+        $this->parameters = new ParameterSerializer();
+    }
 
     /** @param ResponseCaseData $case */
     public function materialize(Operation $operation, array $case): ResponseInterface
     {
         if ($case['operationKey'] !== $operation->key) {
-            throw new \InvalidArgumentException(sprintf('Response case targets "%s", not "%s"', $case['operationKey'], $operation->key));
+            throw new InvalidCase(sprintf('Response case targets "%s", not "%s"', $case['operationKey'], $operation->key));
         }
         $response = $this->responses->createResponse($case['status']);
         foreach ($case['headers'] as $name => $value) {
@@ -60,7 +65,7 @@ final readonly class ResponseMaterializer
         if ($body['encoding'] === 'raw') {
             $raw = $body['value'];
             if (!is_string($raw)) {
-                throw new UnsupportedGeneration('Raw response body value must be a string');
+                throw new InvalidCase('Raw response body value must be a string');
             }
             $payload = $raw;
         } else {

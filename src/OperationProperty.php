@@ -105,6 +105,7 @@ final readonly class OperationProperty
                 $result->counterExample(),
                 self::reproducer($suite, $operationKey, $result->counterExample()->shrunkArguments),
                 $failure,
+                self::redacted($suite, $result->counterExample()->shrunkArguments),
             );
         }
         if ($result instanceof ExampleFailed) {
@@ -118,6 +119,7 @@ final readonly class OperationProperty
                 $case,
                 self::reproducer($suite, $operationKey, ['case' => $case]),
                 $result->exception,
+                self::redacted($suite, ['case' => $case]),
             );
         }
 
@@ -138,6 +140,21 @@ final readonly class OperationProperty
         } catch (\Throwable $failure) {
             return sprintf('(no reproducer: %s)', $failure->getMessage());
         }
+    }
+
+    /**
+     * @param array<array-key, mixed> $arguments
+     * @return array<string, mixed>
+     */
+    private static function redacted(ContractSuite $suite, array $arguments): array
+    {
+        $case = $arguments['case'] ?? null;
+        if (!is_array($case)) {
+            return [];
+        }
+
+        /** @var CaseData $case */
+        return $suite->redact($case);
     }
 
     private static function resolveRuns(int $runs): int

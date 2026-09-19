@@ -9,4 +9,4 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
  *
  * @api
  */
-final class CredentialsUnavailable extends \RuntimeException {}
+final class CredentialsUnavailable extends \RuntimeException implements OpenApiPropertyTestingException {}

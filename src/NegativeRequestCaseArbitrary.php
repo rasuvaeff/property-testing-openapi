@@ -17,22 +17,19 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
  * The generated value remains corpus-safe; `misuse` identifies the deliberate
  * invalidation and is never interpreted as a secret or a PSR-7 object.
  *
- * @psalm-import-type RequestCaseData from RequestCaseArbitrary
+ * @psalm-import-type CaseData from ContractSuite
  * @psalm-import-type Kind from JsonBodyWitness
  * @psalm-type CoverageData = array{
  *     covered: list<array{kind: non-empty-string, location: string, name: string}>,
  *     skipped: list<array{kind: non-empty-string, side: 'request'|'parameter'|'body', reason: string}>,
  * }
  * @psalm-import-type Witness from JsonBodyWitness
- * @psalm-type NegativeRequestCaseData = array{
- *     operationKey: string,
- *     path: array<string, string|list<string>|array<string, string>>,
- *     query: array<string, string|list<string>|array<string, string>>,
- *     headers: array<string, string|list<string>|array<string, string>>,
- *     cookies: array<string, string|list<string>|array<string, string>>,
- *     body: null|array{boundary?: string, encoding: 'form'|'json'|'multipart'|'raw', mediaType: string, parts?: list<array{name: string, value: string, encoding: 'text'|'base64', contentType: string, headers: array<string, string>}>, value?: mixed},
- *     misuse: array{kind: 'missing-required'|'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern'|'additional-properties'|'media-type'|'part-content-type'|'json-syntax', location: 'path'|'query'|'header'|'cookie'|'body', name: string},
- * }
+ *
+ * Every arbitrary here yields the exported `CaseData` with `misuse` set to
+ * one of: `missing-required`, `type`, `enum`, `const`, `boundary`, `length`,
+ * `format`, `pattern`, `additional-properties`, `media-type`,
+ * `part-content-type`, `json-syntax`, located in `path`, `query`, `header`,
+ * `cookie` or `body`.
  *
  * @api
  */
@@ -64,7 +61,7 @@ final readonly class NegativeRequestCaseArbitrary
     /**
      * Drops one required parameter, or the whole required body.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function forOperation(Operation $operation): ArbitraryInterface
     {
@@ -76,7 +73,7 @@ final readonly class NegativeRequestCaseArbitrary
             $name = $target['name'];
 
             return static function (array $case) use ($location, $name): array {
-                /** @var RequestCaseData $case */
+                /** @var CaseData $case */
                 if ($location === 'body') {
                     $case['body'] = null;
                 } else {
@@ -93,7 +90,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one scalar parameter with a wire value that cannot satisfy its
      * integer, number, boolean, or null schema type.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function typeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -104,7 +101,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one scalar parameter with a value absent from its finite
      * enum.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function enumMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -115,7 +112,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one scalar parameter with a value other than the single one
      * its `const` admits.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function constMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -126,7 +123,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one numeric parameter with a wire value just outside its
      * `minimum`/`maximum` bound, honouring boolean exclusive bounds.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function boundaryMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -137,7 +134,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one string parameter with a wire value whose length falls
      * just outside its `minLength`/`maxLength` bound.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function lengthMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -148,7 +145,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one string parameter with a wire value that provably violates
      * its asserted `format`.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function formatMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -160,7 +157,7 @@ final readonly class NegativeRequestCaseArbitrary
      * fails its `pattern`; the pattern itself is the oracle, and an exhausted
      * search budget fails closed.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function patternMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -171,7 +168,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Adds one undeclared property to a required JSON object body whose schema
      * sets `additionalProperties: false`.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function additionalPropertyForOperation(Operation $operation): ArbitraryInterface
     {
@@ -196,7 +193,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Keeps the schema-valid JSON body but sends it under an undeclared
      * Content-Type, so the media type is the only deviation.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function mediaTypeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -224,7 +221,7 @@ final readonly class NegativeRequestCaseArbitrary
      * `encoding.contentType` and ignoring it: neglecting the keyword is
      * fail-open, so every valid case passes either way (#80).
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function partContentTypeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -256,7 +253,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces the required JSON body with a deliberately malformed raw JSON
      * payload under the declared media type.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function malformedJsonForOperation(Operation $operation): ArbitraryInterface
     {
@@ -283,7 +280,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one top-level value of the required JSON body with one that
      * cannot satisfy its single declared schema type.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyTypeMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -294,7 +291,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one top-level value of the required JSON body with a value
      * absent from its finite scalar enum.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyEnumMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -305,7 +302,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one top-level value of the required JSON body with a value
      * other than the single one its `const` admits.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyConstMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -317,7 +314,7 @@ final readonly class NegativeRequestCaseArbitrary
      * just outside its `minimum`/`maximum` bound, honouring boolean exclusive
      * bounds.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyBoundaryMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -329,7 +326,7 @@ final readonly class NegativeRequestCaseArbitrary
      * with one whose length falls just outside its `minLength`/`maxLength` or
      * `minItems`/`maxItems` bound.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyLengthMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -340,7 +337,7 @@ final readonly class NegativeRequestCaseArbitrary
      * Replaces one top-level string value of the required JSON body with a
      * fixed witness that provably violates its asserted `format`.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyFormatMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -352,7 +349,7 @@ final readonly class NegativeRequestCaseArbitrary
      * searched witness that provably fails its `pattern`; the pattern itself
      * is the oracle, and an exhausted search budget fails closed.
      *
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     public function bodyPatternMismatchForOperation(Operation $operation): ArbitraryInterface
     {
@@ -369,7 +366,7 @@ final readonly class NegativeRequestCaseArbitrary
      * under each of them, and only the JSON one has the value to overwrite.
      *
      * @param Kind $kind
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     private function bodyWitness(string $kind, Operation $operation): ArbitraryInterface
     {
@@ -382,7 +379,7 @@ final readonly class NegativeRequestCaseArbitrary
             $invalid = $target['invalid'];
 
             return static function (array $case) use ($kind, $name, $invalid): array {
-                /** @var RequestCaseData $case */
+                /** @var CaseData $case */
                 $body = $case['body'];
                 $members = $body['value'] ?? null;
                 if ($body === null) {
@@ -421,14 +418,14 @@ final readonly class NegativeRequestCaseArbitrary
      *
      * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
      * @param non-empty-list<array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}> $targets
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     private function parameter(string $kind, Operation $operation, array $targets): ArbitraryInterface
     {
         return $this->overTargets($this->valid->forOperation($operation), $targets, static function (array $target) use ($kind): \Closure {
             /** @var array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string} $target */
             return static function (array $case) use ($kind, $target): array {
-                /** @var RequestCaseData $case */
+                /** @var CaseData $case */
                 $case[self::CASE_KEYS[$target['location']]][$target['name']] = $target['invalid'];
                 $case['misuse'] = ['kind' => $kind, 'location' => $target['location'], 'name' => $target['name']];
 
@@ -555,10 +552,10 @@ final readonly class NegativeRequestCaseArbitrary
      * declaration order, so the minimal counterexample is the target the
      * first-match search used to return.
      *
-     * @param ArbitraryInterface<RequestCaseData> $valid
+     * @param ArbitraryInterface<CaseData> $valid
      * @param non-empty-list<array<string, mixed>> $targets
-     * @param \Closure(array<string, mixed>): \Closure(RequestCaseData): NegativeRequestCaseData $mutationFor
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @param \Closure(array<string, mixed>): \Closure(CaseData): CaseData $mutationFor
+     * @return ArbitraryInterface<CaseData>
      */
     private function overTargets(ArbitraryInterface $valid, array $targets, \Closure $mutationFor): ArbitraryInterface
     {
@@ -567,9 +564,9 @@ final readonly class NegativeRequestCaseArbitrary
         // lands beside what the valid draw built, never in place of it.
         $drawn = Gen::record(['case' => $valid, 'target' => Gen::elements($targets)]);
 
-        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        /** @var ArbitraryInterface<CaseData> $mutated */
         $mutated = Gen::map($drawn, static function (array $draw) use ($mutationFor): array {
-            /** @var array{case: RequestCaseData, target: array<string, mixed>} $draw */
+            /** @var array{case: CaseData, target: array<string, mixed>} $draw */
             return $mutationFor($draw['target'])($draw['case']);
         });
 
@@ -587,12 +584,12 @@ final readonly class NegativeRequestCaseArbitrary
      * target was found under rather than on the unfiltered valid cases (#97).
      *
      * @param non-empty-string $mediaType
-     * @param \Closure(RequestCaseData): NegativeRequestCaseData $mutation
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @param \Closure(CaseData): CaseData $mutation
+     * @return ArbitraryInterface<CaseData>
      */
     private function mutateJsonBody(Operation $operation, string $mediaType, \Closure $mutation): ArbitraryInterface
     {
-        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        /** @var ArbitraryInterface<CaseData> $mutated */
         $mutated = Gen::map($this->jsonCases($operation, $mediaType), $mutation);
 
         return $mutated;
@@ -602,12 +599,12 @@ final readonly class NegativeRequestCaseArbitrary
      * The valid cases of this operation that carry one JSON media type.
      *
      * @param non-empty-string $mediaType
-     * @return ArbitraryInterface<RequestCaseData>
+     * @return ArbitraryInterface<CaseData>
      */
     private function jsonCases(Operation $operation, string $mediaType): ArbitraryInterface
     {
         $carriesJson = static function (array $case) use ($mediaType): bool {
-            /** @var RequestCaseData $case */
+            /** @var CaseData $case */
             $body = $case['body'];
 
             return $body !== null && $body['encoding'] === 'json' && $body['mediaType'] === $mediaType;
@@ -617,12 +614,12 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * @param \Closure(RequestCaseData): NegativeRequestCaseData $mutation
-     * @return ArbitraryInterface<NegativeRequestCaseData>
+     * @param \Closure(CaseData): CaseData $mutation
+     * @return ArbitraryInterface<CaseData>
      */
     private function mutate(Operation $operation, \Closure $mutation): ArbitraryInterface
     {
-        /** @var ArbitraryInterface<NegativeRequestCaseData> $mutated */
+        /** @var ArbitraryInterface<CaseData> $mutated */
         $mutated = Gen::map($this->valid->forOperation($operation), $mutation);
 
         return $mutated;

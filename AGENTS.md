@@ -44,18 +44,29 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
 
 ## Invariants & gotchas
 
-- Keep `RequestCaseData` JSON-compatible. It must never contain PSR-7 objects,
-  credentials, closures, or application DTOs.
+- Keep `CaseData` JSON-compatible. It must never contain PSR-7 objects,
+  credentials, closures, or application DTOs. The shape is declared once on
+  `ContractSuite` (`CaseData` and its parts) and imported everywhere else;
+  `Internal\CaseShape::assert()` is the run-time check every `@api` entry
+  point that takes a case runs first, and `InvalidCase` — not
+  `UnsupportedGeneration` — is what a malformed *case* raises. Keep the two
+  apart: `UnsupportedGeneration` is a document limitation.
 - A materialized valid case must pass `Contract::validateRequest()` before a
   transport may observe it.
 - A header is written verbatim, a path and a query are percent-encoded, and a
   cookie is percent-encoded. That is not a style question but a wire question:
   the validator reads a header field value as sent (openapi-contract#66), so
   encoding one here would put a string on the wire that no client sends.
-  `ParameterSchemas::separatorOf()` narrows the alphabet accordingly and
-  `isHeaderSafe()` guards what a `pattern` or a `format` can still put outside
-  a field value — the same two halves as the path rule below. A CR or an LF
-  reaching a materializer is refused by name, never encoded away.
+  `ParameterSchemas::separatorOf()` narrows the alphabet of generated plain
+  strings accordingly and `isHeaderSafe()` is the judgement for everything
+  the alphabet cannot see — a `pattern`, a `format`, an enum member, a const:
+  obs-text and an interior space are read as sent and kept, whitespace at an
+  end is stripped by the reader and refused, a comma is refused only in a
+  list/object header (#123, #129). `forLocation()` narrows a header enum by
+  that judgement and refuses at compile time when nothing remains; a path or
+  header `pattern` is probed at `forOperation()` time for the same reason —
+  the same two halves as the path rule below. A CR or an LF reaching a
+  materializer is refused by name, never encoded away.
 - Keep parameter serialization location-aware. A path value must not escape its
   template segment after percent decoding: `Internal\ParameterSchemas` raises
   `minLength` to 1 on every path string, drops unsafe `enum` members, refuses
@@ -70,10 +81,23 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   `null` enum members and a `null` const at every nesting level.
 - Every unsatisfiable combination the compiler can recognise fails closed at
   compile time (`pattern` + asserted `format`, format length bands,
-  `uniqueItems` over a finite domain, `not.type` covering the source, `allOf`
-  branch bounding `additionalProperties` without its siblings' properties).
-  Do not push such checks into `Gen::filter()`; a run-time
-  `GenerationExhausted` is a defect here.
+  `uniqueItems` over a finite domain including a bounded integer, `not.type`
+  covering the source, `allOf` branch bounding `additionalProperties` without
+  its siblings' properties, an exploded form object whose `minProperties` its
+  declared properties cannot meet, `oneOf` over `integer`/`number` with no
+  value to keep apart). Object cardinality is met by construction in
+  `ContainerArbitraries::objectValues()`, never by a count filter. Do not push
+  such checks into `Gen::filter()`; a run-time `GenerationExhausted` is a
+  defect here. Where a filter is unavoidable (a `pattern` on the path or
+  header wire), probe it at compile time with the same retry budget and refuse
+  by name.
+- A generated float goes on the wire through `WireValue` as `json_encode`
+  spells it, never `(string)` (precision=14 rounds); a decimal `multipleOf`
+  product is kept as the clean decimal only where the validator's float-mode
+  arithmetic agrees, else as the product itself
+  (`ScalarArbitraries::multipleOf()`, #117). Under `ext-bcmath` the contract's
+  verdict is its own (openapi-contract#151); tests that pin multipleOf
+  agreement skip there.
 - The end-to-end oracle for the valid phase is `tests/Support/ZooContracts.php`
   + `ContractSuiteTest::zooValidCasesPassTheBuiltInChecks`: one operation per
   schema feature, checked through materialize → validate → transport →
@@ -127,8 +151,9 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
 
 ## Mutation gate: known equivalent classes
 
-`composer mutation` (minMsi 92, against a measured 93.05% — see the comment
-in `infection.json5` for why the gate is set below the score and not at it)
+`composer mutation` (minMsi 91, against a measured 91.96% on 4040 mutants
+after the 0.15.0 wave — see the comment in `infection.json5` for why the
+gate is set below the score and not at it)
 leaves a stable set of escaped mutants that
 are equivalent by analysis — do not chase them, and re-classify anything new:
 `Gen::frequency` weight bumps that scale every pair uniformly, values in
@@ -279,6 +304,30 @@ native-limit exclusive guards survive a schema without the opposite bound —
 message — so the provider carries the both-bounds-at-the-limit cases that make
 the overflow observable as a `TypeError` instead. 
 
+
+The 1.0-readiness wave (2026-09-19, 0.15.0) adds: the probe loops of
+`RequestCaseArbitrary::yieldsSomething()` and
+`CompositionArbitraries::yieldsSomething()` (budget and bound variants answer
+the same question, as `fitsLengthWindow()`'s do); the `floor`/`ceil`/`round`
+choice in the non-integral test of the numeric `oneOf` (`f(v) !== v` detects
+a fractional part whichever `f` is) and in `numberBranchAdmits()` (the product
+equals the value only when the quotient is exact, whichever way it is
+rounded), together with its `<` → `<=` on the `1e-14` tolerance and the
+`(float)` casts on operands a float already touches; `++$numeric` → `--`,
+since the count is only compared with zero; the `(float)` cast and the `<=`
+in `ScalarArbitraries::multipleOf()` for the same reasons; the `&&` → `||`
+between `array_key_exists('const')` and the header-safety of the const (an
+absent key reads as `null`, which is safe, and the mutant differs only by a
+PHP warning); the `CaseShape::assert()` calls in `checkValid()` and
+`reproduce()`, which the materializer repeats on the same case and so throw
+the same `InvalidCase` a step later (the one in `redact()` is not repeated and
+stays killed); the four `||`/`&&` rewrites inside `CaseShape`'s misuse guard,
+which agree on every non-array and every array missing a member; the
+`declaredFloor` ternary in `ContainerArbitraries::object()`, whose two arms
+coincide once the earlier `minProperties`-versus-declared refusal has run;
+the `present ?? true` default on an optional that always carries `present`;
+and the `(path || header) && pattern` guard on the compile-time probe, whose
+widening only probes arbitraries no filter can exhaust.
 
 ## The contract package is the other half of the oracle
 

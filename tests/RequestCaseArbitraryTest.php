@@ -16,6 +16,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -43,7 +44,7 @@ final class RequestCaseArbitraryTest
 {
     public function multipartEncodingRejectsHeaderInjection(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
+        Expect::exception(InvalidCase::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
 
         $operation = new Operation(
             key: 'upload.create',
@@ -76,7 +77,7 @@ final class RequestCaseArbitraryTest
 
     public function multipartEncodingRejectsContentTypeInjection(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Header "Content-Type" carries a value no HTTP field can');
+        Expect::exception(InvalidCase::class)->withMessage('Header "Content-Type" carries a value no HTTP field can');
 
         $operation = new Operation(
             key: 'upload.create',
@@ -179,9 +180,28 @@ final class RequestCaseArbitraryTest
         $dropped = array_keys($seen);
         sort($dropped);
 
-        // Every required component is dropped across draws, not only the one
-        // declared first (#99).
-        Assert::same($dropped, ['cookie:session', 'header:X-Tenant', 'path:id']);
+        // Every required component whose absence the validator can see is
+        // dropped across draws, not only the one declared first (#99); the
+        // path parameter is not among them, because omitting it leaves the
+        // template literal in the target, which a string schema accepts (#118).
+        Assert::same($dropped, ['cookie:session', 'header:X-Tenant']);
+    }
+
+    public function missingRequiredSkipsAnOperationWhoseOnlyRequiredComponentIsAPathParameter(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Operation "users.get" has no required request component whose absence is observable to invalidate (a path parameter cannot be omitted)');
+
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/users/{username}' => ['get' => [
+                'operationId' => 'users.get',
+                'parameters' => [['name' => 'username', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],
+                'responses' => ['200' => []],
+            ]]],
+        ]);
+
+        (new NegativeRequestCaseArbitrary())->forOperation($contract->operation('users.get'));
     }
 
     public function typeMismatchIsInvalidBeforeTransport(): void
@@ -1173,7 +1193,7 @@ final class RequestCaseArbitraryTest
             $main,
             'pets.update',
             static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->forOperation($operation),
-            ['kind' => 'missing-required', 'location' => 'path', 'name' => 'id'],
+            ['kind' => 'missing-required', 'location' => 'header', 'name' => 'X-Tenant'],
         ];
         yield 'type' => [
             $main,
@@ -1519,7 +1539,7 @@ final class RequestCaseArbitraryTest
     {
         $negative = new NegativeRequestCaseArbitrary();
 
-        $upper = $this->bodyOperation([0 => ['schema' => ['type' => 'object']], 'Application/JSON ; charset=utf-8' => ['schema' => ['type' => 'object']]]);
+        $upper = $this->bodyOperation(['Application/JSON ; charset=utf-8' => ['schema' => ['type' => 'object']]]);
         $case = $negative->malformedJsonForOperation($upper)->generate(new Random(71))->value;
         Assert::same($case['misuse']['kind'] ?? null, 'json-syntax');
 
@@ -2053,11 +2073,8 @@ final class RequestCaseArbitraryTest
     {
         $arbitrary = new RequestCaseArbitrary();
 
-        $case = $arbitrary->forOperation($this->bodyOperation([0 => 'junk', 'application/json' => ['schema' => ['type' => 'object']]]))->generate(new Random(13))->value;
-        Assert::true(is_array($case['body']) && $case['body']['mediaType'] === 'application/json');
-
         foreach ([
-            ['application/json' => ['schema' => 'invalid']],
+            ['application/json' => ['schema' => false]],
             ['text/plain' => ['schema' => ['type' => 'object']]],
         ] as $content) {
             try {
@@ -2345,7 +2362,6 @@ final class RequestCaseArbitraryTest
         yield 'multipart array items not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['x']]]]]]], 'Multipart array items must be a schema object'];
         yield 'request body content not an object' => [['content' => 'oops'], 'Request body content must be an object'];
         yield 'no supported media type' => [['content' => ['text/csv' => ['schema' => ['type' => 'string']]]], 'Request body has no supported media type'];
-        yield 'json schema is a list' => [['content' => ['application/json' => ['schema' => ['a']]]], 'JSON request body schema must be an object'];
     }
 
     public function formRequiredPropertyThatIsNotASchemaFailsClosed(): void

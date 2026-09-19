@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -125,9 +126,20 @@ final class ParameterSerializerTest
     #[DataProvider('invalidShapeCases')]
     public function rejectsInvalidShapes(string|array $value, string $style): void
     {
-        Expect::exception(UnsupportedGeneration::class);
+        Expect::exception(InvalidCase::class);
 
         (new ParameterSerializer())->serialize('value', $value, $style, explode: true);
+    }
+
+    /**
+     * A style the document declares and this package does not serialize is a
+     * document limitation, not a malformed case.
+     */
+    public function refusesAnUnknownStyleAsUnsupportedGeneration(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new ParameterSerializer())->serialize('value', 'value', 'unknown', explode: true);
     }
 
     public function preservesReservedCharactersInEveryEncodedListForm(): void
@@ -164,7 +176,7 @@ final class ParameterSerializerTest
     #[DataProvider('unrepresentableDelimitedCases')]
     public function refusesDelimitedValuesCarryingTheirOwnSeparator(array $value, string $style, string $message): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage($message);
+        Expect::exception(InvalidCase::class)->withMessage($message);
 
         (new ParameterSerializer())->serialize('value', $value, $style, explode: false);
     }
@@ -180,7 +192,7 @@ final class ParameterSerializerTest
     {
         $serializer = new ParameterSerializer();
 
-        Expect::exception(UnsupportedGeneration::class);
+        Expect::exception(InvalidCase::class);
         $serializer->serialize('value', ['key' => 'item'], 'spaceDelimited', explode: false);
     }
 
@@ -192,7 +204,7 @@ final class ParameterSerializerTest
 
     public function rejectsNonStringItemsInListShapes(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
+        Expect::exception(InvalidCase::class);
 
         (new ParameterSerializer())->serialize('value', ['item', 42], 'simple', explode: false);
     }
@@ -208,7 +220,7 @@ final class ParameterSerializerTest
 
     public function rejectsADeepObjectListWithTheDeepObjectMessage(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('deepObject parameters require an object value');
+        Expect::exception(InvalidCase::class)->withMessage('deepObject parameters require an object value');
 
         (new ParameterSerializer())->serialize('value', ['item'], 'deepObject', explode: true);
     }
@@ -223,6 +235,5 @@ final class ParameterSerializerTest
         yield 'deep scalar' => ['value', 'deepObject'];
         yield 'deep list' => [['value'], 'deepObject'];
         yield 'object non-string value' => [['key' => 42], 'simple'];
-        yield 'unknown style' => ['value', 'unknown'];
     }
 }
