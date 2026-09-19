@@ -365,24 +365,16 @@ final class ContractSuiteTest
     {
         $suite = $this->suite()->operations(['pets.get']);
         $kinds = [];
-        foreach ([3, 7, 19, 41, 53, 67, 71, 97] as $seed) {
+        // The only required component is the path parameter, which cannot be
+        // omitted into invalidity (#118): two categories remain.
+        foreach (range(1, 24) as $seed) {
             $case = $suite->negativeCases('pets.get')->generate(new Random($seed))->value;
 
-            Assert::true(in_array($case['misuse']['kind'], ['missing-required', 'type', 'boundary'], strict: true));
+            Assert::true(in_array($case['misuse']['kind'], ['type', 'boundary'], strict: true));
             $kinds[$case['misuse']['kind']] = true;
         }
 
         Assert::true(count($kinds) > 1);
-
-        $missingRequired = false;
-        foreach (range(1, 40) as $seed) {
-            $case = $suite->negativeCases('pets.get')->generate(new Random($seed))->value;
-            if ($case['misuse']['kind'] === 'missing-required') {
-                $missingRequired = true;
-                break;
-            }
-        }
-        Assert::true($missingRequired);
     }
 
     /**
@@ -591,7 +583,7 @@ final class ContractSuiteTest
 
         Assert::same($coverage['health.get']['covered'], []);
         Assert::same($coverage['health.get']['skipped'][0]['kind'], 'missing-required');
-        Assert::string($coverage['health.get']['skipped'][0]['reason'])->contains('no required request component to invalidate');
+        Assert::string($coverage['health.get']['skipped'][0]['reason'])->contains('no required request component whose absence is observable to invalidate');
     }
 
     /**

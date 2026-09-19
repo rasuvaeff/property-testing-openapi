@@ -6,8 +6,10 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * Compiles the supported, constructive subset of composition keywords.
@@ -16,6 +18,10 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  */
 final readonly class CompositionArbitraries
 {
+    private const int PROBES = 8;
+
+    private const int PROBE_SEED = 11;
+
     public function __construct(
         private SchemaArbitraryCompiler $compiler,
         private SchemaFacts $facts,
@@ -35,7 +41,12 @@ final readonly class CompositionArbitraries
                 return $this->compiler->compile($this->mergeAllOf($schemas));
             }
             if ($keyword === 'oneOf' && !$this->areDisjoint($schemas)) {
-                throw UnsupportedGeneration::forSchema('oneOf branches must be provably disjoint');
+                $numeric = $this->integerAndNumberBranches($schemas);
+                if ($numeric === null) {
+                    throw UnsupportedGeneration::forSchema('oneOf branches must be provably disjoint');
+                }
+
+                return $this->numericOneOf($schemas, $numeric[0], $numeric[1]);
             }
 
             $pairs = [];
@@ -47,6 +58,125 @@ final readonly class CompositionArbitraries
         }
 
         return null;
+    }
+
+    /**
+     * The one overlap `oneOf` can carry between branches of different
+     * declared types: a single `integer` branch beside a single `number`
+     * branch, every other branch disjoint from both. `[$integerIndex,
+     * $numberIndex]`, or `null` for any other overlap.
+     *
+     * @param list<array<string, mixed>> $branches
+     * @return null|array{int, int}
+     */
+    private function integerAndNumberBranches(array $branches): ?array
+    {
+        $byType = [];
+        foreach ($branches as $index => $branch) {
+            $types = $this->facts->types($branch['type'] ?? null);
+            if ($types === null || count($types) !== 1) {
+                return null;
+            }
+            $byType[$types[0]][] = $index;
+        }
+        foreach ($byType as $type => $indexes) {
+            if (count($indexes) !== 1) {
+                return null;
+            }
+        }
+        if (!isset($byType['integer'], $byType['number'])) {
+            return null;
+        }
+
+        return [$byType['integer'][0], $byType['number'][0]];
+    }
+
+    /**
+     * `oneOf` over an `integer` and a `number` branch. Every integer is also
+     * a number, and JSON Schema reads `1.0` as an integer, so a value is
+     * valid only when exactly one branch admits it: a non-integral float, or
+     * an integer the number branch's own keywords reject (#121). The number
+     * branch is generated without integral values; the integer branch keeps
+     * only what the number branch's bounds and multiple refuse, and is left
+     * out when they refuse nothing. A number branch that carries a keyword
+     * this cannot read is refused, because an integer it may admit cannot be
+     * told from one it does not.
+     *
+     * @param list<array<string, mixed>> $branches
+     */
+    private function numericOneOf(array $branches, int $integerIndex, int $numberIndex): ArbitraryInterface
+    {
+        $number = $branches[$numberIndex];
+        foreach (array_keys($number) as $keyword) {
+            if (!in_array($keyword, ['type', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'description', 'title', '$comment', 'deprecated', 'examples', 'example'], strict: true)) {
+                throw UnsupportedGeneration::forSchema(sprintf('oneOf over integer and number cannot read number keyword "%s" to keep the branches apart', $keyword));
+            }
+        }
+        $pairs = [];
+        foreach ($branches as $index => $branch) {
+            if ($index === $numberIndex) {
+                $floats = Gen::filter($this->compiler->compile($branch), static fn(mixed $value): bool => is_float($value) && floor($value) !== $value);
+                if (!$this->yieldsSomething($floats)) {
+                    throw UnsupportedGeneration::forSchema('oneOf number branch admits no value outside the integer branch');
+                }
+                $pairs[] = [1, $floats];
+            } elseif ($index === $integerIndex) {
+                $integers = Gen::filter($this->compiler->compile($branch), fn(mixed $value): bool => is_int($value) && !$this->numberBranchAdmits($value, $number));
+                if ($this->yieldsSomething($integers)) {
+                    $pairs[] = [1, $integers];
+                }
+            } else {
+                $pairs[] = [1, $this->compiler->compile($branch)];
+            }
+        }
+
+        return Gen::frequency($pairs);
+    }
+
+    /** @param array<string, mixed> $number */
+    private function numberBranchAdmits(int $value, array $number): bool
+    {
+        $minimum = $this->facts->numberBound($number, 'minimum', -INF);
+        $maximum = $this->facts->numberBound($number, 'maximum', INF);
+        if ($value < $minimum || $value > $maximum) {
+            return false;
+        }
+        if ((($number['exclusiveMinimum'] ?? false) === true && (float) $value === $minimum)
+            || (($number['exclusiveMaximum'] ?? false) === true && (float) $value === $maximum)) {
+            return false;
+        }
+        /** @var mixed $multiple */
+        $multiple = $number['multipleOf'] ?? null;
+        if (is_int($multiple) && $multiple > 0) {
+            return $value % $multiple === 0;
+        }
+        if (is_float($multiple) && $multiple > 0) {
+            return abs((float) $value - round((float) $value / $multiple) * $multiple) < 1e-14;
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether a filtered branch produces anything at all, judged the way the
+     * pattern probe does: deterministic draws, twice the budget the filter
+     * gets at run time, so a branch that fails here is one that would have
+     * exhausted mid-run.
+     */
+    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
+    {
+        $random = new Random(self::PROBE_SEED);
+        for ($probe = 0; $probe < self::PROBES; ++$probe) {
+            try {
+                $arbitrary->generate($random);
+
+                return true;
+            } catch (GenerationExhaustedException) {
+                continue;
+            }
+        }
+
+        return false;
     }
 
     /** @param array<string, mixed> $schema */
@@ -314,7 +444,14 @@ final readonly class CompositionArbitraries
         return $schemas;
     }
 
-    /** @param list<array<string, mixed>> $branches */
+    /**
+     * Whether no value can satisfy two of the branches, knowable from their
+     * declared types alone. `integer` and `number` are one class here: every
+     * integer is also a number, so a branch of each is not a disjoint pair
+     * but an overlap the checked `oneOf` path has to resolve (#121).
+     *
+     * @param list<array<string, mixed>> $branches
+     */
     private function areDisjoint(array $branches): bool
     {
         $seen = [];
@@ -323,11 +460,11 @@ final readonly class CompositionArbitraries
             if ($types === null || count($types) !== 1) {
                 return false;
             }
-            $type = $types[0];
-            if (isset($seen[$type])) {
+            $class = $types[0] === 'integer' ? 'number' : $types[0];
+            if (isset($seen[$class])) {
                 return false;
             }
-            $seen[$type] = true;
+            $seen[$class] = true;
         }
 
         return true;

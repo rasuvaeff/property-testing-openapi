@@ -84,7 +84,7 @@ final class ExceptionsTest
 
     public function aRefusalThatAlreadyNamesItsSubjectIsReturnedAsIs(): void
     {
-        $refusal = new UnsupportedGeneration('Operation "pets.list" has no required request component to invalidate');
+        $refusal = new UnsupportedGeneration('Operation "pets.list" declares no response for status 200');
 
         Assert::same($refusal->inOperation('pets.list', 'query parameter "limit"'), $refusal);
     }

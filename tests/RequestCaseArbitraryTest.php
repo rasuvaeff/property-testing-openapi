@@ -180,9 +180,28 @@ final class RequestCaseArbitraryTest
         $dropped = array_keys($seen);
         sort($dropped);
 
-        // Every required component is dropped across draws, not only the one
-        // declared first (#99).
-        Assert::same($dropped, ['cookie:session', 'header:X-Tenant', 'path:id']);
+        // Every required component whose absence the validator can see is
+        // dropped across draws, not only the one declared first (#99); the
+        // path parameter is not among them, because omitting it leaves the
+        // template literal in the target, which a string schema accepts (#118).
+        Assert::same($dropped, ['cookie:session', 'header:X-Tenant']);
+    }
+
+    public function missingRequiredSkipsAnOperationWhoseOnlyRequiredComponentIsAPathParameter(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Operation "users.get" has no required request component whose absence is observable to invalidate (a path parameter cannot be omitted)');
+
+        $contract = Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/users/{username}' => ['get' => [
+                'operationId' => 'users.get',
+                'parameters' => [['name' => 'username', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],
+                'responses' => ['200' => []],
+            ]]],
+        ]);
+
+        (new NegativeRequestCaseArbitrary())->forOperation($contract->operation('users.get'));
     }
 
     public function typeMismatchIsInvalidBeforeTransport(): void
@@ -1174,7 +1193,7 @@ final class RequestCaseArbitraryTest
             $main,
             'pets.update',
             static fn(NegativeRequestCaseArbitrary $negative, Operation $operation): ArbitraryInterface => $negative->forOperation($operation),
-            ['kind' => 'missing-required', 'location' => 'path', 'name' => 'id'],
+            ['kind' => 'missing-required', 'location' => 'header', 'name' => 'X-Tenant'],
         ];
         yield 'type' => [
             $main,

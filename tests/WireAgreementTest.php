@@ -165,6 +165,40 @@ final class WireAgreementTest
         }
     }
 
+    /**
+     * Every integer is also a number, so `oneOf` over the two is not a plain
+     * choice between disjoint branches: a draw from the integer branch would
+     * match both and the contract rejects it. The checked path keeps a branch
+     * value only when every other branch rejects it (#121).
+     */
+    public function oneOfOverIntegerAndNumberIsNotTreatedAsDisjoint(): void
+    {
+        $kinds = [];
+        foreach ($this->validCases($this->jsonBodyContract(['oneOf' => [['type' => 'integer'], ['type' => 'number']]]), 'things.create', 60) as $case) {
+            $kinds[get_debug_type($case['body']['value'] ?? null)] = true;
+        }
+        // An unbounded number branch admits every integer, so the only valid
+        // values are the non-integral floats.
+        Assert::same(array_keys($kinds), ['float']);
+
+        $kinds = [];
+        foreach ($this->validCases($this->jsonBodyContract(['oneOf' => [['type' => 'integer', 'minimum' => -5, 'maximum' => 5], ['type' => 'number', 'minimum' => 0, 'maximum' => 10, 'multipleOf' => 0.5]]]), 'things.create', 120) as $case) {
+            $value = $case['body']['value'] ?? null;
+            $kinds[is_int($value) ? ($value < 0 ? 'negative int' : 'int') : 'float'] = true;
+        }
+        ksort($kinds);
+        // The number branch refuses the negative integers, so those stay valid
+        // for the integer branch; 0..5 are admitted by both and never drawn.
+        Assert::same(array_keys($kinds), ['float', 'negative int']);
+    }
+
+    public function oneOfOverIntegerAndNumberFailsClosedWhenNoValueCanBeKeptApart(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "things.create", request body "application/json": oneOf number branch admits no value outside the integer branch');
+
+        (new RequestCaseArbitrary())->forOperation($this->jsonBodyContract(['oneOf' => [['type' => 'integer'], ['type' => 'number', 'multipleOf' => 2]]])->operation('things.create'));
+    }
+
     public function aPartUnderAMediaTypeThatIsNeitherTextNorJsonFailsClosed(): void
     {
         Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart property "meta" declares content type "application/xml", which this generator can write neither as text nor as JSON');
