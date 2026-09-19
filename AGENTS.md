@@ -93,11 +93,10 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   by name.
 - A generated float goes on the wire through `WireValue` as `json_encode`
   spells it, never `(string)` (precision=14 rounds); a decimal `multipleOf`
-  product is kept as the clean decimal only where the validator's float-mode
-  arithmetic agrees, else as the product itself
-  (`ScalarArbitraries::multipleOf()`, #117). Under `ext-bcmath` the contract's
-  verdict is its own (openapi-contract#151); tests that pin multipleOf
-  agreement skip there.
+  product is the clean decimal (`round($k * $m, $decimals)`), which is what
+  the contract judges by since 0.12.1 — on every machine, bcmath or not
+  (openapi-contract#151). Never emit the float product `64.10000000000001`:
+  it is not a decimal multiple of `0.1` and the contract says so.
 - The end-to-end oracle for the valid phase is `tests/Support/ZooContracts.php`
   + `ContractSuiteTest::zooValidCasesPassTheBuiltInChecks`: one operation per
   schema feature, checked through materialize → validate → transport →
@@ -304,6 +303,10 @@ native-limit exclusive guards survive a schema without the opposite bound —
 message — so the provider carries the both-bounds-at-the-limit cases that make
 the overflow observable as a `TypeError` instead. 
 
+
+0.15.1 removes the `<` → `<=` and the `(float)` cast of
+`ScalarArbitraries::multipleOf()` from the list below with the branch that
+carried them.
 
 The 1.0-readiness wave (2026-09-19, 0.15.0) adds: the probe loops of
 `RequestCaseArbitrary::yieldsSomething()` and

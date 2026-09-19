@@ -411,17 +411,16 @@ final class ZooContracts
                     'responses' => ['204' => []],
                 ]],
                 // A float goes on the wire as the shortest decimal that reads
-                // back as the same double (#117); `+` stays encoded under
-                // allowReserved (#119). No decimal `multipleOf` here: with
-                // ext-bcmath loaded — as it is on the CI runners — the
-                // contract's verdict on one is its own (openapi-contract#151),
-                // and this operation is recorded into the contract's corpus.
-                // `WireAgreementTest` pins the float-mode agreement and skips
-                // under bcmath.
+                // back as the same double, and a decimal multiple as the
+                // decimal it means — which the contract judges it by since
+                // 0.12.1, whatever extension the machine has loaded (#117,
+                // openapi-contract#151); `+` stays encoded under allowReserved
+                // (#119).
                 '/precise' => ['get' => [
                     'operationId' => 'precise.get',
                     'parameters' => [
                         ['name' => 'v', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'number', 'minimum' => 0.123456789012345, 'maximum' => 0.1234567890123456]],
+                        ['name' => 'step', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'number', 'multipleOf' => 0.1, 'minimum' => 0, 'maximum' => 1000]],
                         ['name' => 'big', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 123456789012345678, 'maximum' => 123456789012345680]],
                         ['name' => 'expr', 'in' => 'query', 'required' => true, 'allowReserved' => true, 'schema' => ['type' => 'string', 'enum' => ['a+b', 'c d', 'e&f', 'g/h']]],
                     ],

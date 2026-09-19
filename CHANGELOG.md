@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.15.1 — 2026-09-19
+
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.12.1`, which judges
+  `multipleOf` on the decimals a message spells rather than on the parsed
+  doubles (openapi-contract#151). A decimal multiple is generated as the
+  clean decimal it means, always: `64.1`, never `64.10000000000001`. 0.15.0
+  emitted the float product wherever the contract's old float path demanded
+  it — from about `64` upward for `multipleOf: 0.1` — and 0.12.1 rejects
+  that product, as the specification does. The zoo's `precise.get` carries a
+  decimal `multipleOf` again and the tests that pinned the agreement no
+  longer skip under `ext-bcmath`.
+
 ## 0.15.0 — 2026-09-19
 
 The 1.0-readiness review of 2026-09-18 (#117–#129). A minor on 0.x: the
