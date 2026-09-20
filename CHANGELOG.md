@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.17.0 — 2026-09-20
+
+- **Changed.** Requires `rasuvaeff/property-testing-core` `^1.0` — the
+  engine's stability release, whose surface is that of 0.12.0 — in place of
+  `^0.10 || ^0.11`; the dev requirement on `rasuvaeff/property-testing-testo`
+  is `^1.0` likewise. Nothing in the generators or the runner changes: the
+  release is the constraint, so a project on the 1.0 family can install this
+  package beside it. `rasuvaeff/openapi-contract` stays at `^0.13`; this
+  package's own 1.0 waits for the contract's.
+
 ## 0.16.0 — 2026-09-20
 
 - **Added.** A schema that refers to itself — a tree whose `children` are
