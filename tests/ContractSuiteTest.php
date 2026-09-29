@@ -165,7 +165,7 @@ final class ContractSuiteTest
             '   instancePath: "/name"',
             '   specPointer: "/components/schemas/Pet"',
             '   expected: {"type":"string"}',
-            '   actual: "[redacted]"',   // a body value is redacted wholesale; its member names belong to the application
+            '   actual: null',   // a body member renders its actual since openapi-contract 0.15; wholesale redaction stays for a whole-body violation at "$" and a cookie
             '   message: "bad body"',
         ]));
         Assert::same(strtok($request->getMessage(), "\n"), 'Generated request for operation "pets.get" is invalid before transport');

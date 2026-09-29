@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.15` (in place of
+  `^0.13`) so downstream projects can adopt the contract's 0.14/0.15
+  releases (#137): 0.14 keeps a shared component as one resolution per
+  document (the local `{$ref: '#/$defs/…'}` form the generator already
+  unfolds since 0.16.0), 0.15 adds `Contract::validateWebhook()` and per-leaf
+  body diagnostics — verdicts unchanged. No generator change was needed; the
+  one test expectation that moved is the formatter rendering of a body
+  member's `actual` (now printed unless the member path looks like a
+  credential; wholesale `[redacted]` stays for a whole-body violation at
+  `$` and a cookie).
+
 ## 0.17.0 — 2026-09-20
 
 - **Changed.** Requires `rasuvaeff/property-testing-core` `^1.0` — the
