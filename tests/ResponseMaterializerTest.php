@@ -184,6 +184,14 @@ final class ResponseMaterializerTest
         Assert::same((new JsonBodyEncoder())->encode([[]], ['items' => ['type' => 'object']]), '[{}]');
         Assert::same((new JsonBodyEncoder())->encode(['a', 'b'], ['type' => 'object']), '["a","b"]');
         Assert::same((new JsonBodyEncoder())->encode(['a' => [], 'b' => []], ['type' => 'object', 'properties' => ['a' => ['type' => 'object'], 'b' => ['type' => 'object']]]), '{"a":{},"b":{}}');
+        Assert::same(
+            (new JsonBodyEncoder())->encode(['v1', 2], ['type' => 'array', 'prefixItems' => [['type' => 'string'], ['type' => 'integer']]]),
+            '["v1",2]',
+        );
+        Assert::same(
+            (new JsonBodyEncoder())->encode([5], ['type' => 'array', 'contains' => ['type' => 'integer']]),
+            '[5]',
+        );
     }
 
     /**
@@ -204,6 +212,80 @@ final class ResponseMaterializerTest
         Assert::same(
             $encoder->encode(['k' => []], ['type' => 'object', 'properties' => ['k' => []], 'additionalProperties' => ['type' => 'object']]),
             '{"k":[]}',
+        );
+        Assert::same(
+            $encoder->encode(['k' => []], ['type' => 'object', 'unevaluatedProperties' => ['type' => 'object']]),
+            '{"k":{}}',
+        );
+        Assert::same(
+            $encoder->encode(['kind' => 'x', 'detail' => []], [
+                'type' => 'object',
+                'dependentSchemas' => ['kind' => ['properties' => ['detail' => ['type' => 'object']]]],
+            ]),
+            '{"kind":"x","detail":{}}',
+        );
+    }
+
+    public function encodesTheTailOfAPrefixTupleAndNestedApplicators(): void
+    {
+        $encoder = new JsonBodyEncoder();
+
+        // An element past `prefixItems` is declared by `contains` when there
+        // is no `items`, and by `unevaluatedItems` when there is neither.
+        Assert::same(
+            $encoder->encode(['a', 2, 3], [
+                'type' => 'array',
+                'prefixItems' => [['type' => 'string']],
+                'contains' => ['type' => 'integer'],
+            ]),
+            '["a",2,3]',
+        );
+        Assert::same(
+            $encoder->encode([[], []], [
+                'type' => 'array',
+                'unevaluatedItems' => ['type' => 'object'],
+            ]),
+            '[{},{}]',
+        );
+
+        // An `allOf` branch that declares the array shape the root leaves out.
+        Assert::same(
+            $encoder->encode(['k' => []], [
+                'allOf' => [['properties' => ['k' => ['type' => 'object']]]],
+            ]),
+            '{"k":{}}',
+        );
+
+        // A dependent branch contributes its members only when the trigger is
+        // there; an absent trigger leaves the member undeclared, and an
+        // undeclared empty member keeps the array encoding it arrived with.
+        Assert::same(
+            $encoder->encode(['other' => []], [
+                'type' => 'object',
+                'dependentSchemas' => ['kind' => ['properties' => ['other' => ['type' => 'object']]]],
+            ]),
+            '{"other":[]}',
+        );
+
+        // `items` wins over `contains`: the first element reads as a string,
+        // which only encodes as one if `items` was consulted.
+        Assert::same(
+            $encoder->encode(['x'], ['type' => 'array', 'items' => ['type' => 'string'], 'contains' => ['type' => 'integer']]),
+            '["x"]',
+        );
+
+        // The root's `$defs` is what a local `$ref` below it resolves against,
+        // and the referenced shape decides the encoding.
+        Assert::same(
+            $encoder->encode(
+                ['k' => []],
+                [
+                    'type' => 'object',
+                    '$defs' => ['node' => ['type' => 'object', 'properties' => ['k' => ['type' => 'object']]]],
+                    'additionalProperties' => ['$ref' => '#/$defs/node'],
+                ],
+            ),
+            '{"k":{}}',
         );
     }
 

@@ -124,7 +124,7 @@ final readonly class ContainerArbitraries
                 }
                 $elements[] = $tailArbitrary;
             }
-            $pairs[] = [1, Gen::tuple(...$elements)];
+            $pairs[] = [1, $elements === [] ? Gen::constant(value: []) : Gen::tuple(...$elements)];
         }
 
         return Gen::frequency($pairs);
@@ -347,9 +347,9 @@ final readonly class ContainerArbitraries
         }
 
         $keyAlphabet = 'abcdefghijklmnopqrstuvwxyz';
-        /** @var ArbitraryInterface<string> $key */
+        /** @var ArbitraryInterface<string> $name */
         if ($patternArbitraries !== []) {
-            $key = Gen::map(Gen::frequency(array_map(
+            $name = Gen::map(Gen::frequency(array_map(
                 function (array $entry) use ($shape, $reserved, $propertyNames, $patterns): array {
                     /** @var string $pattern */
                     [$pattern, $source] = $entry;
@@ -375,7 +375,7 @@ final readonly class ContainerArbitraries
                 $patternArbitraries,
             )), static fn(string $name): string => $name);
         } else {
-            $key = Gen::map(
+            $name = Gen::map(
                 Gen::filter(
                     Gen::stringFrom($keyAlphabet, minLength: 1, maxLength: 8),
                     fn(string $name): bool => !array_key_exists($name, $shape) && !isset($reserved[$name])
@@ -384,39 +384,43 @@ final readonly class ContainerArbitraries
                 static fn(string $name): string => $name,
             );
         }
-        /** @var ArbitraryInterface<mixed> $value */
-        if ($patternArbitraries !== []) {
-            $value = Gen::flatMap($key, function (mixed $name) use ($patterns, $additional): ArbitraryInterface {
-                if (is_string($name)) {
-                    $matching = [];
-                    /** @var list<array<string, mixed>> $matching */
-                    foreach ($patterns as $pattern => $patternSchema) {
-                        if (preg_match('~' . $pattern . '~', $name) === 1) {
-                            /** @var array<string, mixed> $patternSchema */
-                            $matching[] = $patternSchema;
-                        }
-                    }
-                    if ($matching !== []) {
-                        return $this->compiler->compile(['allOf' => $matching]);
+        $value = is_array($additional) && $additional !== []
+            ? $this->compiler->compile($additional)
+            : $this->additionalValue();
+        // The schema a member answers can depend on the name it lands under —
+        // that is what `patternProperties` means — so the name and its value
+        // are drawn together. A value arbitrary picked once for the whole map
+        // hands every name the value compiled for whichever name came first,
+        // and an object where `a` carries the boolean and `z` the string is
+        // exactly what then reaches the contract and fails validation.
+        /** @var ArbitraryInterface<array{0: string, 1: mixed}> $entry */
+        $entry = Gen::flatMap($name, function (mixed $drawn) use ($patterns, $value): ArbitraryInterface {
+            $matching = [];
+            if (is_string($drawn)) {
+                /** @var list<array<string, mixed>> $matching */
+                foreach ($patterns as $pattern => $patternSchema) {
+                    if (preg_match('~' . $pattern . '~', $drawn) === 1) {
+                        /** @var array<string, mixed> $patternSchema */
+                        $matching[] = $patternSchema;
                     }
                 }
+            }
+            $member = $matching === []
+                ? $value
+                : $this->compiler->compile(['allOf' => $matching]);
 
-                return is_array($additional) && $additional !== []
-                    ? $this->compiler->compile($additional)
-                    : $this->additionalValue();
-            });
-        } else {
-            $value = is_array($additional) && $additional !== []
-                ? $this->compiler->compile($additional)
-                : $this->additionalValue();
-        }
+            return Gen::map(
+                Gen::tuple(Gen::constant(value: $drawn), $member),
+                /** @param list<mixed> $pair @return array{0: string, 1: mixed} */
+                static fn(array $pair): array => [$pair[0], $pair[1]],
+            );
+        });
 
         return Gen::flatMap($base, fn(array $values): ArbitraryInterface => $this->additionalProperties(
             $values,
             $minProperties,
             $maxProperties,
-            $key,
-            $value,
+            $entry,
         ));
     }
 
@@ -462,16 +466,15 @@ final readonly class ContainerArbitraries
 
     /**
      * @param array<array-key, mixed> $values
-     * @param ArbitraryInterface<string> $key
-     * @param ArbitraryInterface<mixed> $value
+     * @param ArbitraryInterface<array{0: string, 1: mixed}> $entry a member
+     *        name drawn together with the value that name declares
      * @return ArbitraryInterface<array<array-key, mixed>>
      */
     private function additionalProperties(
         array $values,
         int $minProperties,
         int $maxProperties,
-        ArbitraryInterface $key,
-        ArbitraryInterface $value,
+        ArbitraryInterface $entry,
     ): ArbitraryInterface {
         $missing = max(0, $minProperties - count($values));
         $room = max(0, $maxProperties - count($values));
@@ -482,10 +485,33 @@ final readonly class ContainerArbitraries
             return $result;
         }
 
-        $extras = Gen::dictOf($key, $value, minSize: $missing, maxSize: $room);
+        $extras = Gen::uniqueArrayOf(
+            $entry,
+            minSize: $missing,
+            maxSize: $room,
+            /** @param mixed $member */
+            by: static function (mixed $member): string {
+                if (!is_array($member)) {
+                    throw new \LogicException('Generated additional property has an invalid shape');
+                }
+                $name = $member[0] ?? null;
+                if (!is_string($name)) {
+                    throw new \LogicException('Generated additional property has an invalid name');
+                }
 
-        /** @var ArbitraryInterface<array<array-key, mixed>> $result */
-        $result = Gen::map($extras, static fn(array $extra): array => array_replace($values, $extra));
+                return $name;
+            },
+        );
+
+        $result = Gen::map($extras, static function (array $extra) use ($values): array {
+            $typed = [];
+            /** @var array{0: string, 1: mixed} $member */
+            foreach ($extra as $member) {
+                $typed = array_replace($typed, [$member[0] => $member[1]]);
+            }
+
+            return array_replace($values, $typed);
+        });
 
         return $result;
     }
