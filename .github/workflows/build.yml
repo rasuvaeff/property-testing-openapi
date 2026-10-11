@@ -196,6 +196,44 @@ jobs:
       - name: Test
         run: composer test
 
+  contract-pr:
+    name: Contract PR #171
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 140 }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout generator
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout contract PR
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/openapi-contract
+          ref: feat/157-pattern-properties
+          path: contract-source
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          extensions: json, mbstring
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Use contract PR source
+        run: |
+          rm -rf vendor/rasuvaeff/openapi-contract
+          ln -s "$GITHUB_WORKSPACE/contract-source" vendor/rasuvaeff/openapi-contract
+
+      - name: Build against contract PR
+        run: composer build
+
   coverage:
     name: Coverage & Mutation
     needs: changes

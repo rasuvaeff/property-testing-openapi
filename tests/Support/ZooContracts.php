@@ -29,7 +29,7 @@ final class ZooContracts
         'delimited.get', 'reserved.get', 'unions.get', 'uploads.create', 'dual.create',
         'encoded.create', 'mixed.create', 'numeric.create', 'headers.get', 'verified.get',
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
-        'labels.get', 'sparse.create', 'amounts.create', 'settings.create', 'precise.get',
+        'labels.get', 'patternLabels.create', 'sparse.create', 'amounts.create', 'settings.create', 'precise.get',
         'tree.create',
     ];
 
@@ -368,6 +368,18 @@ final class ZooContracts
                         ['name' => 'X-Kinds', 'in' => 'header', 'style' => 'simple', 'explode' => false,
                             'schema' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 2, 'items' => ['type' => 'string', 'enum' => ['big apple', 'a,b', 'c']]]],
                     ],
+                    'responses' => ['204' => []],
+                ]],
+                '/pattern-labels' => ['post' => [
+                    'operationId' => 'patternLabels.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'minProperties' => 1,
+                        'maxProperties' => 4,
+                        'patternProperties' => ['^x-[a-z]+$' => ['type' => 'integer', 'minimum' => 1]],
+                        'propertyNames' => ['pattern' => '^x-'],
+                        'additionalProperties' => false,
+                    ]]]],
                     'responses' => ['204' => []],
                 ]],
                 // Twelve optionals under `maxProperties: 1`: the cardinality

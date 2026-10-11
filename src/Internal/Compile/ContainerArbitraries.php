@@ -98,13 +98,9 @@ final readonly class ContainerArbitraries
     {
         $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
         $patterns = $this->facts->schemaObject($schema['patternProperties'] ?? [], 'patternProperties must be an object of schemas');
-        /** @var mixed $propertyNamesValue */
-        $propertyNamesValue = $schema['propertyNames'] ?? null;
-        if ($propertyNamesValue !== null && (!is_array($propertyNamesValue) || array_is_list($propertyNamesValue))) {
-            throw UnsupportedGeneration::forSchema('propertyNames must be a schema object');
-        }
-        /** @var array<string, mixed>|null $propertyNames */
-        $propertyNames = $propertyNamesValue;
+        $propertyNames = array_key_exists('propertyNames', $schema)
+            ? $this->facts->schemaObject($schema['propertyNames'], 'propertyNames must be a schema object')
+            : null;
         if ($propertyNames !== null) {
             foreach (array_keys($propertyNames) as $keyword) {
                 if ($keyword !== 'pattern') {
@@ -230,7 +226,7 @@ final readonly class ContainerArbitraries
         }
 
         $keyAlphabet = 'abcdefghijklmnopqrstuvwxyz';
-        /** @var ArbitraryInterface<array-key> $key */
+        /** @var ArbitraryInterface<string> $key */
         if ($patternArbitraries !== []) {
             $key = Gen::map(Gen::frequency(array_map(
                 function (array $entry) use ($shape, $reserved, $propertyNames, $patterns): array {
@@ -256,22 +252,16 @@ final readonly class ContainerArbitraries
                     return [1, $filtered];
                 },
                 $patternArbitraries,
-            )), static fn(string $name): int|string => $name);
-            /** @var ArbitraryInterface<array-key> $key */
-            $key = $key;
+            )), static fn(string $name): string => $name);
         } else {
             $key = Gen::map(
                 Gen::filter(
                     Gen::stringFrom($keyAlphabet, minLength: 1, maxLength: 8),
-                    function (string $name) use ($shape, $reserved, $propertyNames): bool {
-                        return !array_key_exists($name, $shape) && !isset($reserved[$name])
-                            && ($propertyNames === null || $this->matchesSchema($name, $propertyNames));
-                    },
+                    fn(string $name): bool => !array_key_exists($name, $shape) && !isset($reserved[$name])
+                        && ($propertyNames === null || $this->matchesSchema($name, $propertyNames)),
                 ),
-                static fn(string $name): int|string => $name,
+                static fn(string $name): string => $name,
             );
-            /** @var ArbitraryInterface<array-key> $key */
-            $key = $key;
         }
         /** @var ArbitraryInterface<mixed> $value */
         if ($patternArbitraries !== []) {
@@ -351,7 +341,7 @@ final readonly class ContainerArbitraries
 
     /**
      * @param array<array-key, mixed> $values
-     * @param ArbitraryInterface<array-key> $key
+     * @param ArbitraryInterface<string> $key
      * @param ArbitraryInterface<mixed> $value
      * @return ArbitraryInterface<array<array-key, mixed>>
      */
