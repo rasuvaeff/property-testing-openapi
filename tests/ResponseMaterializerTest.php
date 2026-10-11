@@ -354,6 +354,67 @@ final class ResponseMaterializerTest
         }
     }
 
+    public function anApplicatorBranchContributesTheShapeTheRootLacks(): void
+    {
+        $encoder = new JsonBodyEncoder();
+
+        // The root says only `allOf`; each of the three shape keywords a
+        // branch may carry decides the encoding on its own, and asking for one
+        // proves nothing about the others.
+        Assert::same(
+            $encoder->encode(['a', 'b'], ['allOf' => [['type' => 'array', 'items' => ['type' => 'string']]]]),
+            '["a","b"]',
+        );
+        Assert::same(
+            $encoder->encode([1, 2], ['allOf' => [['type' => 'array', 'items' => ['type' => 'integer']]]]),
+            '[1,2]',
+        );
+        Assert::same(
+            $encoder->encode(
+                ['first' => [], 'second' => []],
+                ['allOf' => [['type' => 'object', 'properties' => ['first' => ['type' => 'object'], 'second' => ['type' => 'object']]]]],
+            ),
+            '{"first":{},"second":{}}',
+        );
+
+        // `prefixItems` decides position by position, so the second element is
+        // read against the second schema and not against `items`.
+        Assert::same(
+            $encoder->encode(['a', ['b' => []]], [
+                'allOf' => [[
+                    'type' => 'array',
+                    'prefixItems' => [['type' => 'string'], ['type' => 'object', 'properties' => ['b' => ['type' => 'object']]]],
+                ]],
+            ]),
+            '["a",{"b":{}}]',
+        );
+
+        // A shape the root already declares wins: the branch is not allowed
+        // to overrule it, so the encoding follows the root.
+        Assert::same(
+            $encoder->encode([[]], ['type' => 'array', 'items' => ['type' => 'object'], 'allOf' => [['items' => ['type' => 'string']]]]),
+            '[{}]',
+        );
+
+        // Properties merge rather than replace: a branch that declares one
+        // member of an object the root declared another keeps both.
+        Assert::same(
+            $encoder->encode(
+                ['kept' => [], 'added' => []],
+                [
+                    'allOf' => [
+                        ['properties' => ['kept' => ['type' => 'object']]],
+                        ['properties' => ['added' => ['type' => 'object']]],
+                    ],
+                ],
+            ),
+            '{"kept":{},"added":{}}',
+        );
+
+        // A branch that is not an object cannot contribute a shape.
+        Assert::same($encoder->encode(['a', 'b'], ['allOf' => ['ignored', ['type' => 'array', 'items' => ['type' => 'string']]]]), '["a","b"]');
+    }
+
     /**
      * A numeric member name is a name. PHP normalizes the array key `"2020"`
      * to an integer, and refusing it made a legal document impossible to
