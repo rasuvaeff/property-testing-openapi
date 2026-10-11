@@ -91,6 +91,13 @@ final readonly class SchemaArbitraryCompiler
         if (array_key_exists('$ref', $schema)) {
             return $this->reference($schema['$ref']);
         }
+        if (array_key_exists('dependentRequired', $schema) || array_key_exists('dependentSchemas', $schema)) {
+            return $this->dependencies($schema);
+        }
+        if ((array_key_exists('unevaluatedProperties', $schema) || array_key_exists('unevaluatedItems', $schema))
+            && (array_key_exists('if', $schema) || array_key_exists('anyOf', $schema) || array_key_exists('oneOf', $schema))) {
+            throw UnsupportedGeneration::forSchema('unevaluated keywords with conditional or union applicators are outside the constructive subset');
+        }
         if (array_key_exists('if', $schema) || array_key_exists('then', $schema) || array_key_exists('else', $schema)) {
             return $this->conditional($schema);
         }
@@ -218,6 +225,104 @@ final readonly class SchemaArbitraryCompiler
         return Gen::frequency($pairs);
     }
 
+    /** @param array<string, mixed> $schema */
+    private function dependencies(array $schema): ArbitraryInterface
+    {
+        if (($schema['type'] ?? 'object') !== 'object' || array_key_exists('patternProperties', $schema)
+            || array_key_exists('if', $schema) || array_key_exists('allOf', $schema)
+            || array_key_exists('anyOf', $schema) || array_key_exists('oneOf', $schema)) {
+            throw UnsupportedGeneration::forSchema('dependent keywords require a plain object schema');
+        }
+        $requiredMap = $this->facts->schemaObject($schema['dependentRequired'] ?? [], 'dependentRequired must be an object of lists');
+        $schemaMap = $this->facts->schemaObject($schema['dependentSchemas'] ?? [], 'dependentSchemas must be an object of schemas');
+        /** @var array<string, mixed> $requiredMap */
+        /** @var array<string, mixed> $schemaMap */
+        $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
+        /** @var list<string> $triggers */
+        $triggers = array_values(array_unique([...array_keys($requiredMap), ...array_keys($schemaMap)]));
+        if (count($triggers) > 8) {
+            throw UnsupportedGeneration::forSchema('dependent keywords exceed the eight-trigger generation budget');
+        }
+        foreach ($triggers as $trigger) {
+            if (!array_key_exists($trigger, $properties)) {
+                throw UnsupportedGeneration::forSchema('dependent trigger must have a declared property schema');
+            }
+        }
+        foreach ($requiredMap as $members) {
+            if (!is_array($members) || !array_is_list($members)) {
+                throw UnsupportedGeneration::forSchema('dependentRequired values must be lists of names');
+            }
+            /** @var mixed $member */
+            foreach ($members as $member) {
+                if (!is_string($member)) {
+                    throw UnsupportedGeneration::forSchema('dependentRequired values must contain names');
+                }
+            }
+        }
+        /** @var mixed $member */
+        foreach ($schemaMap as $member) {
+            if (!is_array($member) || ($member !== [] && array_is_list($member))) {
+                throw UnsupportedGeneration::forSchema('dependentSchemas values must be schema objects');
+            }
+            /** @var array<string, mixed> $member */
+            foreach (array_keys($member) as $keyword) {
+                if (!in_array($keyword, ['type', 'required', 'properties', 'minProperties', 'maxProperties', 'additionalProperties', 'description', 'title'], strict: true)) {
+                    throw UnsupportedGeneration::forSchema(sprintf('dependentSchemas keyword "%s" is outside the constructive subset', $keyword));
+                }
+            }
+        }
+        $foreignFlag = $this->direction?->foreignFlag();
+        if ($foreignFlag !== null) {
+            /** @var mixed $property */
+            foreach ($properties as $property) {
+                if (is_array($property) && ($property[$foreignFlag] ?? false) === true) {
+                    throw UnsupportedGeneration::forSchema('dependent keywords with foreign-direction properties are outside the constructive subset');
+                }
+            }
+        }
+        unset($schema['dependentRequired'], $schema['dependentSchemas']);
+        $pairs = [];
+        for ($mask = 0; $mask < (1 << count($triggers)); ++$mask) {
+            $present = [];
+            $absent = [];
+            $branches = [$schema];
+            foreach ($triggers as $index => $trigger) {
+                $triggerName = $trigger;
+                if (($mask & (1 << $index)) === 0) {
+                    $absent[] = $triggerName;
+
+                    continue;
+                }
+                $present[] = $triggerName;
+                if (isset($requiredMap[$triggerName])) {
+                    /** @var list<string> $members */
+                    $members = $requiredMap[$triggerName];
+                    $branches[] = ['required' => $members];
+                }
+                if (isset($schemaMap[$triggerName])) {
+                    /** @var array<string, mixed> $dependent */
+                    $dependent = $schemaMap[$triggerName];
+                    $branches[] = $dependent;
+                }
+            }
+            $branches[] = ['required' => $present];
+
+            try {
+                $merged = $this->composition->mergeAllOf($branches);
+                $this->assertSupported($merged);
+                $pairs[] = [1, $this->containers->object($merged, $absent)];
+            } catch (UnsupportedGeneration|Unproducible) {
+                // A presence combination can be impossible: a required
+                // trigger is absent, or its dependency exceeds cardinality.
+            }
+        }
+        if ($pairs === []) {
+            throw UnsupportedGeneration::forSchema('dependent keywords admit no constructible presence combination');
+        }
+
+        return Gen::frequency($pairs);
+    }
+
     /** @return bool|array<string, mixed> */
     private function conditionSchema(mixed $value, string $keyword): bool|array
     {
@@ -333,7 +438,10 @@ final readonly class SchemaArbitraryCompiler
         if (array_key_exists('properties', $schema)) {
             return 'object';
         }
-        if (array_key_exists('items', $schema)) {
+        if (array_key_exists('dependentRequired', $schema) || array_key_exists('dependentSchemas', $schema) || array_key_exists('unevaluatedProperties', $schema)) {
+            return 'object';
+        }
+        if (array_key_exists('items', $schema) || array_key_exists('prefixItems', $schema) || array_key_exists('contains', $schema)) {
             return 'array';
         }
 
@@ -345,8 +453,6 @@ final readonly class SchemaArbitraryCompiler
     {
         foreach ([
             'allOf', 'anyOf', 'oneOf',
-            'contains', 'prefixItems', 'unevaluatedProperties',
-            'dependentRequired', 'dependentSchemas', 'unevaluatedItems',
         ] as $keyword) {
             if (array_key_exists($keyword, $schema)) {
                 throw UnsupportedGeneration::forSchema(sprintf('keyword "%s" is outside the initial support matrix', $keyword));

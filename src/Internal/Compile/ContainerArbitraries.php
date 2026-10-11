@@ -28,6 +28,9 @@ final readonly class ContainerArbitraries
     /** @param array<string, mixed> $schema */
     public function array(array $schema): ArbitraryInterface
     {
+        if (array_key_exists('prefixItems', $schema) || array_key_exists('contains', $schema) || array_key_exists('unevaluatedItems', $schema)) {
+            return $this->extendedArray($schema);
+        }
         $items = $schema['items'] ?? null;
         if (!is_array($items) || array_is_list($items)) {
             throw UnsupportedGeneration::forSchema('array items must be a schema object');
@@ -59,6 +62,111 @@ final readonly class ContainerArbitraries
         }
 
         return Gen::uniqueArrayOf($element, $min, $max);
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function extendedArray(array $schema): ArbitraryInterface
+    {
+        if (($schema['uniqueItems'] ?? false) === true) {
+            throw UnsupportedGeneration::forSchema('uniqueItems with prefixItems, contains or unevaluatedItems is outside the constructive subset');
+        }
+        $prefix = $schema['prefixItems'] ?? [];
+        if (!is_array($prefix) || !array_is_list($prefix)) {
+            throw UnsupportedGeneration::forSchema('prefixItems must be a list of schemas');
+        }
+        $min = $this->facts->nonNegativeInt($schema, 'minItems', 0);
+        $max = min($this->facts->nonNegativeInt($schema, 'maxItems', self::MAX_COLLECTION_SIZE), self::MAX_COLLECTION_SIZE);
+        $tail = $this->subschema($schema['items'] ?? true, 'items');
+        $contains = array_key_exists('contains', $schema) ? $this->subschema($schema['contains'], 'contains') : null;
+        $unevaluated = array_key_exists('unevaluatedItems', $schema) ? $this->subschema($schema['unevaluatedItems'], 'unevaluatedItems') : true;
+        if ($contains !== null) {
+            if ($prefix !== []) {
+                throw UnsupportedGeneration::forSchema('contains combined with prefixItems is outside the constructive subset');
+            }
+            $min = max($min, $this->facts->nonNegativeInt($schema, 'minContains', 1));
+            $max = min($max, $this->facts->nonNegativeInt($schema, 'maxContains', self::MAX_COLLECTION_SIZE));
+            if ($contains === false || $tail === false) {
+                $max = 0;
+            }
+            // Every emitted element is a witness. This bounded subset avoids
+            // predicting which filler values fail the membership schema.
+            $tail = $this->intersection($tail, $contains);
+        } elseif (!array_key_exists('items', $schema)) {
+            $tail = $unevaluated;
+        }
+        if ($tail === false) {
+            $max = min($max, count($prefix));
+        }
+        $positions = [];
+        /** @var mixed $member */
+        foreach ($prefix as $index => $member) {
+            $position = $this->subschema($member, 'prefixItems');
+            if ($position === false) {
+                $max = min($max, $index);
+
+                break;
+            }
+            if ($index >= $max) {
+                break;
+            }
+            $positions[] = $this->compileSubschema($position);
+        }
+        if ($min > $max) {
+            throw UnsupportedGeneration::forSchema('array bounds cannot be met by the constructive prefixItems/contains subset');
+        }
+        $tailArbitrary = $tail === false ? null : $this->compileSubschema($tail);
+        $pairs = [];
+        for ($length = $min; $length <= $max; ++$length) {
+            $elements = array_slice($positions, 0, $length);
+            while (count($elements) < $length) {
+                if (!$tailArbitrary instanceof \Rasuvaeff\PropertyTesting\ArbitraryInterface) {
+                    throw new \LogicException('Closed tuple exceeds its prefix');
+                }
+                $elements[] = $tailArbitrary;
+            }
+            $pairs[] = [1, $elements === [] ? Gen::constant(value: []) : Gen::tuple(...$elements)];
+        }
+
+        return Gen::frequency($pairs);
+    }
+
+    /** @return bool|array<string, mixed> */
+    private function subschema(mixed $value, string $keyword): bool|array
+    {
+        return is_bool($value) ? $value : $this->facts->schemaObject($value, sprintf('%s must be a boolean or schema object', $keyword));
+    }
+
+    /** @param bool|array<string, mixed> $schema */
+    private function compileSubschema(bool|array $schema): ArbitraryInterface
+    {
+        if ($schema === false) {
+            /** @var ArbitraryInterface<mixed> $impossible */
+            $impossible = Gen::filter(Gen::constant(value: null), static fn(): bool => false);
+
+            return $impossible;
+        }
+
+        return $schema === true ? $this->additionalValue() : $this->compiler->compile($schema);
+    }
+
+    /**
+     * @param bool|array<string, mixed> $left
+     * @param bool|array<string, mixed> $right
+     * @return bool|array<string, mixed>
+     */
+    private function intersection(bool|array $left, bool|array $right): bool|array
+    {
+        if ($left === false || $right === false) {
+            return false;
+        }
+        if ($left === true || $left === []) {
+            return $right;
+        }
+        if ($right === true || $right === []) {
+            return $left;
+        }
+
+        return ['allOf' => [$left, $right]];
     }
 
     /**
@@ -93,8 +201,11 @@ final readonly class ContainerArbitraries
         };
     }
 
-    /** @param array<string, mixed> $schema */
-    public function object(array $schema): ArbitraryInterface
+    /**
+     * @param array<string, mixed> $schema
+     * @param list<string> $excluded
+     */
+    public function object(array $schema, array $excluded = []): ArbitraryInterface
     {
         $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
         $patterns = $this->facts->schemaObject($schema['patternProperties'] ?? [], 'patternProperties must be an object of schemas');
@@ -147,6 +258,13 @@ final readonly class ContainerArbitraries
         $omitted = $this->direction?->foreignFlag();
         /** @var array<array-key, true> $reserved */
         $reserved = [];
+        foreach ($excluded as $name) {
+            $reserved[$name] = true;
+            if (isset($requiredNames[$name])) {
+                throw UnsupportedGeneration::forSchema('dependent schema requires an inactive trigger');
+            }
+            unset($properties[$name]);
+        }
         /** @var array<string, true> $requiredNames */
         foreach ($properties as $name => $property) {
             if ($propertyNames !== null && !$this->matchesSchema($name, $propertyNames)) {
@@ -195,6 +313,9 @@ final readonly class ContainerArbitraries
         }
 
         $additional = $this->facts->additionalPropertiesSchema($schema);
+        if (!array_key_exists('additionalProperties', $schema) && array_key_exists('unevaluatedProperties', $schema)) {
+            $additional = $this->subschema($schema['unevaluatedProperties'], 'unevaluatedProperties');
+        }
         if ($additional === false && $patternArbitraries === [] && $minProperties > count($shape)) {
             throw UnsupportedGeneration::forSchema('minProperties requires additional properties, but additionalProperties is false');
         }
@@ -226,9 +347,9 @@ final readonly class ContainerArbitraries
         }
 
         $keyAlphabet = 'abcdefghijklmnopqrstuvwxyz';
-        /** @var ArbitraryInterface<string> $key */
+        /** @var ArbitraryInterface<string> $name */
         if ($patternArbitraries !== []) {
-            $key = Gen::map(Gen::frequency(array_map(
+            $name = Gen::map(Gen::frequency(array_map(
                 function (array $entry) use ($shape, $reserved, $propertyNames, $patterns): array {
                     /** @var string $pattern */
                     [$pattern, $source] = $entry;
@@ -254,7 +375,7 @@ final readonly class ContainerArbitraries
                 $patternArbitraries,
             )), static fn(string $name): string => $name);
         } else {
-            $key = Gen::map(
+            $name = Gen::map(
                 Gen::filter(
                     Gen::stringFrom($keyAlphabet, minLength: 1, maxLength: 8),
                     fn(string $name): bool => !array_key_exists($name, $shape) && !isset($reserved[$name])
@@ -263,39 +384,43 @@ final readonly class ContainerArbitraries
                 static fn(string $name): string => $name,
             );
         }
-        /** @var ArbitraryInterface<mixed> $value */
-        if ($patternArbitraries !== []) {
-            $value = Gen::flatMap($key, function (mixed $name) use ($patterns, $additional): ArbitraryInterface {
-                if (is_string($name)) {
-                    $matching = [];
-                    /** @var list<array<string, mixed>> $matching */
-                    foreach ($patterns as $pattern => $patternSchema) {
-                        if (preg_match('~' . $pattern . '~', $name) === 1) {
-                            /** @var array<string, mixed> $patternSchema */
-                            $matching[] = $patternSchema;
-                        }
-                    }
-                    if ($matching !== []) {
-                        return $this->compiler->compile(['allOf' => $matching]);
+        $value = is_array($additional) && $additional !== []
+            ? $this->compiler->compile($additional)
+            : $this->additionalValue();
+        // The schema a member answers can depend on the name it lands under —
+        // that is what `patternProperties` means — so the name and its value
+        // are drawn together. A value arbitrary picked once for the whole map
+        // hands every name the value compiled for whichever name came first,
+        // and an object where `a` carries the boolean and `z` the string is
+        // exactly what then reaches the contract and fails validation.
+        /** @var ArbitraryInterface<array{0: string, 1: mixed}> $entry */
+        $entry = Gen::flatMap($name, function (mixed $drawn) use ($patterns, $value): ArbitraryInterface {
+            $matching = [];
+            if (is_string($drawn)) {
+                /** @var list<array<string, mixed>> $matching */
+                foreach ($patterns as $pattern => $patternSchema) {
+                    if (preg_match('~' . $pattern . '~', $drawn) === 1) {
+                        /** @var array<string, mixed> $patternSchema */
+                        $matching[] = $patternSchema;
                     }
                 }
+            }
+            $member = $matching === []
+                ? $value
+                : $this->compiler->compile(['allOf' => $matching]);
 
-                return is_array($additional) && $additional !== []
-                    ? $this->compiler->compile($additional)
-                    : $this->additionalValue();
-            });
-        } else {
-            $value = is_array($additional) && $additional !== []
-                ? $this->compiler->compile($additional)
-                : $this->additionalValue();
-        }
+            return Gen::map(
+                Gen::tuple(Gen::constant(value: $drawn), $member),
+                /** @param list<mixed> $pair @return array{0: string, 1: mixed} */
+                static fn(array $pair): array => [$pair[0], $pair[1]],
+            );
+        });
 
         return Gen::flatMap($base, fn(array $values): ArbitraryInterface => $this->additionalProperties(
             $values,
             $minProperties,
             $maxProperties,
-            $key,
-            $value,
+            $entry,
         ));
     }
 
@@ -341,16 +466,15 @@ final readonly class ContainerArbitraries
 
     /**
      * @param array<array-key, mixed> $values
-     * @param ArbitraryInterface<string> $key
-     * @param ArbitraryInterface<mixed> $value
+     * @param ArbitraryInterface<array{0: string, 1: mixed}> $entry a member
+     *        name drawn together with the value that name declares
      * @return ArbitraryInterface<array<array-key, mixed>>
      */
     private function additionalProperties(
         array $values,
         int $minProperties,
         int $maxProperties,
-        ArbitraryInterface $key,
-        ArbitraryInterface $value,
+        ArbitraryInterface $entry,
     ): ArbitraryInterface {
         $missing = max(0, $minProperties - count($values));
         $room = max(0, $maxProperties - count($values));
@@ -361,12 +485,33 @@ final readonly class ContainerArbitraries
             return $result;
         }
 
-        $extras = Gen::dictOf($key, $value, minSize: $missing, maxSize: $room);
+        $extras = Gen::uniqueArrayOf(
+            $entry,
+            minSize: $missing,
+            maxSize: $room,
+            /** @param mixed $member */
+            by: static function (mixed $member): string {
+                if (!is_array($member)) {
+                    throw new \LogicException('Generated additional property has an invalid shape');
+                }
+                $name = $member[0] ?? null;
+                if (!is_string($name)) {
+                    throw new \LogicException('Generated additional property has an invalid name');
+                }
 
-        /** @var ArbitraryInterface<array<array-key, mixed>> $result */
-        $result = Gen::map($extras, static fn(array $extra): array => array_replace($values, $extra));
+                return $name;
+            },
+        );
 
-        return $result;
+        return Gen::map($extras, static function (array $extra) use ($values): array {
+            $typed = [];
+            /** @var array{0: string, 1: mixed} $member */
+            foreach ($extra as $member) {
+                $typed = array_replace($typed, [$member[0] => $member[1]]);
+            }
+
+            return array_replace($values, $typed);
+        });
     }
 
     /**

@@ -12,6 +12,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ResponseContracts;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -184,6 +185,14 @@ final class ResponseMaterializerTest
         Assert::same((new JsonBodyEncoder())->encode([[]], ['items' => ['type' => 'object']]), '[{}]');
         Assert::same((new JsonBodyEncoder())->encode(['a', 'b'], ['type' => 'object']), '["a","b"]');
         Assert::same((new JsonBodyEncoder())->encode(['a' => [], 'b' => []], ['type' => 'object', 'properties' => ['a' => ['type' => 'object'], 'b' => ['type' => 'object']]]), '{"a":{},"b":{}}');
+        Assert::same(
+            (new JsonBodyEncoder())->encode(['v1', 2], ['type' => 'array', 'prefixItems' => [['type' => 'string'], ['type' => 'integer']]]),
+            '["v1",2]',
+        );
+        Assert::same(
+            (new JsonBodyEncoder())->encode([5], ['type' => 'array', 'contains' => ['type' => 'integer']]),
+            '[5]',
+        );
     }
 
     /**
@@ -205,6 +214,214 @@ final class ResponseMaterializerTest
             $encoder->encode(['k' => []], ['type' => 'object', 'properties' => ['k' => []], 'additionalProperties' => ['type' => 'object']]),
             '{"k":[]}',
         );
+        Assert::same(
+            $encoder->encode(['k' => []], ['type' => 'object', 'unevaluatedProperties' => ['type' => 'object']]),
+            '{"k":{}}',
+        );
+        Assert::same(
+            $encoder->encode(['kind' => 'x', 'detail' => []], [
+                'type' => 'object',
+                'dependentSchemas' => ['kind' => ['properties' => ['detail' => ['type' => 'object']]]],
+            ]),
+            '{"kind":"x","detail":{}}',
+        );
+    }
+
+    public function encodesTheTailOfAPrefixTupleAndNestedApplicators(): void
+    {
+        $encoder = new JsonBodyEncoder();
+
+        // An element past `prefixItems` is declared by `contains` when there
+        // is no `items`, and by `unevaluatedItems` when there is neither.
+        Assert::same(
+            $encoder->encode(['a', 2, 3], [
+                'type' => 'array',
+                'prefixItems' => [['type' => 'string']],
+                'contains' => ['type' => 'integer'],
+            ]),
+            '["a",2,3]',
+        );
+        Assert::same(
+            $encoder->encode([[], []], [
+                'type' => 'array',
+                'unevaluatedItems' => ['type' => 'object'],
+            ]),
+            '[{},{}]',
+        );
+
+        // An `allOf` branch that declares the array shape the root leaves out.
+        Assert::same(
+            $encoder->encode(['k' => []], [
+                'allOf' => [['properties' => ['k' => ['type' => 'object']]]],
+            ]),
+            '{"k":{}}',
+        );
+
+        // A dependent branch contributes its members only when the trigger is
+        // there; an absent trigger leaves the member undeclared, and an
+        // undeclared empty member keeps the array encoding it arrived with.
+        Assert::same(
+            $encoder->encode(['other' => []], [
+                'type' => 'object',
+                'dependentSchemas' => ['kind' => ['properties' => ['other' => ['type' => 'object']]]],
+            ]),
+            '{"other":[]}',
+        );
+
+        // `items` wins over `contains`: the first element reads as a string,
+        // which only encodes as one if `items` was consulted.
+        Assert::same(
+            $encoder->encode(['x'], ['type' => 'array', 'items' => ['type' => 'string'], 'contains' => ['type' => 'integer']]),
+            '["x"]',
+        );
+
+        // The root's `$defs` is what a local `$ref` below it resolves against,
+        // and the referenced shape decides the encoding.
+        Assert::same(
+            $encoder->encode(
+                ['k' => []],
+                [
+                    'type' => 'object',
+                    '$defs' => ['node' => ['type' => 'object', 'properties' => ['k' => ['type' => 'object']]]],
+                    'additionalProperties' => ['$ref' => '#/$defs/node'],
+                ],
+            ),
+            '{"k":{}}',
+        );
+    }
+
+    public function aLocalReferenceIsResolvedAgainstTheRootDefs(): void
+    {
+        $encoder = new JsonBodyEncoder();
+
+        // The name is JSON-Pointer-escaped: `a/b` is written `a~1b`, and a
+        // `~` in a name is written `~0`. Both resolve, and the referenced shape
+        // is what decides the encoding.
+        Assert::same(
+            $encoder->encode(
+                ['k' => []],
+                [
+                    '$defs' => ['a/b~c' => ['type' => 'object', 'properties' => ['k' => ['type' => 'object']]]],
+                    '$ref' => '#/$defs/a~1b~0c',
+                ],
+            ),
+            '{"k":{}}',
+        );
+    }
+
+    /**
+     * A `$ref` the encoder cannot resolve is refused by name: it would
+     * otherwise encode the value against no schema at all, and a nested empty
+     * object as `[]` — the exact loss the local form exists to prevent.
+     *
+     * @param array<string, mixed> $schema
+     */
+    #[DataProvider('unresolvableReferences')]
+    public function anUnresolvableReferenceIsRefused(array $schema, string $reason): void
+    {
+        Expect::exception(InvalidCase::class)->withMessage($reason);
+        (new JsonBodyEncoder())->encode(['k' => []], [...$schema, 'type' => 'object']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function unresolvableReferences(): iterable
+    {
+        yield 'a remote pointer' => [
+            ['$ref' => 'other.json#/$defs/node'],
+            'Schema $ref must be a local reference into $defs',
+        ];
+        yield 'a non-string pointer' => [
+            ['$ref' => 42],
+            'Schema $ref must be a local reference into $defs',
+        ];
+        yield 'another root' => [
+            ['$ref' => '#/definitions/node'],
+            'Schema $ref must be a local reference into $defs',
+        ];
+        yield 'an absent member' => [
+            ['$defs' => ['node' => ['type' => 'object']], '$ref' => '#/$defs/missing'],
+            'Schema $ref "#/$defs/missing" names no $defs member',
+        ];
+        yield 'a defs that is a list' => [
+            ['$defs' => [['type' => 'object']], '$ref' => '#/$defs/node'],
+            'Schema $defs must be an object',
+        ];
+    }
+
+    public function aDefsThatIsAListCarriesNoMemberToName(): void
+    {
+        foreach ([
+            ['$defs' => [['type' => 'object']]],
+            ['$defs' => 'invalid'],
+        ] as $schema) {
+            try {
+                (new JsonBodyEncoder())->encode(['k' => []], ['type' => 'object', ...$schema]);
+                Assert::true(actual: false);
+            } catch (InvalidCase) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function anApplicatorBranchContributesTheShapeTheRootLacks(): void
+    {
+        $encoder = new JsonBodyEncoder();
+
+        // The root says only `allOf`; each of the three shape keywords a
+        // branch may carry decides the encoding on its own, and asking for one
+        // proves nothing about the others.
+        Assert::same(
+            $encoder->encode(['a', 'b'], ['allOf' => [['type' => 'array', 'items' => ['type' => 'string']]]]),
+            '["a","b"]',
+        );
+        Assert::same(
+            $encoder->encode([1, 2], ['allOf' => [['type' => 'array', 'items' => ['type' => 'integer']]]]),
+            '[1,2]',
+        );
+        Assert::same(
+            $encoder->encode(
+                ['first' => [], 'second' => []],
+                ['allOf' => [['type' => 'object', 'properties' => ['first' => ['type' => 'object'], 'second' => ['type' => 'object']]]]],
+            ),
+            '{"first":{},"second":{}}',
+        );
+
+        // `prefixItems` decides position by position, so the second element is
+        // read against the second schema and not against `items`.
+        Assert::same(
+            $encoder->encode(['a', ['b' => []]], [
+                'allOf' => [[
+                    'type' => 'array',
+                    'prefixItems' => [['type' => 'string'], ['type' => 'object', 'properties' => ['b' => ['type' => 'object']]]],
+                ]],
+            ]),
+            '["a",{"b":{}}]',
+        );
+
+        // A shape the root already declares wins: the branch is not allowed
+        // to overrule it, so the encoding follows the root.
+        Assert::same(
+            $encoder->encode([[]], ['type' => 'array', 'items' => ['type' => 'object'], 'allOf' => [['items' => ['type' => 'string']]]]),
+            '[{}]',
+        );
+
+        // Properties merge rather than replace: a branch that declares one
+        // member of an object the root declared another keeps both.
+        Assert::same(
+            $encoder->encode(
+                ['kept' => [], 'added' => []],
+                [
+                    'allOf' => [
+                        ['properties' => ['kept' => ['type' => 'object']]],
+                        ['properties' => ['added' => ['type' => 'object']]],
+                    ],
+                ],
+            ),
+            '{"kept":{},"added":{}}',
+        );
+
+        // A branch that is not an object cannot contribute a shape.
+        Assert::same($encoder->encode(['a', 'b'], ['allOf' => ['ignored', ['type' => 'array', 'items' => ['type' => 'string']]]]), '["a","b"]');
     }
 
     /**

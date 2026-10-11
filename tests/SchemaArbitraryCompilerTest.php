@@ -8,6 +8,7 @@ use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\OpenApiContract\SchemaDialect;
+use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
@@ -604,8 +605,153 @@ final class SchemaArbitraryCompilerTest
     /** @return iterable<string, array{string}> */
     public static function unsupportedKeywordCases(): iterable
     {
-        foreach (['allOf', 'anyOf', 'oneOf', 'contains', 'prefixItems', 'unevaluatedProperties', 'dependentRequired', 'dependentSchemas', 'unevaluatedItems'] as $keyword) {
+        foreach (['allOf', 'anyOf', 'oneOf'] as $keyword) {
             yield $keyword => [$keyword];
+        }
+    }
+
+    public function generatesTupleAndContainsArrays(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $tuple = Gen::sample($compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'v1'], ['type' => 'integer', 'minimum' => 1, 'maximum' => 1]],
+            'items' => false,
+            'minItems' => 2,
+            'maxItems' => 2,
+        ]), count: 20, seed: 19);
+        foreach ($tuple as $value) {
+            Assert::same($value, ['v1', 1]);
+        }
+        $contains = $compiler->compile([
+            'type' => 'array',
+            'items' => ['type' => 'integer'],
+            'contains' => ['type' => 'integer', 'minimum' => 5],
+            'minContains' => 2,
+            'maxContains' => 2,
+            'minItems' => 2,
+            'maxItems' => 2,
+        ]);
+        foreach (Gen::sample($contains, count: 20, seed: 23) as $value) {
+            Assert::true(is_array($value) && count($value) === 2);
+            Assert::true($value[0] >= 5 && $value[1] >= 5);
+        }
+
+        $openTuple = Gen::sample($compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'head']],
+            'items' => false,
+            'minItems' => 0,
+            'maxItems' => 1,
+        ]), count: 20, seed: 31);
+        Assert::true(in_array([], $openTuple, strict: true));
+        Assert::true(in_array(['head'], $openTuple, strict: true));
+
+        Expect::exception(UnsupportedGeneration::class);
+        $compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['type' => 'string']],
+            'contains' => ['type' => 'string'],
+        ]);
+    }
+
+    public function rejectsImpossibleExtendedArraysAndInvalidShapes(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        foreach ([
+            ['type' => 'array', 'prefixItems' => 'invalid'],
+            ['type' => 'array', 'prefixItems' => [['type' => 'string']], 'items' => false, 'minItems' => 2, 'maxItems' => 2],
+            ['type' => 'array', 'contains' => false, 'minContains' => 1],
+            ['type' => 'array', 'contains' => ['type' => 'integer'], 'items' => false, 'minItems' => 1],
+            ['type' => 'array', 'unevaluatedItems' => false, 'minItems' => 1],
+            ['type' => 'array', 'prefixItems' => [['type' => 'string']], 'uniqueItems' => true],
+        ] as $schema) {
+            try {
+                $compiler->compile($schema);
+                Assert::true(actual: false);
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
+        }
+    }
+
+    public function generatesDependentAndUnevaluatedObjects(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'card' => ['const' => 'x'],
+                'address' => ['type' => 'string'],
+            ],
+            'dependentRequired' => ['card' => ['address']],
+            'unevaluatedProperties' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($schema), count: 20, seed: 29) as $value) {
+            Assert::true(is_array($value));
+            if (array_key_exists('card', $value)) {
+                Assert::true(array_key_exists('address', $value));
+            }
+            Assert::true(array_diff(array_keys($value), ['card', 'address']) === []);
+        }
+
+        // An object-typed `unevaluatedProperties` is what an undeclared member
+        // is declared by, exactly as `additionalProperties` would be — and it
+        // is the `additionalProperties` key that wins when both are present.
+        $unevaluated = [
+            'type' => 'object',
+            'properties' => ['card' => ['const' => 'x']],
+            'unevaluatedProperties' => ['type' => 'integer'],
+        ];
+        foreach (Gen::sample($compiler->compile($unevaluated), count: 40, seed: 31) as $value) {
+            Assert::true(is_array($value));
+            foreach ($value as $name => $member) {
+                if ($name !== 'card') {
+                    Assert::true(is_int($member));
+                }
+            }
+        }
+        $declared = $unevaluated;
+        $declared['additionalProperties'] = ['type' => 'boolean'];
+        foreach (Gen::sample($compiler->compile($declared), count: 40, seed: 37) as $value) {
+            Assert::true(is_array($value));
+            foreach ($value as $name => $member) {
+                if ($name !== 'card') {
+                    Assert::true(is_bool($member));
+                }
+            }
+        }
+
+        $dependent = [
+            'type' => 'object',
+            'properties' => [
+                'kind' => ['type' => 'string'],
+                'detail' => ['const' => 'required'],
+            ],
+            'dependentSchemas' => [
+                'kind' => ['required' => ['detail']],
+            ],
+            'additionalProperties' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($dependent), count: 100, seed: 41) as $value) {
+            Assert::true(is_array($value));
+            if (array_key_exists('kind', $value)) {
+                Assert::same($value['detail'], 'required');
+            }
+        }
+
+        foreach ([
+            ['type' => 'object', 'dependentRequired' => ['missing' => []]],
+            ['type' => 'object', 'dependentRequired' => ['x' => 'invalid']],
+            ['type' => 'object', 'dependentSchemas' => ['x' => ['items' => []]]],
+            ['type' => 'object', 'dependentRequired' => array_fill_keys(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], [])],
+        ] as $invalid) {
+            try {
+                $compiler->compile($invalid);
+                Assert::true(actual: false);
+            } catch (UnsupportedGeneration) {
+                Assert::true(actual: true);
+            }
         }
     }
 
@@ -2070,5 +2216,786 @@ final class SchemaArbitraryCompilerTest
         }
 
         Assert::true($sawNull, 'an enum listing null never produced it');
+    }
+
+    public function extendedArraysHonourContainsCardinalityAndClosedTails(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // `minContains` above `minItems`, and a tail that must satisfy both
+        // `items` and `contains`.
+        $witnesses = $compiler->compile([
+            'type' => 'array',
+            'items' => ['type' => 'integer'],
+            'contains' => ['type' => 'integer', 'minimum' => 5],
+            'minContains' => 3,
+            'maxItems' => 4,
+        ]);
+        foreach (Gen::sample($witnesses, count: 20, seed: 53) as $value) {
+            Assert::true(is_array($value) && count($value) >= 3);
+            foreach ($value as $item) {
+                Assert::true(is_int($item) && $item >= 5);
+            }
+        }
+
+        // `maxContains` below `maxItems` bounds the length from above.
+        $bounded = $compiler->compile([
+            'type' => 'array',
+            'contains' => ['type' => 'boolean'],
+            'minContains' => 0,
+            'maxContains' => 1,
+            'maxItems' => 5,
+        ]);
+        foreach (Gen::sample($bounded, count: 20, seed: 59) as $value) {
+            Assert::true(is_array($value) && count($value) <= 1);
+        }
+
+        // `contains: false` with no `items` admits nothing but the empty array.
+        $refused = $compiler->compile([
+            'type' => 'array',
+            'contains' => false,
+            'minContains' => 0,
+        ]);
+        Assert::same(Gen::sample($refused, count: 5, seed: 61), [[], [], [], [], []]);
+
+        // `unevaluatedItems` is the tail of an array that declares no `items`.
+        $unevaluated = $compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'head']],
+            'unevaluatedItems' => ['type' => 'string', 'maxLength' => 3],
+            'minItems' => 1,
+            'maxItems' => 3,
+        ]);
+        foreach (Gen::sample($unevaluated, count: 20, seed: 67) as $value) {
+            Assert::true(is_array($value) && $value !== [] && $value[0] === 'head');
+            foreach (array_slice($value, 1) as $item) {
+                Assert::true(is_string($item) && mb_strlen($item) <= 3);
+            }
+        }
+
+        // A prefix that closes the tuple: `items: false` caps the length at
+        // the prefix, and a `false` member closes it earlier still.
+        $closed = $compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'a'], ['const' => 'b'], ['const' => 'c']],
+            'items' => false,
+        ]);
+        $lengths = [];
+        foreach (Gen::sample($closed, count: 30, seed: 71) as $value) {
+            Assert::true(is_array($value));
+            $lengths[count($value)] = true;
+        }
+        Assert::true(count($lengths) === 4, 'a closed prefix did not offer every length');
+
+        // A `false` prefix member truncates the tuple at that index.
+        $truncated = $compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'a'], false, ['const' => 'c']],
+        ]);
+        foreach (Gen::sample($truncated, count: 20, seed: 73) as $value) {
+            Assert::true(is_array($value) && count($value) <= 1);
+        }
+
+        // A prefix longer than `maxItems` contributes only what fits.
+        foreach (Gen::sample($compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'a'], ['const' => 'b'], ['const' => 'c']],
+            'items' => false,
+            'maxItems' => 2,
+        ]), count: 10, seed: 79) as $value) {
+            Assert::true(is_array($value) && count($value) <= 2);
+        }
+    }
+
+    public function everyDependentTriggerCombinationIsReachable(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'a' => ['type' => 'boolean'],
+                'b' => ['type' => 'boolean'],
+                'x' => ['type' => 'boolean'],
+                'y' => ['type' => 'boolean'],
+            ],
+            'dependentRequired' => ['a' => ['x'], 'b' => ['y']],
+            'additionalProperties' => false,
+        ];
+        $check = new SchemaCheck();
+        $seen = [];
+        foreach (Gen::sample($compiler->compile($schema), count: 200, seed: 83) as $value) {
+            Assert::true(is_array($value));
+            Assert::true($check->accepts((object) $value, $schema, SchemaDialect::OpenApi31));
+            // Only the two triggers are enumerated; `x`/`y` follow from them.
+            $seen[implode(',', array_intersect(['a', 'b'], array_keys($value)))] = true;
+        }
+
+        // Every one of the eight presence masks must be constructible: the
+        // enumeration that builds them is the code under test.
+        Assert::same(count($seen), 4, 'not every dependent trigger mask was generated');
+
+        // A trigger that arrives through `dependentSchemas` rather than
+        // `dependentRequired`: the two maps are merged into one trigger list.
+        $pair = [
+            'type' => 'object',
+            'properties' => ['x' => ['type' => 'string'], 'y' => ['type' => 'string'], 'z' => ['type' => 'string']],
+            'dependentRequired' => ['x' => ['y']],
+            'dependentSchemas' => ['y' => ['required' => ['z']]],
+        ];
+        $masks = [];
+        foreach (Gen::sample($compiler->compile($pair), count: 200, seed: 89) as $value) {
+            Assert::true(is_array($value));
+            Assert::true($check->accepts((object) $value, $pair, SchemaDialect::OpenApi31));
+            $masks[implode(',', array_intersect(['x', 'y'], array_keys($value)))] = true;
+        }
+        // Three of the four masks: `x` present with `y` absent is the one the
+        // enumeration has to notice and drop, and dropping it is the code
+        // under test — a mask that survived would fail the check above.
+        Assert::same(count($masks), 3);
+        Assert::false(isset($masks['x']));
+    }
+
+    public function aNullableConstOrEnumNeverWidensToNull(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // `nullable: true` beside a `const` the document wrote: the value is
+        // the constant, never null.
+        foreach (range(1, 20) as $seed) {
+            Assert::same($compiler->compile(['type' => 'string', 'nullable' => true, 'const' => null])->generate(new Random($seed))->value, null);
+            Assert::same($compiler->compile(['const' => 7, 'nullable' => true])->generate(new Random($seed))->value, 7);
+        }
+
+        // An enum that lists null selects it; one that does not, does not.
+        $openEnum = $compiler->compile(['type' => 'string', 'nullable' => true, 'enum' => ['a', 'b']]);
+        foreach (range(1, 20) as $seed) {
+            Assert::true(in_array($openEnum->generate(new Random($seed))->value, ['a', 'b'], strict: true));
+        }
+
+        // A bare `nullable` with no enum or const is the only shape that
+        // reaches `Gen::nullable()`.
+        $bare = $compiler->compile(['type' => 'integer', 'minimum' => 3, 'maximum' => 5, 'nullable' => true]);
+        $values = [];
+        foreach (range(1, 40) as $seed) {
+            $values[] = $bare->generate(new Random($seed))->value;
+        }
+        Assert::true(in_array(null, $values, strict: true));
+        foreach ($values as $value) {
+            Assert::true($value === null || (is_int($value) && $value >= 3 && $value <= 5));
+        }
+    }
+
+    public function aDependentSchemaUnderADirectionRefusesAForeignProperty(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'kind' => ['type' => 'string'],
+                'detail' => ['type' => 'string'],
+            ],
+            'dependentSchemas' => ['kind' => ['required' => ['detail']]],
+        ];
+        $withFlag = [...$schema, 'properties' => ['kind' => ['type' => 'string'], 'detail' => ['type' => 'string', 'writeOnly' => true]]];
+
+        foreach ([SchemaDirection::Request, SchemaDirection::Response] as $direction) {
+            $compiler = new SchemaArbitraryCompiler(direction: $direction);
+            Expect::exception(UnsupportedGeneration::class);
+            $compiler->compile($withFlag);
+        }
+
+        // The same schema without the foreign-direction property generates in
+        // both directions, so the refusal above is about the flag and not
+        // about the direction itself.
+        foreach ([
+            ['type' => 'object', 'dependentRequired' => ['missing' => []]],
+            $schema,
+        ] as $case) {
+            $values = Gen::sample((new SchemaArbitraryCompiler(direction: SchemaDirection::Response))->compile($case), count: 10, seed: 97);
+            Assert::same(count($values), 10);
+        }
+    }
+
+    public function containsWithNoWitnessIsStillGeneratedWhenMinContainsIsZero(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // `minContains: 0` lets the empty array through, which a positive
+        // `minContains` refuses; `contains: false` with it admits nothing else.
+        $schema = [
+            'type' => 'array',
+            'items' => ['type' => 'integer'],
+            'contains' => ['type' => 'integer', 'minimum' => 5],
+            'minContains' => 0,
+            'maxItems' => 3,
+        ];
+        $lengths = [];
+        foreach (Gen::sample($compiler->compile($schema), count: 30, seed: 101) as $value) {
+            Assert::true(is_array($value));
+            $lengths[count($value)] = true;
+            foreach ($value as $item) {
+                Assert::true(is_int($item) && $item >= 5);
+            }
+        }
+        Assert::true(array_key_exists(0, $lengths), 'minContains: 0 never produced the empty array');
+
+        // `items: false` alongside `contains` closes the array at length 0.
+        foreach (Gen::sample($compiler->compile([
+            'type' => 'array',
+            'items' => false,
+            'contains' => ['type' => 'integer'],
+            'minContains' => 0,
+        ]), count: 5, seed: 103) as $value) {
+            Assert::same($value, []);
+        }
+
+        // A tail whose type contradicts `contains` is refused outright, rather
+        // than silently generating an array that satisfies neither.
+        Expect::exception(UnsupportedGeneration::class);
+        $compiler->compile([
+            'type' => 'array',
+            'items' => ['type' => 'integer'],
+            'contains' => ['type' => 'string'],
+        ]);
+
+        // `contains: false` with `items: false` is the same closed tuple.
+        foreach (Gen::sample($compiler->compile([
+            'type' => 'array',
+            'items' => false,
+            'contains' => false,
+        ]), count: 5, seed: 107) as $value) {
+            Assert::same($value, []);
+        }
+    }
+
+    public function aForeignDirectionPropertyIsNeverSentButKeepsItsName(): void
+    {
+        // A request never carries a `readOnly` member and a response never
+        // carries a `writeOnly` one — each is the flag the other direction
+        // owns.
+        $schema = [
+            'type' => 'object',
+            'required' => ['id', 'computed'],
+            'properties' => [
+                'id' => ['type' => 'integer'],
+                'computed' => ['type' => 'string', 'readOnly' => true],
+            ],
+            'additionalProperties' => false,
+        ];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler(direction: SchemaDirection::Request))->compile($schema), count: 40, seed: 109) as $value) {
+            Assert::true(is_array($value) && array_key_exists('id', $value));
+            Assert::false(array_key_exists('computed', $value));
+        }
+
+        // The mirror image: the same document under the response direction,
+        // where `computed` is now the member that travels.
+        foreach (Gen::sample((new SchemaArbitraryCompiler(direction: SchemaDirection::Response))->compile($schema), count: 40, seed: 113) as $value) {
+            Assert::true(is_array($value) && array_key_exists('computed', $value));
+        }
+
+        // And a `writeOnly` member the other way round.
+        $secret = [
+            'type' => 'object',
+            'required' => ['id', 'secret'],
+            'properties' => [
+                'id' => ['type' => 'integer'],
+                'secret' => ['type' => 'string', 'writeOnly' => true],
+            ],
+            'additionalProperties' => false,
+        ];
+        foreach (Gen::sample((new SchemaArbitraryCompiler(direction: SchemaDirection::Response))->compile($secret), count: 40, seed: 127) as $value) {
+            Assert::true(is_array($value) && array_key_exists('id', $value));
+            Assert::false(array_key_exists('secret', $value));
+        }
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler(direction: SchemaDirection::Request))->compile($secret), count: 20, seed: 131) as $value) {
+            Assert::true(is_array($value) && array_key_exists('secret', $value));
+        }
+    }
+
+    public function propertyNamesMustAcceptEveryDeclaredProperty(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // A pattern that admits every declared name generates; one that
+        // excludes a declared name is refused rather than dropping it.
+        $admitting = [
+            'type' => 'object',
+            'properties' => ['id' => ['type' => 'integer'], 'tag' => ['type' => 'string']],
+            'propertyNames' => ['pattern' => '^[a-z]+$'],
+            'additionalProperties' => ['type' => 'boolean'],
+        ];
+        foreach (Gen::sample($compiler->compile($admitting), count: 20, seed: 131) as $value) {
+            Assert::true(is_array($value));
+            foreach (array_keys($value) as $name) {
+                Assert::true(is_string($name) && preg_match('~^[a-z]+$~', $name) === 1);
+            }
+        }
+
+        foreach ([
+            ['pattern' => '^id$'],
+            ['pattern' => 42],
+            ['pattern' => '([a-z'],
+        ] as $propertyNames) {
+            Expect::exception(UnsupportedGeneration::class);
+            $compiler->compile(['type' => 'object', 'properties' => ['id' => ['type' => 'integer'], 'tag' => ['type' => 'string']], 'propertyNames' => $propertyNames]);
+        }
+
+        // A `propertyNames` with no `pattern` constrains nothing.
+        $unconstrained = [
+            'type' => 'object',
+            'properties' => ['id' => ['type' => 'integer']],
+            'propertyNames' => ['maxLength' => 4],
+            'additionalProperties' => ['type' => 'string', 'maxLength' => 2],
+        ];
+        foreach (Gen::sample($compiler->compile($unconstrained), count: 20, seed: 137) as $value) {
+            Assert::true(is_array($value));
+            foreach ($value as $name => $member) {
+                if ($name !== 'id') {
+                    Assert::true(is_string($member) && mb_strlen($member) <= 2);
+                }
+            }
+        }
+    }
+
+    public function uniqueItemsSeesTheExclusiveBoundsOfANumericItemDomain(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // `0..1` with both bounds exclusive leaves exactly one value, so
+        // `minItems: 2` is refused for want of a domain rather than left to
+        // exhaust at run time (#123). With the bounds inclusive it holds two.
+        foreach ([
+            ['type' => 'integer', 'minimum' => 0, 'maximum' => 1, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true],
+            ['type' => 'integer', 'minimum' => 0, 'maximum' => 3, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true],
+        ] as $index) {
+            Expect::exception(UnsupportedGeneration::class);
+            $compiler->compile(['type' => 'array', 'items' => $index, 'uniqueItems' => true, 'minItems' => 2]);
+        }
+
+        foreach (Gen::sample($compiler->compile([
+            'type' => 'array',
+            'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 1, 'exclusiveMinimum' => true, 'exclusiveMaximum' => true],
+            'uniqueItems' => true,
+            'minItems' => 1,
+            'maxItems' => 1,
+        ]), count: 10, seed: 139) as $value) {
+            Assert::same($value, [1]);
+        }
+
+        // A one-value domain is `const`, a two-value one an `enum`, and a
+        // `boolean` a pair: each is knowable from the shape alone.
+        foreach ([
+            [['const' => 'x'], ['x']],
+            [['enum' => ['x', 'y']], ['x', 'y']],
+            [['type' => 'boolean'], [true, false]],
+        ] as [$item, $expected]) {
+            Assert::same(
+                Gen::sample($compiler->compile(['type' => 'array', 'items' => $item, 'uniqueItems' => true, 'minItems' => 2, 'maxItems' => 2]), count: 10, seed: 149),
+                array_fill(0, 10, $expected),
+            );
+        }
+
+        // A `null` domain holds exactly one value.
+        foreach (Gen::sample($compiler->compile(['type' => 'array', 'items' => ['type' => 'null'], 'uniqueItems' => true, 'minItems' => 1, 'maxItems' => 1]), count: 5, seed: 151) as $value) {
+            Assert::same($value, [null]);
+        }
+    }
+
+    public function containsIntersectsTheTailWithTheMembershipSchema(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // Every emitted element answers both `items` and `contains`, which is
+        // the intersection the compiler builds rather than either alone.
+        $schema = [
+            'type' => 'array',
+            'items' => ['type' => 'integer'],
+            'contains' => ['type' => 'integer', 'minimum' => 10],
+            'minContains' => 2,
+            'maxItems' => 3,
+        ];
+        foreach (Gen::sample($compiler->compile($schema), count: 20, seed: 157) as $value) {
+            Assert::true(is_array($value) && count($value) >= 2);
+            foreach ($value as $item) {
+                Assert::true(is_int($item) && $item >= 10);
+            }
+        }
+
+        // A `contains` with no `items` narrows nothing: the tail is whatever
+        // an open array carries.
+        foreach (Gen::sample($compiler->compile([
+            'type' => 'array',
+            'contains' => ['type' => 'integer'],
+            'minContains' => 1,
+            'maxItems' => 2,
+        ]), count: 20, seed: 163) as $value) {
+            Assert::true(is_array($value) && count($value) >= 1);
+            foreach ($value as $item) {
+                Assert::true(is_int($item));
+            }
+        }
+    }
+
+    public function aPatternNameIsToldApartFromAFreeOne(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // Two patterns that a generated name may match either of: the value
+        // under the name answers the schema of every pattern it matched.
+        $schema = [
+            'type' => 'object',
+            'properties' => ['id' => ['type' => 'integer']],
+            'patternProperties' => [
+                '^a' => ['type' => 'string', 'maxLength' => 3],
+                'z$' => ['type' => 'boolean'],
+            ],
+            'additionalProperties' => false,
+        ];
+        $check = new SchemaCheck();
+        $both = 0;
+        foreach (Gen::sample($compiler->compile($schema), count: 100, seed: 167) as $value) {
+            Assert::true(is_array($value));
+            foreach ($value as $name => $member) {
+                if ($name === 'id') {
+                    Assert::true(is_int($member));
+
+                    continue;
+                }
+                $matchesA = str_starts_with((string) $name, 'a');
+                $matchesZ = str_ends_with((string) $name, 'z');
+                Assert::true($matchesA || $matchesZ);
+                if ($matchesA && $matchesZ) {
+                    Assert::true(is_string($member) || is_bool($member));
+                    ++$both;
+                } elseif ($matchesA) {
+                    Assert::true(is_string($member) && mb_strlen($member) <= 3);
+                } else {
+                    Assert::true(is_bool($member));
+                }
+            }
+        }
+        Assert::true($check->accepts((object) [], $schema, SchemaDialect::OpenApi31));
+
+        // A name the pattern matches answers the pattern, never
+        // `additionalProperties` — the two declarations are not alternatives
+        // between which a name is chosen.
+        $patternWins = [
+            'type' => 'object',
+            'patternProperties' => ['^p_' => ['type' => 'string', 'maxLength' => 4]],
+            'additionalProperties' => ['type' => 'integer'],
+        ];
+        foreach (Gen::sample($compiler->compile($patternWins), count: 40, seed: 173) as $value) {
+            Assert::true(is_array($value));
+            foreach ($value as $name => $member) {
+                if (str_starts_with((string) $name, 'p_')) {
+                    Assert::true(is_string($member) && mb_strlen($member) <= 4);
+                } else {
+                    Assert::true(is_int($member));
+                }
+            }
+        }
+
+        Assert::true($check->accepts((object) [], $patternWins, SchemaDialect::OpenApi31));
+
+        // A `patternProperties` entry that is not a named schema object is
+        // refused before any name is drawn.
+        Expect::exception(UnsupportedGeneration::class);
+        $compiler->compile(['type' => 'object', 'patternProperties' => ['^a' => ['string']]]);
+    }
+
+    public function everyMemberAnswersTheSchemaOfItsOwnName(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $check = new SchemaCheck();
+
+        // The value a member carries is compiled against the name it lands
+        // under. Drawing the value once for the whole map handed every name
+        // the schema of whichever name was drawn first, and two thirds of the
+        // objects that reached the contract failed validation.
+        $schema = [
+            'type' => 'object',
+            'properties' => ['id' => ['type' => 'integer']],
+            'patternProperties' => [
+                '^a' => ['type' => 'string', 'maxLength' => 3],
+                'z$' => ['type' => 'boolean'],
+            ],
+            'additionalProperties' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($schema), count: 300, seed: 5) as $value) {
+            Assert::true($check->accepts((object) $value, $schema, SchemaDialect::OpenApi31));
+        }
+
+        // The same holds when the free member and the patterned ones declare
+        // different types, and for a name several patterns match: it answers
+        // all of them at once.
+        foreach ([
+            [
+                'type' => 'object',
+                'patternProperties' => ['^p_' => ['type' => 'string', 'maxLength' => 4]],
+                'additionalProperties' => ['type' => 'integer'],
+            ],
+            [
+                'type' => 'object',
+                'patternProperties' => [
+                    '^both' => ['type' => 'string'],
+                    'both$' => ['type' => 'string', 'maxLength' => 2],
+                ],
+                'additionalProperties' => false,
+            ],
+        ] as $case) {
+            foreach (Gen::sample($compiler->compile($case), count: 200, seed: 7) as $value) {
+                Assert::true($check->accepts((object) $value, $case, SchemaDialect::OpenApi31));
+            }
+        }
+    }
+
+    public function anUnevaluatedKeywordClosesAnAllOfBranchItCannotSee(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $check = new SchemaCheck();
+
+        // `unevaluatedProperties` beside `allOf` closes the object: the merge
+        // has to carry it as a branch of its own, since a member no declared
+        // property answers is what it forbids.
+        $object = [
+            'allOf' => [
+                ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']], 'required' => ['id']],
+            ],
+            'unevaluatedProperties' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($object), count: 40, seed: 181) as $value) {
+            Assert::same(array_keys((array) $value), ['id']);
+            Assert::true($check->accepts((object) $value, $object, SchemaDialect::OpenApi31));
+        }
+
+        $array = [
+            'allOf' => [
+                ['type' => 'array', 'prefixItems' => [['type' => 'integer']], 'minItems' => 1],
+            ],
+            'unevaluatedItems' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($array), count: 40, seed: 181) as $value) {
+            Assert::same($value, [$value[0]]);
+            Assert::true($check->accepts($value, $array, SchemaDialect::OpenApi31));
+        }
+
+        // Without the keyword the same object admits an undeclared member, so
+        // the two runs differ in the closure alone and not in anything the
+        // merge decided.
+        $open = [
+            'allOf' => [
+                ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']], 'minProperties' => 2],
+            ],
+        ];
+        $extras = 0;
+        foreach (Gen::sample($compiler->compile($open), count: 60, seed: 181) as $value) {
+            $extras += count($value) - 1;
+        }
+        Assert::true($extras > 0, 'a closed object was generated as an open one');
+
+        // An `allOf` sibling is refused by name: a member the branches do not
+        // mention cannot be closed after the fact.
+        foreach (['properties' => ['id' => ['type' => 'integer']], 'type' => 'object'] as $keyword => $value) {
+            Expect::exception(UnsupportedGeneration::class)
+                ->withMessage(sprintf('Unsupported OpenAPI schema generation: allOf with sibling keyword "%s" is outside the supported subset', $keyword));
+            $compiler->compile(['allOf' => [['type' => 'object']], $keyword => $value, 'description' => 'annotated']);
+        }
+
+        // A branch that closes the object on its own is refused too — the
+        // merge would have to decide which of the two closures wins.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: unevaluated keywords inside allOf branches are outside the constructive subset');
+        $compiler->compile(['allOf' => [['unevaluatedProperties' => false]], 'unevaluatedProperties' => false]);
+    }
+
+    public function anAllOfCannotMoveItemsAcrossASiblingTuple(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // Two branches disagreeing about where the tuple ends cannot be
+        // merged into one array: the head of one is not the head of the other.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: allOf items cannot be moved across sibling prefixItems');
+        $compiler->compile([
+            'allOf' => [
+                ['type' => 'array', 'prefixItems' => [['type' => 'integer'], ['type' => 'string']]],
+                ['items' => false],
+            ],
+        ]);
+
+        // Branches that agree keep the tuple, and the merged array answers it.
+        $check = new SchemaCheck();
+        $schema = [
+            'allOf' => [
+                ['type' => 'array', 'prefixItems' => [['type' => 'integer'], ['type' => 'string']], 'minItems' => 2, 'maxItems' => 2, 'unevaluatedItems' => false],
+            ],
+        ];
+        foreach (Gen::sample($compiler->compile($schema), count: 20, seed: 191) as $value) {
+            Assert::same($value, [$value[0], $value[1]]);
+            Assert::true($check->accepts($value, $schema, SchemaDialect::OpenApi31));
+        }
+    }
+
+    public function aNotLeavesAtLeastOneValueOfTheEnumItNarrows(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // Two of three values survive, so the filter keeps the schema and the
+        // generator only ever answers with one of them.
+        $narrowed = $compiler->compile(['enum' => ['x', 'y', 'z'], 'not' => ['enum' => ['x']]]);
+        $values = array_unique(Gen::sample($narrowed, count: 40, seed: 193));
+        sort($values);
+        Assert::same($values, ['y', 'z']);
+
+        // The `not` may list more than one value, and an enum whose values are
+        // written as a map (which JSON forbids, but a hand-built schema can
+        // carry) is re-indexed before the comparison.
+        foreach (Gen::sample($compiler->compile(['enum' => ['x', 'y', 'z'], 'not' => ['enum' => ['x', 'y']]]), count: 40, seed: 197) as $value) {
+            Assert::same($value, 'z');
+        }
+
+        // A `not` beside a `const` narrows nothing, so the constant stands.
+        foreach (range(1, 10) as $seed) {
+            Assert::same($compiler->compile(['const' => 'x', 'not' => ['const' => 'y']])->generate(new Random($seed))->value, 'x');
+        }
+
+        // A `not` that forbids a type the source does not declare at all
+        // changes nothing, and the values keep their declared type.
+        foreach (Gen::sample($compiler->compile(['type' => 'integer', 'not' => ['type' => 'boolean']]), count: 20, seed: 199) as $value) {
+            Assert::true(is_int($value));
+        }
+    }
+
+    public function everyRefusalMessageIsTheOneTheCallerIsShown(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // `propertyNames` is a filter on the names an object may carry, and a
+        // declared one it filters out is refused rather than silently dropped.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: propertyNames excludes a declared property');
+        $compiler->compile([
+            'type' => 'object',
+            'properties' => ['id' => ['type' => 'integer'], 'Tag' => ['type' => 'string']],
+            'propertyNames' => ['pattern' => '^[a-z]+$'],
+        ]);
+    }
+
+    public function aDependentBudgetOverflowIsRefusedByName(): void
+    {
+        // The enumeration has a budget, and a document past it is told so
+        // rather than generating an exponential number of combinations.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: dependent keywords exceed the eight-trigger generation budget');
+        (new SchemaArbitraryCompiler())->compile([
+            'type' => 'object',
+            'properties' => array_fill_keys(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], ['type' => 'string']),
+            'dependentRequired' => array_fill_keys(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], []),
+        ]);
+    }
+
+    public function aForeignDirectionMemberUnderADependentKeywordIsRefusedByName(): void
+    {
+        // A dependent keyword beside a property the other direction owns has
+        // no constructible answer: the member is never sent, and the trigger
+        // it keys on can therefore never be there.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: dependent keywords with foreign-direction properties are outside the constructive subset');
+        (new SchemaArbitraryCompiler(direction: SchemaDirection::Request))->compile([
+            'type' => 'object',
+            'properties' => [
+                'kind' => ['type' => 'string'],
+                'detail' => ['type' => 'string', 'readOnly' => true],
+            ],
+            'dependentSchemas' => ['kind' => ['required' => ['detail']]],
+        ]);
+    }
+
+    /**
+     * Each half of a guard chain is a refusal the caller can hit on its own,
+     * so each is provoked on its own: a chain tested only through one of its
+     * branches cannot tell the branches apart.
+     *
+     * @param array<string, mixed> $schema
+     */
+    #[DataProvider('refusedShapes')]
+    public function aRefusedShapeIsRefusedWhateverElseItCarries(array $schema, string $refusal): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: ' . $refusal);
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function refusedShapes(): iterable
+    {
+        // An unevaluated keyword beside a conditional or a union is outside
+        // the constructive subset — one refusal, six ways to ask for it.
+        foreach (['unevaluatedProperties' => ['type' => 'object'], 'unevaluatedItems' => ['type' => 'array']] as $keyword => $subschema) {
+            foreach (['if' => true, 'anyOf' => [[]], 'oneOf' => [[]]] as $applicator => $value) {
+                yield $keyword . ' beside ' . $applicator => [
+                    ['type' => $keyword === 'unevaluatedItems' ? 'array' : 'object'] + [$keyword => $subschema, $applicator => $value],
+                    'unevaluated keywords with conditional or union applicators are outside the constructive subset',
+                ];
+            }
+        }
+
+        // A dependent keyword needs a plain object: each of the six ways of
+        // not being one is refused by the same message.
+        foreach (['patternProperties' => ['^a' => ['type' => 'string']], 'if' => true, 'allOf' => [[]], 'anyOf' => [[]], 'oneOf' => [[]]] as $keyword => $value) {
+            yield 'dependentRequired beside ' . $keyword => [
+                ['type' => 'object', 'properties' => ['a' => ['type' => 'string']], 'dependentRequired' => ['a' => []], $keyword => $value],
+                'dependent keywords require a plain object schema',
+            ];
+        }
+        yield 'dependentRequired on a non-object' => [
+            ['type' => 'string', 'dependentRequired' => ['a' => []]],
+            'dependent keywords require a plain object schema',
+        ];
+    }
+
+    /**
+     * A schema may name no type at all and still say what it is: each of
+     * these keywords answers on its own, and a document carrying one is
+     * generated as the type it implies.
+     *
+     * @param array<string, mixed> $schema
+     */
+    #[DataProvider('typeInference')]
+    public function aStructuralKeywordIsEnoughToSayWhatTheSchemaIs(array $schema, string $expected): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: 179) as $value) {
+            Assert::true(is_array($value));
+            Assert::true($expected === 'object' ? !array_is_list($value) || $value === [] : array_is_list($value));
+        }
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function typeInference(): iterable
+    {
+        // A dependent keyword needs its trigger declared, so the object these
+        // produce is carried by `properties` and it is `dependentRequired`
+        // alone that answers the question of what type the schema is.
+        yield 'dependentRequired' => [[
+            'properties' => ['a' => ['type' => 'integer']],
+            'dependentRequired' => ['a' => []],
+        ], 'object'];
+        yield 'dependentSchemas' => [[
+            'properties' => ['a' => ['type' => 'integer']],
+            'dependentSchemas' => ['a' => ['maxProperties' => 1]],
+        ], 'object'];
+        yield 'unevaluatedProperties' => [['unevaluatedProperties' => true], 'object'];
+        yield 'properties' => [['properties' => ['id' => ['type' => 'integer']]], 'object'];
+        yield 'items' => [['items' => ['type' => 'integer']], 'array'];
+        yield 'prefixItems' => [['prefixItems' => [['type' => 'integer']]], 'array'];
+        yield 'contains' => [['contains' => ['type' => 'integer']], 'array'];
+
+        // Each is asked for alone: one keyword of the pair would answer just
+        // as well, and the pair would then prove nothing about the other.
+        yield 'dependentRequired with a declared trigger' => [[
+            'properties' => ['a' => ['type' => 'integer'], 'b' => ['type' => 'integer']],
+            'dependentRequired' => ['a' => ['b']],
+        ], 'object'];
     }
 }

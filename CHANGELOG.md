@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** Bounded constructive generation for `prefixItems`/`contains`
+  (including `minContains`/`maxContains`), `dependentRequired`,
+  `dependentSchemas`, and `unevaluatedProperties`/`unevaluatedItems` (#157).
 - **Added.** Conditional schemas (`if`/`then`/`else`) are generated
   constructively, including boolean and nested branches. Each candidate is
   checked by `openapi-contract`'s `SchemaCheck`; unreachable branches are
   omitted and a conditional with no finite value fails closed (#157).
+- **Fixed.** A member under `patternProperties` is now generated against the
+   schema of the name it actually lands under. The value was compiled once for
+   the whole map, so every name received the schema of whichever name was drawn
+   first — an object whose `^a` member carried a boolean and whose `z$` member
+   carried a string, which the contract rejects (#157).
 
 ## 0.18.0 — 2026-09-29
 

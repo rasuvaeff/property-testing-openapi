@@ -40,6 +40,16 @@ final readonly class CompositionArbitraries
             $schemas = $this->schemaBranches($schema[$keyword], $keyword);
 
             if ($keyword === 'allOf') {
+                foreach ($schemas as $branch) {
+                    if (array_key_exists('unevaluatedProperties', $branch) || array_key_exists('unevaluatedItems', $branch)) {
+                        throw UnsupportedGeneration::forSchema('unevaluated keywords inside allOf branches are outside the constructive subset');
+                    }
+                }
+                foreach (['unevaluatedProperties', 'unevaluatedItems'] as $closure) {
+                    if (array_key_exists($closure, $schema)) {
+                        $schemas[] = [$closure => $schema[$closure]];
+                    }
+                }
                 [$schemas, $inlined] = $this->inlineReferences($schemas);
 
                 return $this->definitions->inlining($inlined, fn(): ArbitraryInterface => $this->compiler->compile($this->mergeAllOf($schemas)));
@@ -340,7 +350,7 @@ final readonly class CompositionArbitraries
     /** @param list<array<string, mixed>> $branches
      * @return array<string, mixed>
      */
-    private function mergeAllOf(array $branches): array
+    public function mergeAllOf(array $branches): array
     {
         $merged = [];
         $required = [];
@@ -411,6 +421,13 @@ final readonly class CompositionArbitraries
             $merged['required'] = array_keys($required);
         }
         $this->assertAdditionalPropertiesAdmitSiblings($branches, array_keys($properties));
+        if (array_key_exists('prefixItems', $merged)) {
+            foreach ($branches as $branch) {
+                if (array_key_exists('items', $branch) && ($branch['prefixItems'] ?? []) !== $merged['prefixItems']) {
+                    throw UnsupportedGeneration::forSchema('allOf items cannot be moved across sibling prefixItems');
+                }
+            }
+        }
 
         return $merged;
     }
@@ -523,6 +540,9 @@ final readonly class CompositionArbitraries
         ];
         foreach (array_keys($schema) as $name) {
             if ($name === $keyword || isset($annotations[$name])) {
+                continue;
+            }
+            if ($keyword === 'allOf' && in_array($name, ['unevaluatedProperties', 'unevaluatedItems'], strict: true)) {
                 continue;
             }
 
