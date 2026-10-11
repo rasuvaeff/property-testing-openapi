@@ -306,6 +306,12 @@ Object generation supports bounded `minProperties`, `maxProperties`,
 pattern schema.
 The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
 other negative assertions fail closed.
+`if`/`then`/`else` are generated constructively: the `then` side is built as a
+conjunction of the base schema, the condition and the branch, and the `else`
+side from the base schema and `else`, each side filtered by the condition the
+contract's own `SchemaCheck` judges. Boolean subschemas are honoured; a side
+that admits nothing is dropped, and a conditional where neither side survives
+fails closed.
 A schema that refers to itself arrives from the contract as `$defs` plus a
 local `{$ref: '#/$defs/<name>'}` per reference back; the def unfolds three
 levels below the root and ends at a leaf that leaves the recursive member out

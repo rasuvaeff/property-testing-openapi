@@ -73,6 +73,127 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    public function generatesBothConditionalBranches(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'kind' => ['type' => 'string'],
+                'sound' => ['type' => 'string'],
+            ],
+            'if' => [
+                'required' => ['kind'],
+                'properties' => ['kind' => ['const' => 'cat']],
+            ],
+            'then' => ['required' => ['sound'], 'properties' => ['sound' => ['const' => 'meow']]],
+            'else' => ['required' => ['sound'], 'properties' => ['sound' => ['const' => 'bark']]],
+        ];
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 100, seed: 37);
+        $cats = 0;
+        $dogs = 0;
+        foreach ($values as $value) {
+            Assert::true(is_array($value));
+            Assert::true(array_key_exists('sound', $value));
+            if (($value['kind'] ?? null) === 'cat') {
+                ++$cats;
+                Assert::same($value['sound'], 'meow');
+            } else {
+                ++$dogs;
+                Assert::same($value['sound'], 'bark');
+            }
+        }
+        Assert::true($cats > 0);
+        Assert::true($dogs > 0);
+    }
+
+    public function supportsBooleanConditionalSchemas(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        $alwaysThen = Gen::sample($compiler->compile([
+            'type' => 'string',
+            'if' => true,
+            'then' => ['const' => 'yes'],
+            'else' => ['const' => 'no'],
+        ]), count: 10, seed: 2);
+        Assert::same($alwaysThen, array_fill(0, 10, 'yes'));
+
+        $alwaysElse = Gen::sample($compiler->compile([
+            'type' => 'string',
+            'if' => false,
+            'then' => ['const' => 'yes'],
+            'else' => ['const' => 'no'],
+        ]), count: 10, seed: 2);
+        Assert::same($alwaysElse, array_fill(0, 10, 'no'));
+    }
+
+    public function supportsOnlyOneConditionalBranchAndNestedConditions(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $thenOnly = Gen::sample($compiler->compile([
+            'type' => 'object',
+            'properties' => ['kind' => ['type' => 'string'], 'value' => ['type' => 'integer']],
+            'if' => ['properties' => ['kind' => ['const' => 'yes']]],
+            'then' => ['required' => ['value'], 'properties' => ['value' => ['const' => 1]]],
+        ]), count: 60, seed: 23);
+        foreach ($thenOnly as $value) {
+            Assert::true(is_array($value));
+            if (($value['kind'] ?? null) === 'yes') {
+                Assert::same($value['value'] ?? null, 1);
+            }
+        }
+
+        $nestedSchema = [
+            'type' => 'object',
+            'properties' => ['kind' => ['type' => 'string'], 'mode' => ['type' => 'string'], 'value' => ['type' => 'string']],
+            'if' => ['properties' => ['kind' => ['const' => 'outer']]],
+            'then' => [
+                'if' => ['required' => ['mode'], 'properties' => ['mode' => ['const' => 'inner']]],
+                'then' => ['properties' => ['value' => ['const' => 'nested']]],
+                'else' => ['properties' => ['value' => ['const' => 'outer']]],
+            ],
+        ];
+        $nested = Gen::sample($compiler->compile($nestedSchema), count: 60, seed: 29);
+        $check = new SchemaCheck();
+        foreach ($nested as $value) {
+            Assert::true(is_array($value));
+            Assert::true($check->accepts((object) $value, $nestedSchema, SchemaDialect::OpenApi31));
+        }
+    }
+
+    public function rejectsAnUnsatisfiableConditional(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+
+        (new SchemaArbitraryCompiler())->compile([
+            'type' => 'string',
+            'if' => true,
+            'then' => false,
+            'else' => false,
+        ]);
+    }
+
+    public function conditionalValuesAgreeWithSchemaCheck(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'required' => ['kind'],
+            'properties' => [
+                'kind' => ['type' => 'string'],
+                'value' => ['type' => 'integer'],
+            ],
+            'if' => ['properties' => ['kind' => ['const' => 'yes']]],
+            'then' => ['required' => ['value'], 'properties' => ['value' => ['const' => 1]]],
+            'else' => ['required' => ['value'], 'properties' => ['value' => ['const' => 2]]],
+        ];
+        $check = new SchemaCheck();
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 100, seed: 31) as $value) {
+            Assert::true(is_array($value));
+            $wire = (object) $value;
+            Assert::true($check->accepts($wire, $schema, SchemaDialect::OpenApi31));
+        }
+    }
+
     public function compilesAnEmptySchemaToJsonCompatibleValues(): void
     {
         $values = Gen::sample((new SchemaArbitraryCompiler())->compile([]), count: 40, seed: 13);
@@ -483,7 +604,7 @@ final class SchemaArbitraryCompilerTest
     /** @return iterable<string, array{string}> */
     public static function unsupportedKeywordCases(): iterable
     {
-        foreach (['allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'contains', 'prefixItems', 'unevaluatedProperties', 'dependentRequired', 'dependentSchemas', 'unevaluatedItems'] as $keyword) {
+        foreach (['allOf', 'anyOf', 'oneOf', 'contains', 'prefixItems', 'unevaluatedProperties', 'dependentRequired', 'dependentSchemas', 'unevaluatedItems'] as $keyword) {
             yield $keyword => [$keyword];
         }
     }
