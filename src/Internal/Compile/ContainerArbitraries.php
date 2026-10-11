@@ -503,7 +503,7 @@ final readonly class ContainerArbitraries
             },
         );
 
-        $result = Gen::map($extras, static function (array $extra) use ($values): array {
+        return Gen::map($extras, static function (array $extra) use ($values): array {
             $typed = [];
             /** @var array{0: string, 1: mixed} $member */
             foreach ($extra as $member) {
@@ -512,8 +512,6 @@ final readonly class ContainerArbitraries
 
             return array_replace($values, $typed);
         });
-
-        return $result;
     }
 
     /**
