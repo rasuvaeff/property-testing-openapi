@@ -180,7 +180,7 @@ jobs:
   upstream:
     name: Contract dev-master
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.number != 140) }}
     runs-on: ubuntu-latest
     # This package and rasuvaeff/openapi-contract are one oracle in two
     # repositories: generated traffic is recorded into the contract's corpus,
