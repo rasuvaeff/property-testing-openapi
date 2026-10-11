@@ -448,6 +448,7 @@ final class SchemaArbitraryCompilerTest
             'properties' => ['x-id' => ['type' => 'integer']],
             'patternProperties' => [
                 '^x-' => ['type' => 'integer', 'minimum' => 1],
+                '^x-.*$' => ['maximum' => 5],
             ],
             'propertyNames' => ['pattern' => '^x-'],
             'additionalProperties' => false,
@@ -458,7 +459,7 @@ final class SchemaArbitraryCompilerTest
             foreach ($value as $name => $member) {
                 Assert::true(is_string($name) && preg_match('/^x-/', $name) === 1);
                 if (str_starts_with($name, 'x-')) {
-                    Assert::true(is_int($member) && $member >= 1);
+                    Assert::true(is_int($member) && $member >= 1 && $member <= 5);
                 }
             }
         }
