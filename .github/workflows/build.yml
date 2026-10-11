@@ -101,7 +101,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: rasuvaeff/openapi-contract
-          ref: feat/157-pattern-properties
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 140 && 'feat/157-pattern-properties' || 'master' }}
           path: contract-source
           persist-credentials: false
 
@@ -147,7 +147,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: rasuvaeff/openapi-contract
-          ref: feat/157-pattern-properties
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 140 && 'feat/157-pattern-properties' || 'master' }}
           path: contract-source
           persist-credentials: false
 
@@ -238,7 +238,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: rasuvaeff/openapi-contract
-          ref: feat/157-pattern-properties
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 140 && 'feat/157-pattern-properties' || 'master' }}
           path: contract-source
           persist-credentials: false
 
