@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
+use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Definitions;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * Compiles the explicit JSON-compatible schema subset into shrinkable values.
@@ -28,6 +33,10 @@ final readonly class SchemaArbitraryCompiler
      */
     private const int RECURSION_DEPTH = 3;
 
+    private const int CONDITIONAL_PROBES = 8;
+
+    private const int CONDITIONAL_PROBE_SEED = 11;
+
     private SchemaFacts $facts;
 
     private CompositionArbitraries $composition;
@@ -37,6 +46,10 @@ final readonly class SchemaArbitraryCompiler
     private ContainerArbitraries $containers;
 
     private Definitions $definitions;
+
+    private SchemaCheck $check;
+
+    private JsonBodyEncoder $encoder;
 
     /**
      * @param string $excludedCharacters characters no generated plain string
@@ -49,14 +62,16 @@ final readonly class SchemaArbitraryCompiler
      *        never carries it — while its name stays reserved, so no undeclared
      *        member is generated under it either. A parameter has no direction.
      */
-    public function __construct(string $excludedCharacters = '', ?SchemaDirection $direction = null)
+    public function __construct(string $excludedCharacters = '', private ?SchemaDirection $direction = null)
     {
         $facts = new SchemaFacts();
         $this->facts = $facts;
+        $this->check = new SchemaCheck();
+        $this->encoder = new JsonBodyEncoder();
         $this->definitions = new Definitions();
         $this->composition = new CompositionArbitraries($this, $facts, $this->definitions);
         $this->scalars = new ScalarArbitraries($facts, $excludedCharacters);
-        $this->containers = new ContainerArbitraries($this, $facts, $direction);
+        $this->containers = new ContainerArbitraries($this, $facts, $this->direction);
     }
 
     /**
@@ -75,6 +90,9 @@ final readonly class SchemaArbitraryCompiler
         }
         if (array_key_exists('$ref', $schema)) {
             return $this->reference($schema['$ref']);
+        }
+        if (array_key_exists('if', $schema) || array_key_exists('then', $schema) || array_key_exists('else', $schema)) {
+            return $this->conditional($schema);
         }
         $combinator = $this->composition->combinator($schema);
         if ($combinator instanceof ArbitraryInterface) {
@@ -139,6 +157,137 @@ final readonly class SchemaArbitraryCompiler
     }
 
     /**
+     * Compiles JSON Schema's conditional branch into a choice of constructive
+     * schemas. The true branch is built as a conjunction of the base schema,
+     * the condition and `then`, which makes the condition hold by
+     * construction rather than by filtering; the false branch is built from
+     * the base schema and `else` and filtered by the condition, which is what
+     * an unsatisfiable `else` looks like from the outside. A branch the
+     * conditional does not declare is the base schema on that side, filtered
+     * the same way — the conditional leaves that side unchanged.
+     *
+     * A branch that yields no value at all — `if: false` beside a `then` that
+     * demands what the base schema forbids — is dropped from the choice rather
+     * than generated from and filtered, and a conditional where neither side
+     * survives has no finite instance and fails closed.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function conditional(array $schema): ArbitraryInterface
+    {
+        if (!array_key_exists('if', $schema)) {
+            unset($schema['then'], $schema['else']);
+
+            return $this->compile($schema);
+        }
+        $condition = $this->conditionSchema($schema['if'], 'if');
+        $hasThen = array_key_exists('then', $schema);
+        $hasElse = array_key_exists('else', $schema);
+        $then = $hasThen ? $this->conditionSchema($schema['then'], 'then') : [];
+        $else = $hasElse ? $this->conditionSchema($schema['else'], 'else') : [];
+        unset($schema['if'], $schema['then'], $schema['else']);
+
+        $pairs = [];
+        if ($hasThen) {
+            $true = $condition === false || $then === false
+                ? $this->impossible()
+                : $this->compile(['allOf' => [$schema, $this->asSchema($condition), $this->asSchema($then)]]);
+        } else {
+            $true = $this->compile($schema);
+            $true = Gen::filter($true, fn(mixed $value): bool => $this->matchesCondition($value, $condition));
+        }
+        if ($this->yieldsSomething($true)) {
+            $pairs[] = [1, $true];
+        }
+
+        if ($hasElse) {
+            $false = ($else === false)
+                ? $this->impossible()
+                : $this->compile(['allOf' => [$schema, $this->asSchema($else)]]);
+        } else {
+            $false = $this->compile($schema);
+        }
+        $false = Gen::filter($false, fn(mixed $value): bool => !$this->matchesCondition($value, $condition));
+        if ($this->yieldsSomething($false)) {
+            $pairs[] = [1, $false];
+        }
+        if ($pairs === []) {
+            throw UnsupportedGeneration::forSchema('if/then/else admits no producible value');
+        }
+
+        return Gen::frequency($pairs);
+    }
+
+    /** @return bool|array<string, mixed> */
+    private function conditionSchema(mixed $value, string $keyword): bool|array
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (!is_array($value) || ($value !== [] && array_is_list($value))) {
+            throw UnsupportedGeneration::forSchema(sprintf('%s must be a schema object', $keyword));
+        }
+
+        /** @var array<string, mixed> $schema */
+        $schema = $value;
+
+        return $schema;
+    }
+
+    /** @param bool|array<string, mixed> $schema */
+    private function matchesCondition(mixed $value, bool|array $schema): bool
+    {
+        if (is_bool($schema)) {
+            return $schema;
+        }
+
+        try {
+            return $this->check->accepts(
+                $this->encoder->jsonValue($value, $schema),
+                $schema,
+                SchemaDialect::OpenApi31,
+                $this->direction ?? SchemaDirection::Request,
+            );
+        } catch (\Throwable $exception) {
+            throw UnsupportedGeneration::forSchema(sprintf('if condition cannot be evaluated: %s', $exception->getMessage()));
+        }
+    }
+
+    /**
+     * A boolean subschema as the conjunction member this compiler builds: the
+     * schema `true` writes. `false` is not one — it is the branch that admits
+     * nothing, and the caller has already turned it into {@see impossible()}.
+     *
+     * @param true|array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function asSchema(true|array $schema): array
+    {
+        return $schema === true ? [] : $schema;
+    }
+
+    private function impossible(): ArbitraryInterface
+    {
+        return Gen::filter(Gen::constant(null), static fn(): bool => false);
+    }
+
+    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
+    {
+        $random = new Random(self::CONDITIONAL_PROBE_SEED);
+        for ($probe = 0; $probe < self::CONDITIONAL_PROBES; ++$probe) {
+            try {
+                $arbitrary->generate($random);
+
+                return true;
+            } catch (GenerationExhaustedException) {
+                continue;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * A local reference into the schema's `$defs`: the compiled form of a
      * schema that refers to itself. The def unfolds {@see RECURSION_DEPTH}
      * levels, each compiled with the def's own name bound to the level
@@ -195,7 +344,7 @@ final readonly class SchemaArbitraryCompiler
     private function assertSupported(array $schema): void
     {
         foreach ([
-            'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else',
+            'allOf', 'anyOf', 'oneOf',
             'contains', 'prefixItems', 'unevaluatedProperties',
             'dependentRequired', 'dependentSchemas', 'unevaluatedItems',
         ] as $keyword) {

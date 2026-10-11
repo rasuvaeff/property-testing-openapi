@@ -30,7 +30,7 @@ final class ZooContracts
         'encoded.create', 'mixed.create', 'numeric.create', 'headers.get', 'verified.get',
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
         'labels.get', 'patternLabels.create', 'sparse.create', 'amounts.create', 'settings.create', 'precise.get',
-        'tree.create',
+        'tree.create', 'shipments.create',
     ];
 
     /**
@@ -464,6 +464,27 @@ final class ZooContracts
                     'operationId' => 'tree.create',
                     'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]]],
                     'responses' => ['201' => ['description' => 'created', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]]]],
+                ]],
+                // A conditional `required`: an expedited shipment must name a
+                // carrier, and a standard one must not (#157). Both branches
+                // are reachable, so the generator builds for both rather than
+                // filtering the ones it cannot reach.
+                '/shipments' => ['post' => [
+                    'operationId' => 'shipments.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['kind'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'kind' => ['type' => 'string', 'enum' => ['standard', 'expedited']],
+                            'weightKg' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 50],
+                            'carrierCode' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 8],
+                        ],
+                        'if' => ['properties' => ['kind' => ['const' => 'expedited']]],
+                        'then' => ['required' => ['carrierCode', 'weightKg']],
+                        'else' => ['required' => ['weightKg']],
+                    ]]]],
+                    'responses' => ['204' => []],
                 ]],
             ],
             'components' => ['schemas' => ['Node' => [
