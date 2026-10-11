@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.19.0 — 2026-10-11
 
 - **Added.** Bounded constructive generation for `prefixItems`/`contains`
   (including `minContains`/`maxContains`), `dependentRequired`,
@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    the whole map, so every name received the schema of whichever name was drawn
    first — an object whose `^a` member carried a boolean and whose `z$` member
    carried a string, which the contract rejects (#157).
+- **Changed.** Requires `rasuvaeff/openapi-contract` `^0.16` (in place of
+  `^0.15`) for the schema keywords added in 0.16: `prefixItems`, `contains`
+  with `minContains`/`maxContains`, `dependentRequired`, `dependentSchemas`,
+  `unevaluatedProperties`/`unevaluatedItems` (#157).
 
 ## 0.18.0 — 2026-09-29
 
