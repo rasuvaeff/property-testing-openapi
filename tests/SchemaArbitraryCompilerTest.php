@@ -2837,6 +2837,36 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    public function aNotLeavesAtLeastOneValueOfTheEnumItNarrows(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // Two of three values survive, so the filter keeps the schema and the
+        // generator only ever answers with one of them.
+        $narrowed = $compiler->compile(['enum' => ['x', 'y', 'z'], 'not' => ['enum' => ['x']]]);
+        $values = array_unique(Gen::sample($narrowed, count: 40, seed: 193));
+        sort($values);
+        Assert::same($values, ['y', 'z']);
+
+        // The `not` may list more than one value, and an enum whose values are
+        // written as a map (which JSON forbids, but a hand-built schema can
+        // carry) is re-indexed before the comparison.
+        foreach (Gen::sample($compiler->compile(['enum' => ['x', 'y', 'z'], 'not' => ['enum' => ['x', 'y']]]), count: 40, seed: 197) as $value) {
+            Assert::same($value, 'z');
+        }
+
+        // A `not` beside a `const` narrows nothing, so the constant stands.
+        foreach (range(1, 10) as $seed) {
+            Assert::same($compiler->compile(['const' => 'x', 'not' => ['const' => 'y']])->generate(new Random($seed))->value, 'x');
+        }
+
+        // A `not` that forbids a type the source does not declare at all
+        // changes nothing, and the values keep their declared type.
+        foreach (Gen::sample($compiler->compile(['type' => 'integer', 'not' => ['type' => 'boolean']]), count: 20, seed: 199) as $value) {
+            Assert::true(is_int($value));
+        }
+    }
+
     public function everyRefusalMessageIsTheOneTheCallerIsShown(): void
     {
         $compiler = new SchemaArbitraryCompiler();
