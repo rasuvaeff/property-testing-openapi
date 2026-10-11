@@ -119,7 +119,7 @@ final readonly class ContainerArbitraries
         for ($length = $min; $length <= $max; ++$length) {
             $elements = array_slice($positions, 0, $length);
             while (count($elements) < $length) {
-                if ($tailArbitrary === null) {
+                if (!$tailArbitrary instanceof \Rasuvaeff\PropertyTesting\ArbitraryInterface) {
                     throw new \LogicException('Closed tuple exceeds its prefix');
                 }
                 $elements[] = $tailArbitrary;

@@ -54,12 +54,11 @@ final readonly class JsonBodyEncoder
             $result = [];
             /** @var mixed $item */
             foreach ($value as $index => $item) {
-                /** @var mixed $prefix */
-                $prefix = $schema['prefixItems'] ?? [];
-                /** @var mixed $member */
-                $member = is_array($prefix) && array_key_exists($index, $prefix)
+                /** @var array<array-key, mixed> $prefix */
+                $prefix = is_array($schema['prefixItems'] ?? null) ? $schema['prefixItems'] : [];
+                $member = $this->memberSchema(array_key_exists($index, $prefix)
                     ? $prefix[$index]
-                    : ($schema['items'] ?? $schema['contains'] ?? $schema['unevaluatedItems'] ?? []);
+                    : ($schema['items'] ?? $schema['contains'] ?? $schema['unevaluatedItems'] ?? []));
                 $items = is_bool($member) ? [] : $this->schemaObject($member, 'Array items must be a schema object');
                 if (is_array($schema['contains'] ?? null)) {
                     $items = $this->encodingSchema(['allOf' => [$items, $schema['contains']]], $item);
@@ -123,10 +122,14 @@ final readonly class JsonBodyEncoder
     private function additionalSchema(array $schema): mixed
     {
         // `true` and `false` carry no shape of their own.
-        /** @var mixed $member */
-        $member = $schema['additionalProperties'] ?? $schema['unevaluatedProperties'] ?? [];
+        if (is_array($schema['additionalProperties'] ?? null)) {
+            return $schema['additionalProperties'];
+        }
+        if (is_array($schema['unevaluatedProperties'] ?? null)) {
+            return $schema['unevaluatedProperties'];
+        }
 
-        return is_array($member) ? $member : [];
+        return [];
     }
 
     /**
@@ -135,17 +138,14 @@ final readonly class JsonBodyEncoder
      */
     private function encodingSchema(array $schema, mixed $value): array
     {
-        /** @var mixed $branches */
-        $branches = $schema['allOf'] ?? [];
-        if (!is_array($branches)) {
-            $branches = [];
-        }
+        /** @var list<mixed> $branches */
+        $branches = is_array($schema['allOf'] ?? null) ? $schema['allOf'] : [];
         if (is_array($value) && is_array($schema['dependentSchemas'] ?? null)) {
             /** @var array<array-key, mixed> $dependentSchemas */
             $dependentSchemas = $schema['dependentSchemas'];
             foreach (array_keys($dependentSchemas) as $trigger) {
-                if (array_key_exists($trigger, $value)) {
-                    $branches = [...$branches, $dependentSchemas[$trigger]];
+                if (array_key_exists($trigger, $value) && is_array($dependentSchemas[$trigger] ?? null)) {
+                    $branches[] = $this->schemaObject($dependentSchemas[$trigger], 'Dependent schema must be an object');
                 }
             }
         }
@@ -167,6 +167,16 @@ final readonly class JsonBodyEncoder
         }
 
         return $schema;
+    }
+
+    /** @return bool|array<string, mixed> */
+    private function memberSchema(mixed $value): bool|array
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return $this->schemaObject($value, 'Array items must be a schema object');
     }
 
     /**

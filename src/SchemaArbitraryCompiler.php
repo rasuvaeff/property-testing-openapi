@@ -235,10 +235,10 @@ final readonly class SchemaArbitraryCompiler
         }
         $requiredMap = $this->facts->schemaObject($schema['dependentRequired'] ?? [], 'dependentRequired must be an object of lists');
         $schemaMap = $this->facts->schemaObject($schema['dependentSchemas'] ?? [], 'dependentSchemas must be an object of schemas');
-        /** @var array<array-key, mixed> $requiredMap */
-        /** @var array<array-key, mixed> $schemaMap */
+        /** @var array<string, mixed> $requiredMap */
+        /** @var array<string, mixed> $schemaMap */
         $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
-        /** @var list<array-key> $triggers */
+        /** @var list<string> $triggers */
         $triggers = array_values(array_unique([...array_keys($requiredMap), ...array_keys($schemaMap)]));
         if (count($triggers) > 8) {
             throw UnsupportedGeneration::forSchema('dependent keywords exceed the eight-trigger generation budget');
@@ -287,7 +287,7 @@ final readonly class SchemaArbitraryCompiler
             $absent = [];
             $branches = [$schema];
             foreach ($triggers as $index => $trigger) {
-                $triggerName = (string) $trigger;
+                $triggerName = $trigger;
                 if (($mask & (1 << $index)) === 0) {
                     $absent[] = $triggerName;
 
