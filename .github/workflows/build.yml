@@ -97,6 +97,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Checkout contract PR
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/openapi-contract
+          ref: master
+          path: contract-source
+          persist-credentials: false
+
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
@@ -115,6 +123,11 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
+      - name: Use contract PR source
+        run: |
+          rm -rf vendor/rasuvaeff/openapi-contract
+          ln -s "$GITHUB_WORKSPACE/contract-source" vendor/rasuvaeff/openapi-contract
+
       - name: Build
         run: composer build
 
@@ -128,6 +141,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
+
+      - name: Checkout contract PR
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/openapi-contract
+          ref: master
+          path: contract-source
           persist-credentials: false
 
       - name: Setup PHP
@@ -147,6 +168,11 @@ jobs:
 
       - name: Install dependencies
         run: composer update --prefer-lowest --prefer-stable --no-interaction --no-progress
+
+      - name: Use contract PR source
+        run: |
+          rm -rf vendor/rasuvaeff/openapi-contract
+          ln -s "$GITHUB_WORKSPACE/contract-source" vendor/rasuvaeff/openapi-contract
 
       - name: Build
         run: composer build
@@ -208,6 +234,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Checkout contract PR
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/openapi-contract
+          ref: master
+          path: contract-source
+          persist-credentials: false
+
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
@@ -225,6 +259,11 @@ jobs:
 
       - name: Install dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Use contract PR source
+        run: |
+          rm -rf vendor/rasuvaeff/openapi-contract
+          ln -s "$GITHUB_WORKSPACE/contract-source" vendor/rasuvaeff/openapi-contract
 
       - name: Restore property regression corpus
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

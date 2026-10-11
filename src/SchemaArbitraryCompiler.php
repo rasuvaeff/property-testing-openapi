@@ -196,8 +196,8 @@ final readonly class SchemaArbitraryCompiler
     {
         foreach ([
             'allOf', 'anyOf', 'oneOf', 'if', 'then', 'else',
-            'contains', 'prefixItems', 'patternProperties',
-            'propertyNames', 'unevaluatedProperties',
+            'contains', 'prefixItems', 'unevaluatedProperties',
+            'dependentRequired', 'dependentSchemas', 'unevaluatedItems',
         ] as $keyword) {
             if (array_key_exists($keyword, $schema)) {
                 throw UnsupportedGeneration::forSchema(sprintf('keyword "%s" is outside the initial support matrix', $keyword));

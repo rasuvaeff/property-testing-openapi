@@ -300,8 +300,10 @@ form property is omitted at materialization (RFC 6570: undefined), and required
 array/object parameters and form properties are generated non-empty.
 Required parameters and request bodies are always generated. Optional parameters
 and JSON bodies are generated as both present and absent branches.
-Object generation supports bounded `minProperties`, `maxProperties`, and
-boolean or schema-valued `additionalProperties`.
+Object generation supports bounded `minProperties`, `maxProperties`,
+`patternProperties`, `propertyNames`, and boolean or schema-valued
+`additionalProperties`; generated pattern values satisfy every matching
+pattern schema.
 The constructive `not` subset supports `const`, `enum`, and `type` exclusions;
 other negative assertions fail closed.
 A schema that refers to itself arrives from the contract as `$defs` plus a

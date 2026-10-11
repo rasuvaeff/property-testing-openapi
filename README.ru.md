@@ -131,12 +131,12 @@ request-направлению схемы — `readOnly`-свойства ухо
 | `minLength`, `maxLength` (не более 64), `pattern` (подмножество PCRE) | поддержано |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
 | `items`, `minItems`, `maxItems` (не более 16), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
-| `properties`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано; кардинальность выполняется по построению (optional сверх потолка выпадает, нужный для пола — добавляется) |
+| `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано; ключи pattern генерируются из объявленных regex, значения удовлетворяют всем совпавшим схемам, кардинальность выполняется по построению |
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
 | `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
 | `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed |
 | `$defs` + локальный `$ref` (`#/$defs/…`) — скомпилированная контрактом форма схемы, ссылающейся на саму себя: дерево, чьи `children` тоже деревья | поддерживается; def разворачивается на три уровня под корнем и заканчивается листом, который опускает рекурсивный член (необязательное свойство пропущено, массив, которому можно быть пустым, пуст, ветка выбора пропущена); def, единственный путь вниз которого — обязательный член, равный самому def, не имеет конечного экземпляра и fail-closed; `$ref` куда-либо кроме собственных `$defs` схемы — fail-closed |
-| `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
+| `if`/`then`/`else`, `contains`, `prefixItems`, `unevaluatedProperties`, `dependentRequired`, `dependentSchemas`, `unevaluatedItems`, числовые `exclusiveMinimum`/`exclusiveMaximum`, прочие formats | fail-closed как `UnsupportedGeneration` |
 
 Каждая невыполнимая комбинация, которую компилятор способен распознать,
 отвергается при компиляции; то, что остаётся вероятностным (`pattern`, редко

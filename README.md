@@ -133,12 +133,12 @@ the same way.
 | `minLength`, `maxLength` (capped at 64), `pattern` (PCRE subset) | supported |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
 | `items`, `minItems`, `maxItems` (capped at 16), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
-| `properties`, `required`, `minProperties`, `maxProperties` (capped at 16), `additionalProperties` (boolean or schema) | supported; the cardinality is met by construction (an optional past the ceiling is left out, one needed for the floor brought in) |
+| `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (capped at 16), `additionalProperties` (boolean or schema) | supported; pattern keys are generated from the declared regexes and values satisfy every matching pattern schema; the cardinality is met by construction |
 | `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
 | `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches; a branch bounding `additionalProperties` must declare every sibling property) | supported |
 | `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed |
 | `$defs` + local `$ref` (`#/$defs/…`) — the contract's compiled form of a schema that refers to itself, a tree whose `children` are trees | supported; the def unfolds three levels below the root and ends at a leaf that leaves the recursive member out (an optional property omitted, an array that may be empty left empty, a branch of a choice skipped); a def whose only way down is a required member that is the def itself has no finite instance and fails closed; a `$ref` to anything but the schema's own `$defs` fails closed |
-| `if`/`then`/`else`, `contains`, `prefixItems`, `patternProperties`, `propertyNames`, `unevaluatedProperties`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
+| `if`/`then`/`else`, `contains`, `prefixItems`, `unevaluatedProperties`, `dependentRequired`, `dependentSchemas`, `unevaluatedItems`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
 
 Every unsatisfiable combination the compiler can recognise is refused at
 compile time; what remains probabilistic (a `pattern` that rarely matches its
