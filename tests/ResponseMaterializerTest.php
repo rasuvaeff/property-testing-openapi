@@ -12,6 +12,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ResponseContracts;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -287,6 +288,70 @@ final class ResponseMaterializerTest
             ),
             '{"k":{}}',
         );
+    }
+
+    public function aLocalReferenceIsResolvedAgainstTheRootDefs(): void
+    {
+        $encoder = new JsonBodyEncoder();
+
+        // The name is JSON-Pointer-escaped: `a/b` is written `a~1b`, and a
+        // `~` in a name is written `~0`. Both resolve, and the referenced shape
+        // is what decides the encoding.
+        Assert::same(
+            $encoder->encode(
+                ['k' => []],
+                [
+                    '$defs' => ['a/b~c' => ['type' => 'object', 'properties' => ['k' => ['type' => 'object']]]],
+                    '$ref' => '#/$defs/a~1b~0c',
+                ],
+            ),
+            '{"k":{}}',
+        );
+    }
+
+    /**
+     * A `$ref` the encoder cannot resolve is refused by name: it would
+     * otherwise encode the value against no schema at all, and a nested empty
+     * object as `[]` — the exact loss the local form exists to prevent.
+     *
+     * @param array<string, mixed> $schema
+     */
+    #[DataProvider('unresolvableReferences')]
+    public function anUnresolvableReferenceIsRefused(array $schema, string $reason): void
+    {
+        Expect::exception(InvalidCase::class);
+        (new JsonBodyEncoder())->encode(['k' => []], [...$schema, 'type' => 'object']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function unresolvableReferences(): iterable
+    {
+        yield 'a remote pointer' => [['$ref' => 'other.json#/$defs/node'], 'not local'];
+        yield 'a non-string pointer' => [['$ref' => 42], 'not local'];
+        yield 'another root' => [['$ref' => '#/definitions/node'], 'not local'];
+        yield 'an absent member' => [
+            ['$defs' => ['node' => ['type' => 'object']], '$ref' => '#/$defs/missing'],
+            'names no $defs member',
+        ];
+        yield 'a defs that is a list' => [
+            ['$defs' => [['type' => 'object']], '$ref' => '#/$defs/node'],
+            'names no $defs member',
+        ];
+    }
+
+    public function aDefsThatIsAListCarriesNoMemberToName(): void
+    {
+        foreach ([
+            ['$defs' => [['type' => 'object']]],
+            ['$defs' => 'invalid'],
+        ] as $schema) {
+            try {
+                (new JsonBodyEncoder())->encode(['k' => []], ['type' => 'object', ...$schema]);
+                Assert::true(actual: false);
+            } catch (InvalidCase) {
+                Assert::true(actual: true);
+            }
+        }
     }
 
     /**
