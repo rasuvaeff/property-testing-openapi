@@ -16,7 +16,8 @@ final readonly class SchemaShape
     /** @param array<string, mixed> $schema */
     public static function isArray(array $schema): bool
     {
-        return self::declares($schema, 'array') || array_key_exists('items', $schema);
+        return self::declares($schema, 'array') || array_key_exists('items', $schema)
+            || array_key_exists('prefixItems', $schema) || array_key_exists('contains', $schema);
     }
 
     /** @param array<string, mixed> $schema */

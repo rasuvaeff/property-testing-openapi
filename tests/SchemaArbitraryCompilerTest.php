@@ -604,8 +604,57 @@ final class SchemaArbitraryCompilerTest
     /** @return iterable<string, array{string}> */
     public static function unsupportedKeywordCases(): iterable
     {
-        foreach (['allOf', 'anyOf', 'oneOf', 'contains', 'prefixItems', 'unevaluatedProperties', 'dependentRequired', 'dependentSchemas', 'unevaluatedItems'] as $keyword) {
+        foreach (['allOf', 'anyOf', 'oneOf'] as $keyword) {
             yield $keyword => [$keyword];
+        }
+    }
+
+    public function generatesTupleAndContainsArrays(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $tuple = Gen::sample($compiler->compile([
+            'type' => 'array',
+            'prefixItems' => [['const' => 'v1'], ['type' => 'integer', 'minimum' => 1, 'maximum' => 1]],
+            'items' => false,
+            'minItems' => 2,
+            'maxItems' => 2,
+        ]), count: 20, seed: 19);
+        foreach ($tuple as $value) {
+            Assert::same($value, ['v1', 1]);
+        }
+        $contains = $compiler->compile([
+            'type' => 'array',
+            'items' => ['type' => 'integer'],
+            'contains' => ['type' => 'integer', 'minimum' => 5],
+            'minContains' => 2,
+            'maxContains' => 2,
+            'minItems' => 2,
+            'maxItems' => 2,
+        ]);
+        foreach (Gen::sample($contains, count: 20, seed: 23) as $value) {
+            Assert::true(is_array($value) && count($value) === 2);
+            Assert::true($value[0] >= 5 && $value[1] >= 5);
+        }
+    }
+
+    public function generatesDependentAndUnevaluatedObjects(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'card' => ['const' => 'x'],
+                'address' => ['type' => 'string'],
+            ],
+            'dependentRequired' => ['card' => ['address']],
+            'unevaluatedProperties' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($schema), count: 20, seed: 29) as $value) {
+            Assert::true(is_array($value));
+            if (array_key_exists('card', $value)) {
+                Assert::true(array_key_exists('address', $value));
+            }
+            Assert::true(array_diff(array_keys($value), ['card', 'address']) === []);
         }
     }
 

@@ -49,10 +49,25 @@ final readonly class JsonBodyEncoder
         if (isset($schema['$ref'])) {
             $schema = $this->dereference($schema['$ref'], $defs);
         }
+        $schema = $this->encodingSchema($schema, $value);
         if (SchemaShape::isArray($schema) && is_array($value) && array_is_list($value)) {
-            $items = $this->schemaObject($schema['items'] ?? null, 'Array items must be a schema object');
+            $result = [];
+            /** @var mixed $item */
+            foreach ($value as $index => $item) {
+                /** @var mixed $prefix */
+                $prefix = $schema['prefixItems'] ?? [];
+                /** @var mixed $member */
+                $member = is_array($prefix) && array_key_exists($index, $prefix)
+                    ? $prefix[$index]
+                    : ($schema['items'] ?? $schema['contains'] ?? $schema['unevaluatedItems'] ?? []);
+                $items = is_bool($member) ? [] : $this->schemaObject($member, 'Array items must be a schema object');
+                if (is_array($schema['contains'] ?? null)) {
+                    $items = $this->encodingSchema(['allOf' => [$items, $schema['contains']]], $item);
+                }
+                $result = [...$result, $this->jsonValueIn($item, $items, $defs)];
+            }
 
-            return array_map(fn(mixed $item): mixed => $this->jsonValueIn($item, $items, $defs), $value);
+            return $result;
         }
         // `array_is_list()` is not a guess here: a negative case deliberately
         // sends a list where an object is declared, and the wire has to carry
@@ -108,7 +123,50 @@ final readonly class JsonBodyEncoder
     private function additionalSchema(array $schema): mixed
     {
         // `true` and `false` carry no shape of their own.
-        return is_array($schema['additionalProperties'] ?? null) ? $schema['additionalProperties'] : [];
+        /** @var mixed $member */
+        $member = $schema['additionalProperties'] ?? $schema['unevaluatedProperties'] ?? [];
+
+        return is_array($member) ? $member : [];
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function encodingSchema(array $schema, mixed $value): array
+    {
+        /** @var mixed $branches */
+        $branches = $schema['allOf'] ?? [];
+        if (!is_array($branches)) {
+            $branches = [];
+        }
+        if (is_array($value) && is_array($schema['dependentSchemas'] ?? null)) {
+            /** @var array<array-key, mixed> $dependentSchemas */
+            $dependentSchemas = $schema['dependentSchemas'];
+            foreach (array_keys($dependentSchemas) as $trigger) {
+                if (array_key_exists($trigger, $value)) {
+                    $branches = [...$branches, $dependentSchemas[$trigger]];
+                }
+            }
+        }
+        foreach ($branches as $branch) {
+            if (!is_array($branch)) {
+                continue;
+            }
+            $branch = $this->encodingSchema($this->schemaObject($branch, 'Applicator branch must be a schema object'), $value);
+            foreach (['type', 'items', 'prefixItems'] as $keyword) {
+                if (!array_key_exists($keyword, $schema) && array_key_exists($keyword, $branch)) {
+                    $schema = [...$schema, $keyword => $branch[$keyword]];
+                }
+            }
+            if (is_array($branch['properties'] ?? null)) {
+                $properties = $this->memberMap($schema['properties'] ?? [], 'Object properties must be an object');
+                $members = $this->memberMap($branch['properties'], 'Object properties must be an object');
+                $schema['properties'] = array_replace($properties, $members);
+            }
+        }
+
+        return $schema;
     }
 
     /**

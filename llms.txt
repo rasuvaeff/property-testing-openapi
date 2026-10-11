@@ -312,6 +312,15 @@ side from the base schema and `else`, each side filtered by the condition the
 contract's own `SchemaCheck` judges. Boolean subschemas are honoured; a side
 that admits nothing is dropped, and a conditional where neither side survives
 fails closed.
+Bounded tuple arrays use `prefixItems` position by position and `items` for
+the tail. `contains` uses an intersection of `items` and the contains schema
+so every emitted element is a witness, honoring `minContains`/`maxContains`.
+`unevaluatedItems` closes the tail when no `items` schema is present.
+`dependentRequired` and simple `dependentSchemas` enumerate trigger presence
+combinations and generate each branch constructively; `unevaluatedProperties`
+becomes the policy for undeclared members. `uniqueItems` with these applicators
+and complex conditional/union/pattern combinations fail closed as
+`UnsupportedGeneration`.
 A schema that refers to itself arrives from the contract as `$defs` plus a
 local `{$ref: '#/$defs/<name>'}` per reference back; the def unfolds three
 levels below the root and ends at a leaf that leaves the recursive member out

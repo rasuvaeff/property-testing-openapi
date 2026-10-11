@@ -28,6 +28,9 @@ final readonly class ContainerArbitraries
     /** @param array<string, mixed> $schema */
     public function array(array $schema): ArbitraryInterface
     {
+        if (array_key_exists('prefixItems', $schema) || array_key_exists('contains', $schema) || array_key_exists('unevaluatedItems', $schema)) {
+            return $this->extendedArray($schema);
+        }
         $items = $schema['items'] ?? null;
         if (!is_array($items) || array_is_list($items)) {
             throw UnsupportedGeneration::forSchema('array items must be a schema object');
@@ -59,6 +62,111 @@ final readonly class ContainerArbitraries
         }
 
         return Gen::uniqueArrayOf($element, $min, $max);
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function extendedArray(array $schema): ArbitraryInterface
+    {
+        if (($schema['uniqueItems'] ?? false) === true) {
+            throw UnsupportedGeneration::forSchema('uniqueItems with prefixItems, contains or unevaluatedItems is outside the constructive subset');
+        }
+        $prefix = $schema['prefixItems'] ?? [];
+        if (!is_array($prefix) || !array_is_list($prefix)) {
+            throw UnsupportedGeneration::forSchema('prefixItems must be a list of schemas');
+        }
+        $min = $this->facts->nonNegativeInt($schema, 'minItems', 0);
+        $max = min($this->facts->nonNegativeInt($schema, 'maxItems', self::MAX_COLLECTION_SIZE), self::MAX_COLLECTION_SIZE);
+        $tail = $this->subschema($schema['items'] ?? true, 'items');
+        $contains = array_key_exists('contains', $schema) ? $this->subschema($schema['contains'], 'contains') : null;
+        $unevaluated = array_key_exists('unevaluatedItems', $schema) ? $this->subschema($schema['unevaluatedItems'], 'unevaluatedItems') : true;
+        if ($contains !== null) {
+            if ($prefix !== []) {
+                throw UnsupportedGeneration::forSchema('contains combined with prefixItems is outside the constructive subset');
+            }
+            $min = max($min, $this->facts->nonNegativeInt($schema, 'minContains', 1));
+            $max = min($max, $this->facts->nonNegativeInt($schema, 'maxContains', self::MAX_COLLECTION_SIZE));
+            if ($contains === false || $tail === false) {
+                $max = 0;
+            }
+            // Every emitted element is a witness. This bounded subset avoids
+            // predicting which filler values fail the membership schema.
+            $tail = $this->intersection($tail, $contains);
+        } elseif (!array_key_exists('items', $schema)) {
+            $tail = $unevaluated;
+        }
+        if ($tail === false) {
+            $max = min($max, count($prefix));
+        }
+        $positions = [];
+        /** @var mixed $member */
+        foreach ($prefix as $index => $member) {
+            $position = $this->subschema($member, 'prefixItems');
+            if ($position === false) {
+                $max = min($max, $index);
+
+                break;
+            }
+            if ($index >= $max) {
+                break;
+            }
+            $positions[] = $this->compileSubschema($position);
+        }
+        if ($min > $max) {
+            throw UnsupportedGeneration::forSchema('array bounds cannot be met by the constructive prefixItems/contains subset');
+        }
+        $tailArbitrary = $tail === false ? null : $this->compileSubschema($tail);
+        $pairs = [];
+        for ($length = $min; $length <= $max; ++$length) {
+            $elements = array_slice($positions, 0, $length);
+            while (count($elements) < $length) {
+                if ($tailArbitrary === null) {
+                    throw new \LogicException('Closed tuple exceeds its prefix');
+                }
+                $elements[] = $tailArbitrary;
+            }
+            $pairs[] = [1, Gen::tuple(...$elements)];
+        }
+
+        return Gen::frequency($pairs);
+    }
+
+    /** @return bool|array<string, mixed> */
+    private function subschema(mixed $value, string $keyword): bool|array
+    {
+        return is_bool($value) ? $value : $this->facts->schemaObject($value, sprintf('%s must be a boolean or schema object', $keyword));
+    }
+
+    /** @param bool|array<string, mixed> $schema */
+    private function compileSubschema(bool|array $schema): ArbitraryInterface
+    {
+        if ($schema === false) {
+            /** @var ArbitraryInterface<mixed> $impossible */
+            $impossible = Gen::filter(Gen::constant(value: null), static fn(): bool => false);
+
+            return $impossible;
+        }
+
+        return $schema === true ? $this->additionalValue() : $this->compiler->compile($schema);
+    }
+
+    /**
+     * @param bool|array<string, mixed> $left
+     * @param bool|array<string, mixed> $right
+     * @return bool|array<string, mixed>
+     */
+    private function intersection(bool|array $left, bool|array $right): bool|array
+    {
+        if ($left === false || $right === false) {
+            return false;
+        }
+        if ($left === true || $left === []) {
+            return $right;
+        }
+        if ($right === true || $right === []) {
+            return $left;
+        }
+
+        return ['allOf' => [$left, $right]];
     }
 
     /**
@@ -93,8 +201,11 @@ final readonly class ContainerArbitraries
         };
     }
 
-    /** @param array<string, mixed> $schema */
-    public function object(array $schema): ArbitraryInterface
+    /**
+     * @param array<string, mixed> $schema
+     * @param list<string> $excluded
+     */
+    public function object(array $schema, array $excluded = []): ArbitraryInterface
     {
         $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
         $patterns = $this->facts->schemaObject($schema['patternProperties'] ?? [], 'patternProperties must be an object of schemas');
@@ -147,6 +258,13 @@ final readonly class ContainerArbitraries
         $omitted = $this->direction?->foreignFlag();
         /** @var array<array-key, true> $reserved */
         $reserved = [];
+        foreach ($excluded as $name) {
+            $reserved[$name] = true;
+            if (isset($requiredNames[$name])) {
+                throw UnsupportedGeneration::forSchema('dependent schema requires an inactive trigger');
+            }
+            unset($properties[$name]);
+        }
         /** @var array<string, true> $requiredNames */
         foreach ($properties as $name => $property) {
             if ($propertyNames !== null && !$this->matchesSchema($name, $propertyNames)) {
@@ -195,6 +313,9 @@ final readonly class ContainerArbitraries
         }
 
         $additional = $this->facts->additionalPropertiesSchema($schema);
+        if (!array_key_exists('additionalProperties', $schema) && array_key_exists('unevaluatedProperties', $schema)) {
+            $additional = $this->subschema($schema['unevaluatedProperties'], 'unevaluatedProperties');
+        }
         if ($additional === false && $patternArbitraries === [] && $minProperties > count($shape)) {
             throw UnsupportedGeneration::forSchema('minProperties requires additional properties, but additionalProperties is false');
         }

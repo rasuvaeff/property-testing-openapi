@@ -139,7 +139,8 @@ the same way.
 | `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed |
 | `$defs` + local `$ref` (`#/$defs/…`) — the contract's compiled form of a schema that refers to itself, a tree whose `children` are trees | supported; the def unfolds three levels below the root and ends at a leaf that leaves the recursive member out (an optional property omitted, an array that may be empty left empty, a branch of a choice skipped); a def whose only way down is a required member that is the def itself has no finite instance and fails closed; a `$ref` to anything but the schema's own `$defs` fails closed |
 | `if`/`then`/`else` (including boolean schemas and nested conditionals) | supported; values are constructed for both reachable branches and checked with the contract's `SchemaCheck`; an unsatisfiable branch is skipped, and a conditional with no producible branch fails closed |
-| `contains`, `prefixItems`, `unevaluatedProperties`, `dependentRequired`, `dependentSchemas`, `unevaluatedItems`, numeric `exclusiveMinimum`/`exclusiveMaximum`, other formats | fail closed as `UnsupportedGeneration` |
+| `prefixItems` with `items`/`minItems`/`maxItems`, `contains` with `minContains`/`maxContains`, `unevaluatedItems` | supported for bounded constructive arrays; `contains` emits matching elements by construction, while `prefixItems` emits each tuple position; combinations with `uniqueItems` or conflicting applicators fail closed |
+| `dependentRequired`, `dependentSchemas`, `unevaluatedProperties` | supported for bounded plain objects; presence combinations are built explicitly and closures become the additional-property policy; conditional/union/pattern combinations outside this subset fail closed |
 
 Every unsatisfiable combination the compiler can recognise is refused at
 compile time; what remains probabilistic (a `pattern` that rarely matches its

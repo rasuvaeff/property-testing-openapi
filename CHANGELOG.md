@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Added.** Bounded constructive generation for `prefixItems`/`contains`
+  (including `minContains`/`maxContains`), `dependentRequired`,
+  `dependentSchemas`, and `unevaluatedProperties`/`unevaluatedItems` (#157).
 - **Added.** Conditional schemas (`if`/`then`/`else`) are generated
   constructively, including boolean and nested branches. Each candidate is
   checked by `openapi-contract`'s `SchemaCheck`; unreachable branches are
