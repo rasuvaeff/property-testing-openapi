@@ -2750,6 +2750,93 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
+    public function anUnevaluatedKeywordClosesAnAllOfBranchItCannotSee(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+        $check = new SchemaCheck();
+
+        // `unevaluatedProperties` beside `allOf` closes the object: the merge
+        // has to carry it as a branch of its own, since a member no declared
+        // property answers is what it forbids.
+        $object = [
+            'allOf' => [
+                ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']], 'required' => ['id']],
+            ],
+            'unevaluatedProperties' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($object), count: 40, seed: 181) as $value) {
+            Assert::same(array_keys((array) $value), ['id']);
+            Assert::true($check->accepts((object) $value, $object, SchemaDialect::OpenApi31));
+        }
+
+        $array = [
+            'allOf' => [
+                ['type' => 'array', 'prefixItems' => [['type' => 'integer']], 'minItems' => 1],
+            ],
+            'unevaluatedItems' => false,
+        ];
+        foreach (Gen::sample($compiler->compile($array), count: 40, seed: 181) as $value) {
+            Assert::same($value, [$value[0]]);
+            Assert::true($check->accepts($value, $array, SchemaDialect::OpenApi31));
+        }
+
+        // Without the keyword the same object admits an undeclared member, so
+        // the two runs differ in the closure alone and not in anything the
+        // merge decided.
+        $open = [
+            'allOf' => [
+                ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']], 'minProperties' => 2],
+            ],
+        ];
+        $extras = 0;
+        foreach (Gen::sample($compiler->compile($open), count: 60, seed: 181) as $value) {
+            $extras += count($value) - 1;
+        }
+        Assert::true($extras > 0, 'a closed object was generated as an open one');
+
+        // An `allOf` sibling is refused by name: a member the branches do not
+        // mention cannot be closed after the fact.
+        foreach (['properties' => ['id' => ['type' => 'integer']], 'type' => 'object'] as $keyword => $value) {
+            Expect::exception(UnsupportedGeneration::class)
+                ->withMessage(sprintf('Unsupported OpenAPI schema generation: allOf with sibling keyword "%s" is outside the supported subset', $keyword));
+            $compiler->compile(['allOf' => [['type' => 'object']], $keyword => $value, 'description' => 'annotated']);
+        }
+
+        // A branch that closes the object on its own is refused too — the
+        // merge would have to decide which of the two closures wins.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: unevaluated keywords inside allOf branches are outside the constructive subset');
+        $compiler->compile(['allOf' => [['unevaluatedProperties' => false]], 'unevaluatedProperties' => false]);
+    }
+
+    public function anAllOfCannotMoveItemsAcrossASiblingTuple(): void
+    {
+        $compiler = new SchemaArbitraryCompiler();
+
+        // Two branches disagreeing about where the tuple ends cannot be
+        // merged into one array: the head of one is not the head of the other.
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: allOf items cannot be moved across sibling prefixItems');
+        $compiler->compile([
+            'allOf' => [
+                ['type' => 'array', 'prefixItems' => [['type' => 'integer'], ['type' => 'string']]],
+                ['items' => false],
+            ],
+        ]);
+
+        // Branches that agree keep the tuple, and the merged array answers it.
+        $check = new SchemaCheck();
+        $schema = [
+            'allOf' => [
+                ['type' => 'array', 'prefixItems' => [['type' => 'integer'], ['type' => 'string']], 'minItems' => 2, 'maxItems' => 2, 'unevaluatedItems' => false],
+            ],
+        ];
+        foreach (Gen::sample($compiler->compile($schema), count: 20, seed: 191) as $value) {
+            Assert::same($value, [$value[0], $value[1]]);
+            Assert::true($check->accepts($value, $schema, SchemaDialect::OpenApi31));
+        }
+    }
+
     public function everyRefusalMessageIsTheOneTheCallerIsShown(): void
     {
         $compiler = new SchemaArbitraryCompiler();
