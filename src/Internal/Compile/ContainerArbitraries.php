@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
-use Rasuvaeff\OpenApiContract\SchemaCheck;
-use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
@@ -323,7 +321,12 @@ final readonly class ContainerArbitraries
             throw UnsupportedGeneration::forSchema('propertyNames pattern must be a string');
         }
 
-        return (new SchemaCheck())->accepts($value, $schema, SchemaDialect::OpenApi31);
+        $result = preg_match('~' . $pattern . '~', $value);
+        if ($result === false) {
+            throw UnsupportedGeneration::forSchema('propertyNames pattern is not supported');
+        }
+
+        return $result === 1;
     }
 
     /** @return ArbitraryInterface<mixed> */
