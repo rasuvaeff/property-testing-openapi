@@ -439,6 +439,31 @@ final class SchemaArbitraryCompilerTest
         (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'pattern' => '(?=x)']);
     }
 
+    public function generatesPatternPropertiesAndConstrainedPropertyNames(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'minProperties' => 2,
+            'maxProperties' => 3,
+            'properties' => ['x-id' => ['type' => 'integer']],
+            'patternProperties' => [
+                '^x-' => ['type' => 'integer', 'minimum' => 1],
+            ],
+            'propertyNames' => ['pattern' => '^x-'],
+            'additionalProperties' => false,
+        ];
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 80, seed: 817);
+        foreach ($values as $value) {
+            Assert::true(is_array($value) && count($value) >= 2 && count($value) <= 3);
+            foreach ($value as $name => $member) {
+                Assert::true(is_string($name) && preg_match('/^x-/', $name) === 1);
+                if (str_starts_with($name, 'x-')) {
+                    Assert::true(is_int($member) && $member >= 1);
+                }
+            }
+        }
+    }
+
     public function rejectsUnknownFormats(): void
     {
         Expect::exception(UnsupportedGeneration::class);
@@ -457,7 +482,7 @@ final class SchemaArbitraryCompilerTest
     /** @return iterable<string, array{string}> */
     public static function unsupportedKeywordCases(): iterable
     {
-        foreach (['allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'contains', 'prefixItems', 'patternProperties', 'propertyNames', 'unevaluatedProperties'] as $keyword) {
+        foreach (['allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'contains', 'prefixItems', 'unevaluatedProperties', 'dependentRequired', 'dependentSchemas', 'unevaluatedItems'] as $keyword) {
             yield $keyword => [$keyword];
         }
     }
