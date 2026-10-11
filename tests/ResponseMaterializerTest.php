@@ -319,23 +319,32 @@ final class ResponseMaterializerTest
     #[DataProvider('unresolvableReferences')]
     public function anUnresolvableReferenceIsRefused(array $schema, string $reason): void
     {
-        Expect::exception(InvalidCase::class);
+        Expect::exception(InvalidCase::class)->withMessage($reason);
         (new JsonBodyEncoder())->encode(['k' => []], [...$schema, 'type' => 'object']);
     }
 
     /** @return iterable<string, array{array<string, mixed>, string}> */
     public static function unresolvableReferences(): iterable
     {
-        yield 'a remote pointer' => [['$ref' => 'other.json#/$defs/node'], 'not local'];
-        yield 'a non-string pointer' => [['$ref' => 42], 'not local'];
-        yield 'another root' => [['$ref' => '#/definitions/node'], 'not local'];
+        yield 'a remote pointer' => [
+            ['$ref' => 'other.json#/$defs/node'],
+            'Schema $ref must be a local reference into $defs',
+        ];
+        yield 'a non-string pointer' => [
+            ['$ref' => 42],
+            'Schema $ref must be a local reference into $defs',
+        ];
+        yield 'another root' => [
+            ['$ref' => '#/definitions/node'],
+            'Schema $ref must be a local reference into $defs',
+        ];
         yield 'an absent member' => [
             ['$defs' => ['node' => ['type' => 'object']], '$ref' => '#/$defs/missing'],
-            'names no $defs member',
+            'Schema $ref "#/$defs/missing" names no $defs member',
         ];
         yield 'a defs that is a list' => [
             ['$defs' => [['type' => 'object']], '$ref' => '#/$defs/node'],
-            'names no $defs member',
+            'Schema $defs must be an object',
         ];
     }
 
