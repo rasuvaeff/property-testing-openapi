@@ -43,7 +43,7 @@ final class SchemaRefusalMessagesTest
             return;
         }
 
-        Assert::true(false, 'the schema was compiled');
+        Assert::true(actual: false, message: 'the schema was compiled');
     }
 
     public static function refusalProvider(): iterable
