@@ -11,14 +11,62 @@ use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\CallableTransport;
+use Rasuvaeff\PropertyTesting\OpenApi\CheckFailed;
+use Rasuvaeff\PropertyTesting\OpenApi\ContractSuite;
+use Rasuvaeff\PropertyTesting\OpenApi\CoverageIncomplete;
+use Rasuvaeff\PropertyTesting\OpenApi\CoverageReport;
+use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
+use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
+use Rasuvaeff\PropertyTesting\OpenApi\DocumentExamples;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Definitions;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\DirectionalSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\LazyPhpRedisCorpusClient;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\FormatRefusal;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RedisDsn;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
+use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\OpenApiOperations;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationCoverage;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationProperty;
+use Rasuvaeff\PropertyTesting\OpenApi\OperationPropertyFailed;
+use Rasuvaeff\PropertyTesting\OpenApi\Psr15Transport;
+use Rasuvaeff\PropertyTesting\OpenApi\RedactionPolicy;
+use Rasuvaeff\PropertyTesting\OpenApi\RejectionPolicy;
+use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
+use Rasuvaeff\PropertyTesting\OpenApi\RequestReproducer;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
+use Rasuvaeff\PropertyTesting\OpenApi\SecurityRequirement;
+use Rasuvaeff\PropertyTesting\OpenApi\SecuritySelector;
+use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Random;
 use Testo\Assert;
@@ -35,6 +83,56 @@ use Testo\Test;
 #[Covers(ScalarArbitraries::class)]
 #[Covers(SchemaFacts::class)]
 #[Covers(UnsupportedGeneration::class)]
+#[Covers(BodyTargets::class)]
+#[Covers(CallableTransport::class)]
+#[Covers(CaseShape::class)]
+#[Covers(CheckFailed::class)]
+#[Covers(ConstructibleCategories::class)]
+#[Covers(ContractSuite::class)]
+#[Covers(CorpusFromEnv::class)]
+#[Covers(CoverageIncomplete::class)]
+#[Covers(CoverageReport::class)]
+#[Covers(Credentials::class)]
+#[Covers(CredentialsUnavailable::class)]
+#[Covers(DirectionalSchemas::class)]
+#[Covers(DocumentExamples::class)]
+#[Covers(FormatRefusal::class)]
+#[Covers(InvalidCase::class)]
+#[Covers(JsonBodyEncoder::class)]
+#[Covers(JsonBodyWitness::class)]
+#[Covers(LazyPhpRedisCorpusClient::class)]
+#[Covers(MediaType::class)]
+#[Covers(MultipartParser::class)]
+#[Covers(NegativeRequestCaseArbitrary::class)]
+#[Covers(NegativeResponseCaseArbitrary::class)]
+#[Covers(OpenApiOperations::class)]
+#[Covers(OperationCoverage::class)]
+#[Covers(OperationProperty::class)]
+#[Covers(OperationPropertyFailed::class)]
+#[Covers(ParameterSchemas::class)]
+#[Covers(ParameterSerializer::class)]
+#[Covers(ParameterTargets::class)]
+#[Covers(PatternWitness::class)]
+#[Covers(Psr15Transport::class)]
+#[Covers(RedactionPolicy::class)]
+#[Covers(RedisDsn::class)]
+#[Covers(RejectionPolicy::class)]
+#[Covers(RequestCaseArbitrary::class)]
+#[Covers(RequestMaterializer::class)]
+#[Covers(RequestReproducer::class)]
+#[Covers(RequestSchemas::class)]
+#[Covers(ResponseCaseArbitrary::class)]
+#[Covers(ResponseMaterializer::class)]
+#[Covers(ResponseSchemas::class)]
+#[Covers(ResponseTargets::class)]
+#[Covers(SchemaProbe::class)]
+#[Covers(SchemaShape::class)]
+#[Covers(SecurityRequirement::class)]
+#[Covers(SecuritySelector::class)]
+#[Covers(SuiteConfigurationError::class)]
+#[Covers(Unproducible::class)]
+#[Covers(WireValue::class)]
+#[Covers(WitnessCheck::class)]
 final class SchemaArbitraryCompilerTest
 {
     public function generatesBoundedObjectsDeterministically(): void

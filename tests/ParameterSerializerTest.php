@@ -236,4 +236,11 @@ final class ParameterSerializerTest
         yield 'deep list' => [['value'], 'deepObject'];
         yield 'object non-string value' => [['key' => 42], 'simple'];
     }
+
+    public function aNonSimpleStyleCannotBeEmittedVerbatim(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Only the simple style is emitted verbatim, not "form"');
+
+        (new ParameterSerializer())->serialize('p', 'v', 'form', true, percentEncoded: false);
+    }
 }
