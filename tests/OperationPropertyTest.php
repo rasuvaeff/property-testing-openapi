@@ -67,6 +67,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\SuiteConfigurationError;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 
 #[Test]
@@ -498,6 +499,33 @@ final class OperationPropertyTest
             putenv('PROPERTY_DB');
             $this->removeDirectory($directory);
         }
+    }
+
+    public function refusesARunBudgetBelowOne(): void
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessage('Runs must be greater than or equal to 1');
+
+        OperationProperty::check($this->suite(static fn(): Response => new Response(204)), 'pets.get', runs: 0);
+    }
+
+    /** A well-formed `PROPERTY_SEED` is read as the integer seed. */
+    public function acceptsANumericSeedFromTheEnvironment(): void
+    {
+        $calls = 0;
+        $suite = $this->suite(static function () use (&$calls): Response {
+            ++$calls;
+
+            return new Response(204);
+        });
+        putenv('PROPERTY_SEED=-7');
+
+        try {
+            OperationProperty::check($suite, 'pets.get', runs: 2);
+        } finally {
+            putenv('PROPERTY_SEED');
+        }
+
+        Assert::true($calls >= 2);
     }
 
     public function enumeratesTheSuiteSelectionAsNamedTuples(): void

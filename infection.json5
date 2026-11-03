@@ -37,6 +37,12 @@
     "minMsi": 91,
     "mutators": {
         "@default": true,
+        // A thin adapter over ext-redis that connects on first use: the mutation job installs
+        // neither the extension nor a server, so its mutants are Not Covered by construction.
+        // RedisCorpus itself is exercised through property-testing-core. Measured 2026-11-03: 3.
+        "global-ignore": [
+            "Rasuvaeff\\PropertyTesting\\OpenApi\\Internal\\LazyPhpRedisCorpusClient"
+        ],
         // Constructor/method parameter declarations with a default value
         // (`private int $x = 100,`, `bool $strict = false,`): the mutant sits on a
         // signature line with no executable opcode under pcov, so it is reported Not
@@ -47,7 +53,11 @@
         // bulkhead 6, circuit-breaker 13, json-ld 19 mutants removed, all of them
         // such signature lines; Escaped and Timed Out unchanged.
         "global-ignoreSourceCodeByRegex": [
-            "(?:(?:private|protected|public|readonly)\\s+)*\\??[A-Za-z_\\\\][\\w\\\\|]*\\s+\\$\\w+\\s*=\\s*[^,;]+,"
+            "(?:(?:private|protected|public|readonly)\\s+)*\\??[A-Za-z_\\\\][\\w\\\\|]*\\s+\\$\\w+\\s*=\\s*[^,;]+,",
+            // The same signature-line defaults when the whole signature fits on one line
+            // (`public function x(int $a = 0): T`) — no executable opcode, Not Covered whatever
+            // the tests do. Measured 2026-11-03: 12 mutants. Same rule as property-testing-core.
+            "(?:(?:public|private|protected)\\s+)?(?:static\\s+)?function\\s+\\w+\\(.*\\$\\w+\\s*=.*\\)(?:\\s*:\\s*[^{;]+)?"
         ],
         // Off: with --with-uncovered a PublicVisibility mutant sits on a parameterless
         // method's signature line, which has no executable opcode under pcov/xdebug,

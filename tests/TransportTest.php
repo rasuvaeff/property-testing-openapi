@@ -360,7 +360,41 @@ final class TransportTest
         return $stream;
     }
 
-    /** @return RequestHandlerInterface&object{request: null|ServerRequestInterface} */
+    public function callableTransportRefusesACallableThatReturnsNoResponse(): void
+    {
+        Expect::exception(\UnexpectedValueException::class)->withMessage(sprintf('Transport callable must return %s, got string', ResponseInterface::class));
+
+        (new CallableTransport(static fn(): string => 'not a response'))->send((new Psr17Factory())->createRequest('GET', '/'));
+    }
+
+    /**
+     * A numeric header name arrives as an integer key; it is passed over and
+     * the headers after it still reach the handler.
+     */
+    public function psr15TransportKeepsTheHeadersAfterANumericName(): void
+    {
+        $factory = new Psr17Factory();
+        $handler = $this->recorder();
+        $request = $factory->createRequest('GET', '/')->withHeader('123', 'n')->withHeader('X-After', 'kept');
+
+        (new Psr15Transport($handler, $factory))->send($request);
+
+        Assert::instanceOf($handler->request, ServerRequestInterface::class);
+        Assert::same($handler->request->getHeaderLine('X-After'), 'kept');
+    }
+
+    /** A cookie value keeps every `=` after the first, as the SAPI reads it. */
+    public function psr15TransportKeepsEqualsSignsInACookieValue(): void
+    {
+        $factory = new Psr17Factory();
+        $handler = $this->recorder();
+
+        (new Psr15Transport($handler, $factory))->send($factory->createRequest('GET', '/')->withHeader('Cookie', 'token=a=b=c'));
+
+        Assert::instanceOf($handler->request, ServerRequestInterface::class);
+        Assert::same($handler->request->getCookieParams(), ['token' => 'a=b=c']);
+    }
+
     private function recorder(): RequestHandlerInterface
     {
         return new class implements RequestHandlerInterface {
