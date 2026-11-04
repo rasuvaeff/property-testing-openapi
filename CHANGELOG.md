@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Fixed.** A decimal `multipleOf` on a `number` no longer generates a value
+  above `maximum` near the precision limit: the bound past which the schema is
+  refused is now 15 significant digits (`|bound| × 10^decimals > 10^15`), not
+  2^53, and the generated indices are clamped to the bounds after rounding to
+  the decimal, so a bound one bit off a multiple (`maximum: 3070.7999999999997`
+  over `multipleOf: 0.3`) is respected too (#145). Schemas between the two
+  limits, which produced invalid cases, are now refused by name.
+- **Fixed.** `not: {type: object}` no longer lets an empty object through, and
+  `not: {type: array}` no longer drops one: `[]` takes its type from the
+  schema that produced it (#146).
+
 ## 0.19.0 — 2026-10-11
 
 - **Added.** Bounded constructive generation for `prefixItems`/`contains`
