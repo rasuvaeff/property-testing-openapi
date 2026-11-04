@@ -94,6 +94,9 @@ final class JsonBodyWitnessTest
             'type',
             [['name' => 'b', 'invalid' => 'not-a-integer']],
         ];
+        // Neither member admits the marker, but the union is not one type: a
+        // witness for it would break whichever member the reader picks.
+        yield 'a union of two non-string types is skipped too' => [['a' => ['type' => ['integer', 'boolean']]], 'type', []];
         yield 'a string property is contradicted by a number' => [
             ['a' => ['type' => 'string']],
             'type',
@@ -123,6 +126,20 @@ final class JsonBodyWitnessTest
             [['name' => 'a', 'invalid' => 'fixed__openapi_misuse__']],
         ];
         yield 'a non-scalar const is no const' => [['a' => ['type' => 'object', 'const' => ['x' => 1]]], 'const', []];
+        yield 'an untyped list const is no const' => [['a' => ['const' => [1, 2]]], 'const', []];
+        // `0` and `-1` break the minimum as well; the search goes on to `7`.
+        yield 'an enum witness is searched past the first alternative' => [
+            ['a' => ['type' => 'integer', 'enum' => [1, 2], 'minimum' => 1]],
+            'enum',
+            [['name' => 'a', 'invalid' => 7]],
+        ];
+        yield 'an untyped item bound is not contradicted' => [['a' => ['maxItems' => 1]], 'length', []];
+        // `aa` breaks the pattern as well; the long side is the one offered.
+        yield 'a string length witness is searched past the first bound' => [
+            ['a' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 5, 'pattern' => '^a{3,}$']],
+            'length',
+            [['name' => 'a', 'invalid' => 'aaaaaa']],
+        ];
         yield 'a null const is contradicted by the marker' => [
             ['a' => ['const' => null]],
             'const',
@@ -159,6 +176,7 @@ final class JsonBodyWitnessTest
             [['name' => 'a', 'invalid' => ['', '']]],
         ];
         yield 'no item bound at all' => [['type' => 'array', 'items' => $items], []];
+        yield 'no items schema takes the null filler' => [['type' => 'array', 'maxItems' => 1], [['name' => 'a', 'invalid' => [null, null]]]];
         yield 'a non-integer bound is ignored' => [['type' => 'array', 'maxItems' => '2', 'items' => $items], []];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\FormatRefusal;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -65,6 +66,10 @@ final class SchemaProbeTest
         // The float candidate is skipped and the search carries on to the
         // integer one rather than stopping at the first unusable bound.
         yield 'a float minimum under an integer type does not end the search' => [['type' => 'integer', 'minimum' => 0.5, 'maximum' => 9], [10]];
+        // Past 2^53 a float has no neighbour one away: `min - 1.0 == min`, so
+        // the only candidate would be the bound itself, which the schema admits.
+        yield 'a float minimum too large to step below offers nothing' => [['type' => 'number', 'minimum' => -1.0e20], []];
+        yield 'a float maximum too large to step above offers nothing' => [['type' => 'number', 'maximum' => 1.0e20], []];
     }
 
     #[DataProvider('outOfLengthProvider')]
@@ -136,6 +141,9 @@ final class SchemaProbeTest
         yield 'maxLength 0 admits only the empty string' => [['type' => 'string', 'maxLength' => 0], [], ['']];
         yield 'a forbidden string is dropped' => [['type' => 'string', 'maxLength' => 1], ['a'], ['z']];
         yield 'an untyped schema is treated as a string' => [['maxLength' => 1], [], ['a', 'z']];
+        // An enum member is forbidden by value, not by PHP type: `1` and `1.0`
+        // are the same JSON number.
+        yield 'a number forbidden as an integer is still forbidden' => [['type' => 'number'], [1], [0.0, -1.0, 2.0, 7.0, 42.0, -99.0]];
     }
 
     /**
@@ -178,5 +186,22 @@ final class SchemaProbeTest
         yield 'none declared' => [['type' => 'string'], null];
         yield 'empty' => [['type' => 'string', 'format' => ''], null];
         yield 'not a string' => [['type' => 'string', 'format' => 7], null];
+    }
+
+    #[DataProvider('formatRefusalProvider')]
+    public function aFormatRefusalNamesItsCause(array $schema, ?FormatRefusal $expected): void
+    {
+        Assert::same($this->probe->formatRefusal($schema), $expected);
+    }
+
+    public static function formatRefusalProvider(): iterable
+    {
+        yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
+        yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], FormatRefusal::Unsupported];
+        yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
+        yield 'supported format without a type' => [['format' => 'date'], FormatRefusal::NotAString];
+        yield 'no refusal' => [['type' => 'string', 'format' => 'email'], null];
+        yield 'no refusal under a type union' => [['type' => ['string', 'null'], 'format' => 'uuid'], null];
     }
 }

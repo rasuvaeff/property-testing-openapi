@@ -134,6 +134,7 @@ final class ParameterSchemasTest
         // Malformed members are not ours to repair: the compiler fails closed
         // on them with a message about what it actually found.
         yield 'malformed member passes through' => [['type' => [1, 'null']], [1, 'null']];
+        yield 'a leading null member is dropped as well' => [['type' => ['null', 'string']], 'string'];
     }
 
     public function failsClosedOnATypeUnionOfNullAlone(): void
@@ -315,5 +316,47 @@ final class ParameterSchemasTest
         Assert::false($schemas->isPathSafe(['a', 'b/c']));
         Assert::false($schemas->isPathSafe(['k/' => 'v']));
         Assert::false($schemas->isPathSafe(['k' => '']));
+    }
+
+    /** The rewrite touches the type union and nothing else beside it. */
+    public function aTypeUnionRewriteKeepsEveryOtherKeyword(): void
+    {
+        $schemas = new ParameterSchemas();
+
+        Assert::same($schemas->forLocation(['type' => ['string', 'null'], 'maxLength' => 3], 'query'), ['type' => 'string', 'maxLength' => 3]);
+        Assert::same($schemas->forLocation(['type' => [1, 'null'], 'minimum' => 1], 'query'), ['type' => [1, 'null'], 'minimum' => 1]);
+    }
+
+    /** Each applicator is visited on its own, whether or not the ones before it are declared. */
+    public function rewritesAnApplicatorDeclaredAlone(): void
+    {
+        $schemas = new ParameterSchemas();
+
+        Assert::same($schemas->forLocation(['anyOf' => [['type' => 'string', 'nullable' => true]]], 'query'), ['anyOf' => [['type' => 'string']]]);
+        Assert::same($schemas->forLocation(['oneOf' => [['type' => 'string', 'nullable' => true]]], 'query'), ['oneOf' => [['type' => 'string']]]);
+    }
+
+    public function aDelimitedConstWithoutTheSeparatorIsKept(): void
+    {
+        $schema = ['type' => 'array', 'items' => ['type' => 'string', 'const' => 'ab']];
+
+        Assert::same((new ParameterSchemas())->forLocation($schema, 'query', 'spaceDelimited'), $schema);
+    }
+
+    public function judgesSeparatorSafetyOfEveryStringInAValue(): void
+    {
+        $schemas = new ParameterSchemas();
+
+        Assert::true($schemas->isSeparatorSafe('ab', ' '));
+        Assert::true($schemas->isSeparatorSafe(42, ' '));
+        Assert::true($schemas->isSeparatorSafe(null, ' '));
+        Assert::true($schemas->isSeparatorSafe(['a', 'b'], ' '));
+        Assert::true($schemas->isSeparatorSafe(['k' => 'v', 'n' => 1], '|'));
+        Assert::true($schemas->isSeparatorSafe([], ' '));
+        Assert::false($schemas->isSeparatorSafe('a b', ' '));
+        Assert::false($schemas->isSeparatorSafe(['a', 'b c'], ' '));
+        Assert::false($schemas->isSeparatorSafe(['k|' => 'v'], '|'));
+        Assert::false($schemas->isSeparatorSafe(['k' => 'v|w'], '|'));
+        Assert::false($schemas->isSeparatorSafe(['outer' => ['inner' => 'a b']], ' '));
     }
 }

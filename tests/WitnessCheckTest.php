@@ -75,6 +75,9 @@ final class WitnessCheckTest
         yield 'array of nulls also breaks items' => [['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'integer']], 'length', [null, null, null], false];
         yield 'a schema the dialect cannot read fails closed' => [['type' => 'string', 'nullable' => true, 'maxLength' => 3], 'length', 'aaaa', false];
         yield 'a value that satisfies the schema is no witness' => [['type' => 'integer', 'maximum' => 9], 'boundary', 5, false];
+        // A boolean is judged as a boolean, not as the `null` an unknown value
+        // turns into: `true` breaks only the const, `null` would break the type.
+        yield 'a boolean witness keeps its type' => [['type' => 'boolean', 'const' => false], 'const', true, true];
     }
 
     /**
@@ -274,5 +277,46 @@ final class WitnessCheckTest
         $item = ['tags' => ['a'], 'meta' => ['k' => 'v']];
 
         Assert::true($this->check->discriminates([$item, $item], $schema, 'length', SchemaDialect::OpenApi31, SchemaDirection::Request));
+    }
+
+    /**
+     * A parameter target is refused, not invented, where no candidate earns
+     * the category: a union admits every member's values, and a non-scalar
+     * const has no marker that contradicts it alone.
+     */
+    #[DataProvider('refusedParameterProvider')]
+    public function aParameterWithoutAProvableWitnessIsRefused(array $schema, string $method, string $message): void
+    {
+        try {
+            (new ParameterTargets())->{$method}($this->queryOperation($schema));
+        } catch (UnsupportedGeneration $exception) {
+            Assert::same($exception->getMessage(), $message);
+
+            return;
+        }
+
+        Assert::true(actual: false, message: 'Expected the category to be refused');
+    }
+
+    public static function refusedParameterProvider(): iterable
+    {
+        yield 'a type union' => [['type' => ['integer', 'boolean']], 'typeMismatch', 'Operation "op" has no scalar parameter with a constructible type mismatch'];
+        yield 'an untyped list const' => [['const' => ['a']], 'constMismatch', 'Operation "op" has no scalar parameter with a constructible const mismatch'];
+    }
+
+    /** Every typed alternative is offered, not only the first: here `0` and `-1` break the minimum too. */
+    public function anEnumWitnessIsSearchedPastTheFirstAlternative(): void
+    {
+        $targets = (new ParameterTargets())->enumMismatch($this->queryOperation(['type' => 'integer', 'enum' => [1, 2], 'minimum' => 1]));
+
+        Assert::same($targets, [['location' => 'query', 'name' => 'p', 'invalid' => '7']]);
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function queryOperation(array $schema): Operation
+    {
+        return new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
+            ['name' => 'p', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => $schema, 'specPointer' => '#/p'],
+        ]);
     }
 }

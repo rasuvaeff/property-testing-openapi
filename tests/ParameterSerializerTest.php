@@ -153,6 +153,15 @@ final class ParameterSerializerTest
         Assert::same($serializer->serialize('value', ['a/b', 'c?d'], 'simple', explode: false, allowReserved: true), 'a/b,c?d');
     }
 
+    /**
+     * Only the characters a style separates with stay encoded; the reserved
+     * characters after them in the table are still handed back raw.
+     */
+    public function keepsOnlyTheStyleSeparatorEncodedUnderAllowReserved(): void
+    {
+        Assert::same((new ParameterSerializer())->serialize('value', 'a,b;c', 'simple', explode: false, allowReserved: true), 'a%2Cb;c');
+    }
+
     public function keepsQueryDelimitersEncodedWhenAllowReservedIsEnabled(): void
     {
         $serializer = new ParameterSerializer();
@@ -235,5 +244,12 @@ final class ParameterSerializerTest
         yield 'deep scalar' => ['value', 'deepObject'];
         yield 'deep list' => [['value'], 'deepObject'];
         yield 'object non-string value' => [['key' => 42], 'simple'];
+    }
+
+    public function aNonSimpleStyleCannotBeEmittedVerbatim(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Only the simple style is emitted verbatim, not "form"');
+
+        (new ParameterSerializer())->serialize('p', 'v', 'form', explode: true, percentEncoded: false);
     }
 }

@@ -49,6 +49,15 @@ final class PatternWitnessTest
         Assert::null((new PatternWitness())->search('^([ab]{4}|.)$', 1, 1));
     }
 
+    /**
+     * A pattern outside the generator's subset contributes no mutation
+     * candidates; one that accepts every alphabet sample then has no witness.
+     */
+    public function refusesAnAcceptAllPatternOutsideTheGeneratorSubset(): void
+    {
+        Assert::null((new PatternWitness())->search('(?=)', 0, SchemaProbe::MAX_CONSTRUCTED_LENGTH));
+    }
+
     public function refusesAPatternTheBackendWouldReject(): void
     {
         Assert::null((new PatternWitness())->search('a\Z', 0, SchemaProbe::MAX_CONSTRUCTED_LENGTH));

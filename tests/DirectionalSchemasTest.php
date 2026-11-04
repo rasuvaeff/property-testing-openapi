@@ -106,4 +106,13 @@ final class DirectionalSchemasTest
         Assert::same($schemas->value(['k' => 'v'], ['type' => 'object']), ['k' => 'v']);
         Assert::same($schemas->value(['1' => 'a', '2' => 'b'], ['properties' => ['1' => ['readOnly' => true]]]), [2 => 'b']);
     }
+
+    /** Only `readOnly: true` owns a member; a truthy non-boolean flag does not. */
+    public function aTruthyFlagIsNotTheFlag(): void
+    {
+        Assert::same(
+            (new RequestSchemas())->value(['a' => 1, 'b' => 2], ['properties' => ['a' => ['readOnly' => 1], 'b' => ['readOnly' => true]]]),
+            ['a' => 1],
+        );
+    }
 }

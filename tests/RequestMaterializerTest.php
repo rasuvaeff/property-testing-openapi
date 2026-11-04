@@ -772,6 +772,52 @@ final class RequestMaterializerTest
         );
     }
 
+    public function rejectsARawBodyValueThatIsNotAString(): void
+    {
+        Expect::exception(InvalidCase::class)->withMessage('Raw request body value must be a string');
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['text/plain' => ['schema' => ['type' => 'string']]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'text/plain', 'encoding' => 'raw', 'value' => 5]),
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<array-key, mixed> $encoding
+     */
+    #[DataProvider('malformedFormBodyProvider')]
+    public function refusesAMalformedFormBodyByName(array $schema, mixed $value, array $encoding, string $exception, string $message): void
+    {
+        Expect::exception($exception)->withMessage($message);
+
+        $factory = new Psr17Factory();
+        (new RequestMaterializer($factory, $factory))->materialize(
+            $this->bodyOperation(['content' => ['application/x-www-form-urlencoded' => ['schema' => $schema, 'encoding' => $encoding]]]),
+            $this->bodyCase('body.test', ['mediaType' => 'application/x-www-form-urlencoded', 'encoding' => 'form', 'value' => $value]),
+        );
+    }
+
+    public static function malformedFormBodyProvider(): iterable
+    {
+        $object = ['type' => 'object', 'properties' => ['a' => ['type' => 'string'], 'tags' => ['type' => 'array', 'items' => ['type' => 'string']], 'o' => ['type' => 'object', 'properties' => ['k' => ['type' => 'string']]]]];
+
+        yield 'value not an array' => [$object, 'text', [], InvalidCase::class, 'Form request body value must be an object'];
+        yield 'schema not an object' => [['type' => 'string'], ['a' => 'x'], [], InvalidCase::class, 'Form request body value must be an object'];
+        yield 'value a list' => [$object, ['x', 'y'], [], InvalidCase::class, 'Form request body value must be an object'];
+        yield 'integer-like keys out of order' => [$object, [5 => 'x', 3 => 'y'], [], InvalidCase::class, 'Form object keys must be strings'];
+        yield 'unsupported style' => [$object, ['a' => 'x'], ['a' => ['style' => 'deepObject']], UnsupportedGeneration::class, 'Unsupported form encoding for property "a"'];
+        yield 'non-boolean explode' => [$object, ['a' => 'x'], ['a' => ['explode' => 'yes']], UnsupportedGeneration::class, 'Unsupported form encoding for property "a"'];
+        yield 'array property not a list' => [$object, ['tags' => ['k' => 'v']], [], InvalidCase::class, 'Form array value must be a list'];
+        yield 'object property not an object' => [$object, ['o' => 'text'], [], InvalidCase::class, 'Form object value must be an object'];
+        yield 'object property a list' => [$object, ['o' => ['x']], [], InvalidCase::class, 'Form object value must be an object'];
+        yield 'properties not an object' => [['type' => 'object', 'properties' => 'x'], ['a' => 'x'], [], InvalidCase::class, 'Form object properties must be an object'];
+        yield 'properties a list' => [['type' => 'object', 'properties' => ['x']], ['a' => 'x'], [], InvalidCase::class, 'Form object properties must be an object'];
+        yield 'property schema not an object' => [['type' => 'object', 'properties' => ['a' => 'x']], ['a' => 'x'], [], InvalidCase::class, 'Form object property must be a schema object'];
+        yield 'property schema a list' => [['type' => 'object', 'properties' => ['a' => ['x']]], ['a' => 'x'], [], InvalidCase::class, 'Form object property must be a schema object'];
+    }
+
     /** @param array<array-key, mixed> $requestBody */
     private function bodyOperation(array $requestBody): Operation
     {

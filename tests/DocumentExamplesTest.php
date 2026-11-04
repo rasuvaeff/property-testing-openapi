@@ -40,6 +40,37 @@ final class DocumentExamplesTest
         (new RequestCaseArbitrary())->forOperation($operation);
     }
 
+    /**
+     * Without an example nothing is drawn at all, so a document whose valid
+     * base cannot be generated still has an empty example set rather than a
+     * refusal.
+     */
+    public function anUngeneratableOperationWithoutExamplesHasNoCases(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op/{id}', parameters: [
+            ['name' => 'id', 'in' => 'path', 'required' => true, 'style' => 'simple', 'explode' => false, 'allowReserved' => false, 'schema' => ['not' => ['minimum' => 1]], 'specPointer' => '#/id'],
+        ]);
+
+        Assert::same((new DocumentExamples())->forOperation($operation), []);
+    }
+
+    /**
+     * A `false` schema admits no example, but the entries after it are still
+     * read: their example reaches the valid base, which refuses the body by
+     * name, instead of the example set coming back silently empty.
+     */
+    public function aFalseSchemaDoesNotHideALaterExample(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['content' => [
+            'application/json' => ['schema' => false],
+            'application/vnd.op+json' => ['schema' => ['type' => 'object'], 'example' => ['a' => 2]],
+        ]]);
+
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body "application/json" declares the false schema, which admits no value');
+
+        (new DocumentExamples())->forOperation($operation);
+    }
+
     public function namedExamplesAloneProduceNoUnnamedCase(): void
     {
         $contract = Contract::fromArray([
