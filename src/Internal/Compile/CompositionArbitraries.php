@@ -227,7 +227,9 @@ final readonly class CompositionArbitraries
             throw UnsupportedGeneration::forSchema('not excludes every enum value');
         }
 
-        return Gen::filter($source, fn(mixed $value): bool => !$this->matchesNot($value, $forbidden));
+        $emptyTypes = $this->emptyContainerTypes($schema);
+
+        return Gen::filter($source, fn(mixed $value): bool => !$this->matchesNot($value, $forbidden, $emptyTypes));
     }
 
     /** @param array<string, mixed> $schema */
@@ -304,8 +306,38 @@ final readonly class CompositionArbitraries
         return true;
     }
 
-    /** @param array<string, mixed> $schema */
-    private function matchesNot(mixed $value, array $schema): bool
+    /**
+     * The types an empty PHP array may stand for under the source schema.
+     *
+     * `[]` is both the empty array and the empty object, so its type comes
+     * from the schema that produced it, not from the value (#146). A source
+     * that declares only one of the two settles it; otherwise both count.
+     *
+     * @param array<string, mixed> $schema
+     * @return list<string>
+     */
+    private function emptyContainerTypes(array $schema): array
+    {
+        $declared = $this->facts->types($schema['type'] ?? null) ?? match (true) {
+            array_key_exists('properties', $schema) => ['object'],
+            array_key_exists('items', $schema) => ['array'],
+            default => [],
+        };
+        $array = in_array('array', $declared, strict: true);
+        $object = in_array('object', $declared, strict: true);
+
+        return match (true) {
+            $array && !$object => ['array'],
+            $object && !$array => ['object'],
+            default => ['array', 'object'],
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param list<string> $emptyTypes
+     */
+    private function matchesNot(mixed $value, array $schema, array $emptyTypes): bool
     {
         if (array_key_exists('const', $schema)) {
             return $value === $schema['const'];
@@ -325,7 +357,7 @@ final readonly class CompositionArbitraries
             throw new \LogicException('not predicate has no supported assertion');
         }
         foreach ($types as $type) {
-            if ($this->valueType($value) === $type || ($type === 'number' && is_int($value))) {
+            if ($value === [] ? in_array($type, $emptyTypes, strict: true) : ($this->valueType($value) === $type || ($type === 'number' && is_int($value)))) {
                 return true;
             }
         }

@@ -262,15 +262,32 @@ final readonly class ScalarArbitraries
 
         $decimals = $this->decimals((float) $multiple);
         // `round($k * $m, $decimals)` is the decimal multiple it means only
-        // while `$k * $m` needs no more significant digits than a double
-        // holds; past 2^53 / 10^decimals the rounding can land on a
-        // neighbouring decimal that is no multiple, and the contract says so.
-        // Refused here rather than discovered on a rejected case (#133). A
-        // multiple that divides one (`1`, `0.5`, `0.25`) is exempt: every
-        // double past 2^53 is an integer, and an integer is a multiple of it.
+        // while `$k * $m` needs no more than the PHP_FLOAT_DIG significant
+        // digits every double spells back exactly. 2^53 is not that limit:
+        // between 10^15 and 2^53 adjacent doubles sit more than one unit of
+        // the last decimal apart, and `round()` lands on a neighbour, past
+        // `maximum` (850000000000000.1 for 8.5e14, #145) or on a decimal that
+        // is no multiple (#133). Refused here rather than discovered on a
+        // rejected case. A multiple that divides one (`1`, `0.5`, `0.25`) is
+        // exempt: every double past 2^53 is an integer, and an integer is a
+        // multiple of it.
         $reach = max(abs($min), abs($max));
-        if (fmod(1.0, (float) $multiple) !== 0.0 && $reach * (float) (10 ** $decimals) > (float) (2 ** 53)) {
+        if (fmod(1.0, (float) $multiple) !== 0.0 && $reach * (float) (10 ** $decimals) > (float) (10 ** PHP_FLOAT_DIG)) {
             throw UnsupportedGeneration::forSchema(sprintf('number multipleOf %s cannot be spelled exactly up to %s: the multiples need more than the %d significant digits a double holds', json_encode($multiple, JSON_THROW_ON_ERROR), json_encode($reach, JSON_THROW_ON_ERROR), PHP_FLOAT_DIG));
+        }
+
+        // `ceil($min / $m)` is computed in binary, and a bound one bit off a
+        // decimal multiple can round the quotient onto it: `maximum`
+        // 3070.7999999999997 over `multipleOf` 0.3 gives index 10236, whose
+        // decimal 3070.8 lies above the bound.
+        while ($first <= $last && self::multipleOf($first, (float) $multiple, $decimals) < $min) {
+            ++$first;
+        }
+        while ($last >= $first && self::multipleOf($last, (float) $multiple, $decimals) > $max) {
+            --$last;
+        }
+        if ($first > $last) {
+            throw UnsupportedGeneration::forSchema('number multipleOf leaves no value');
         }
 
         return Gen::map(

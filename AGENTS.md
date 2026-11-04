@@ -97,8 +97,14 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   the contract judges by since 0.12.1 — on every machine, bcmath or not
   (openapi-contract#151). Never emit the float product `64.10000000000001`:
   it is not a decimal multiple of `0.1` and the contract says so. A bound
-  past which the multiples need more significant digits than a double holds
-  is refused at compile time (#133).
+  past which the multiples need more than the `PHP_FLOAT_DIG` (15)
+  significant digits a double spells back is refused at compile time (#133).
+  2^53 is not that limit: between 10^15 and 2^53 `round()` lands on a
+  neighbouring decimal, past `maximum` (#145). The index window is clamped
+  to the decimals, not the binary quotients: a bound one bit off a multiple
+  rounds `floor($max / $m)` onto it.
+- **`[]` has no type of its own.** It is the empty array and the empty
+  object; under `not` its type comes from the source schema (#146).
 - **Never predict a contract verdict with a copy of its rule.** Whether the
   `number` branch of a `oneOf` admits an integer is
   `SchemaCheck::isMultipleOf()` (openapi-contract 0.12.2); the float copy
