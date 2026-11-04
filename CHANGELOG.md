@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.19.2 — 2026-11-04
+
+- **Changed.** No code changes. Re-release of 0.19.1: the `v0.19.1` tag
+  points at the commit before the release commit, so its `CHANGELOG.md` still
+  lists these fixes under `Unreleased`. The code in both tags is the same.
+
 ## 0.19.1 — 2026-11-04
 
 - **Fixed.** A decimal `multipleOf` on a `number` no longer generates a value
