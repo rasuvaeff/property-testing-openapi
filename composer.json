@@ -45,7 +45,7 @@
         "roave/backward-compatibility-check": "^8.0",
         "testo/bridge-infection": "^0.1.6",
         "testo/testo": "^0.10.39",
-        "vimeo/psalm": "^6.16"
+        "vimeo/psalm": "^7.0"
     },
     "suggest": {
         "ext-redis": "Required for PROPERTY_DB=redis://... shared regression corpora",

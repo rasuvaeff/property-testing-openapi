@@ -158,6 +158,7 @@ final readonly class BodyTargets
         if (!is_array($content) || count($content) !== 1) {
             return [];
         }
+        /** @var array<array-key, mixed> $content */
         $mediaType = array_key_first($content);
         if (!is_string($mediaType) || !str_starts_with(MediaType::normalize($mediaType), 'multipart/') || !is_array($content[$mediaType])) {
             return [];
@@ -203,6 +204,7 @@ final readonly class BodyTargets
         if (!is_array($content)) {
             return null;
         }
+        /** @var array<array-key, mixed> $content */
         foreach ($content as $mediaType => $definition) {
             if (!is_string($mediaType) || $mediaType === '' || !is_array($definition)) {
                 continue;
@@ -211,7 +213,7 @@ final readonly class BodyTargets
                 continue;
             }
             $schema = $definition['schema'] ?? [];
-            if (!is_array($schema) || array_is_list($schema)) {
+            if (!is_array($schema)) {
                 return null;
             }
             /** @var array<string, mixed> $schema */
