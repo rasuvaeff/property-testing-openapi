@@ -213,7 +213,10 @@ final readonly class BodyTargets
                 continue;
             }
             $schema = $definition['schema'] ?? [];
-            if (!is_array($schema)) {
+            if (!is_array($schema) || array_is_list($schema)) {
+                // A list is not a schema: `true` admits any value and a body
+                // under `false` is being sent to be refused, but a list-shaped
+                // "schema" is a malformed contract the generator must reject.
                 return null;
             }
             /** @var array<string, mixed> $schema */
