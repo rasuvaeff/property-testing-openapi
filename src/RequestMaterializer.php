@@ -385,6 +385,7 @@ final readonly class RequestMaterializer
             return [];
         }
 
+        /** @var array<string, mixed> $schema */
         return $schema;
     }
 
