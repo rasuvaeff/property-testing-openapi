@@ -238,18 +238,19 @@ final readonly class ParameterTargets
             return [];
         }
         if ($keyword === 'enum') {
-            $enum = $schema['enum'];
+            $enum = $schema['enum'] ?? null;
             if (!is_array($enum) || $enum === [] || !$this->probe->isScalarEnum($enum)) {
                 return [];
             }
             $forbidden = array_values($enum);
             $marker = '__openapi_invalid_enum__';
         } else {
-            if (!is_scalar($schema['const'])) {
+            $const = $schema['const'] ?? null;
+            if (!is_scalar($const)) {
                 return [];
             }
-            $forbidden = [$schema['const']];
-            $marker = is_bool($schema['const']) ? 'not-a-const-boolean' : (is_string($schema['const']) ? '__openapi_invalid_const__' : 'not-a-const-number');
+            $forbidden = [$const];
+            $marker = is_bool($const) ? 'not-a-const-boolean' : (is_string($const) ? '__openapi_invalid_const__' : 'not-a-const-number');
         }
         while (in_array($marker, $forbidden, strict: true)) {
             $marker .= '_';

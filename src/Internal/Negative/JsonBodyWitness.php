@@ -178,18 +178,19 @@ final readonly class JsonBodyWitness
             return [];
         }
         if ($keyword === 'enum') {
-            $enum = $schema['enum'];
+            $enum = $schema['enum'] ?? null;
             if (!is_array($enum) || $enum === [] || !$this->probe->isScalarEnum($enum)) {
                 return [];
             }
             $forbidden = array_values($enum);
             $marker = '__openapi_misuse__';
         } else {
-            if (!is_scalar($schema['const']) && $schema['const'] !== null) {
+            $const = $schema['const'] ?? null;
+            if (!is_scalar($const) && $const !== null) {
                 return [];
             }
-            $forbidden = [$schema['const']];
-            $marker = is_string($schema['const']) ? $schema['const'] . '__openapi_misuse__' : '__openapi_misuse__';
+            $forbidden = [$const];
+            $marker = is_string($const) ? $const . '__openapi_misuse__' : '__openapi_misuse__';
         }
         while (in_array($marker, $forbidden, strict: true)) {
             $marker .= '_';

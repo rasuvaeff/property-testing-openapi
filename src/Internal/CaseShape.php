@@ -29,7 +29,7 @@ final readonly class CaseShape
                 throw InvalidCase::missingKey($key);
             }
         }
-        if (!is_string($case['operationKey'])) {
+        if (!isset($case['operationKey']) || !is_string($case['operationKey'])) {
             throw new InvalidCase('Case "operationKey" must be a string');
         }
         foreach (self::PARAMETER_MAPS as $key) {
@@ -37,13 +37,13 @@ final readonly class CaseShape
                 throw new InvalidCase(sprintf('Case "%s" must be a map of parameter values', $key));
             }
         }
-        $body = $case['body'];
+        $body = $case['body'] ?? null;
         if ($body !== null) {
             if (!is_array($body) || !is_string($body['encoding'] ?? null) || !is_string($body['mediaType'] ?? null)) {
                 throw new InvalidCase('Case "body" must be null or carry string "encoding" and "mediaType" members');
             }
         }
-        $misuse = $case['misuse'];
+        $misuse = $case['misuse'] ?? null;
         if ($misuse !== null) {
             if (!is_array($misuse) || !is_string($misuse['kind'] ?? null) || !is_string($misuse['location'] ?? null) || !is_string($misuse['name'] ?? null)) {
                 throw new InvalidCase('Case "misuse" must be null or carry string "kind", "location" and "name" members');

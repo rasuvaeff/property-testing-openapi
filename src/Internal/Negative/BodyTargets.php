@@ -158,6 +158,7 @@ final readonly class BodyTargets
         if (!is_array($content) || count($content) !== 1) {
             return [];
         }
+        /** @var array<array-key, mixed> $content */
         $mediaType = array_key_first($content);
         if (!is_string($mediaType) || !str_starts_with(MediaType::normalize($mediaType), 'multipart/') || !is_array($content[$mediaType])) {
             return [];
@@ -203,6 +204,7 @@ final readonly class BodyTargets
         if (!is_array($content)) {
             return null;
         }
+        /** @var array<array-key, mixed> $content */
         foreach ($content as $mediaType => $definition) {
             if (!is_string($mediaType) || $mediaType === '' || !is_array($definition)) {
                 continue;
@@ -212,6 +214,9 @@ final readonly class BodyTargets
             }
             $schema = $definition['schema'] ?? [];
             if (!is_array($schema) || array_is_list($schema)) {
+                // A list is not a schema: `true` admits any value and a body
+                // under `false` is being sent to be refused, but a list-shaped
+                // "schema" is a malformed contract the generator must reject.
                 return null;
             }
             /** @var array<string, mixed> $schema */
