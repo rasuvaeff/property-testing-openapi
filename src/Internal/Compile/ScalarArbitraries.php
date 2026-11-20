@@ -19,6 +19,14 @@ final readonly class ScalarArbitraries
 {
     private const int MAX_STRING_LENGTH = 64;
 
+    /**
+     * A number with no declared bound is drawn from ±1000. A bound declared
+     * on one side only and lying past that window takes the other side this
+     * far from itself, so `minimum: 1900` alone draws from 1900..3900 (#155);
+     * a bound inside the window keeps the window's opposite end.
+     */
+    private const int DEFAULT_WINDOW = 2000;
+
     /** Twice the retry budget of `Gen::filter()`, so the probe dominates it. */
     private const int PATTERN_PROBES = 200;
 
@@ -201,6 +209,11 @@ final readonly class ScalarArbitraries
 
             --$max;
         }
+        if ($min > $max && !array_key_exists('maximum', $schema)) {
+            $max = $min > PHP_INT_MAX - self::DEFAULT_WINDOW ? PHP_INT_MAX : $min + self::DEFAULT_WINDOW;
+        } elseif ($min > $max && !array_key_exists('minimum', $schema)) {
+            $min = $max < PHP_INT_MIN + self::DEFAULT_WINDOW ? PHP_INT_MIN : $max - self::DEFAULT_WINDOW;
+        }
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('integer bounds leave no value');
         }
@@ -239,6 +252,11 @@ final readonly class ScalarArbitraries
         }
         if ($exclusiveMaximum) {
             $max = $this->nextDown($max);
+        }
+        if ($min > $max && !array_key_exists('maximum', $schema)) {
+            $max = $min + (float) self::DEFAULT_WINDOW;
+        } elseif ($min > $max && !array_key_exists('minimum', $schema)) {
+            $min = $max - (float) self::DEFAULT_WINDOW;
         }
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('number bounds leave no value');

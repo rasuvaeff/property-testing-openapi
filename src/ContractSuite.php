@@ -339,7 +339,7 @@ final class ContractSuite
     {
         CaseShape::assert($case);
         if ($case['misuse'] !== null) {
-            throw new \InvalidArgumentException('A valid check requires a case without misuse metadata');
+            throw new InvalidCase('A valid check requires a case without misuse metadata');
         }
         $operation = $this->requireSelected($operationKey);
         $request = $this->materialize($operation, $case);
@@ -372,7 +372,7 @@ final class ContractSuite
     {
         CaseShape::assert($case);
         if ($case['misuse'] === null) {
-            throw new \InvalidArgumentException('A negative check requires a case with misuse metadata');
+            throw new InvalidCase('A negative check requires a case with misuse metadata');
         }
         $operation = $this->requireSelected($operationKey);
         $request = $this->materialize($operation, $case);

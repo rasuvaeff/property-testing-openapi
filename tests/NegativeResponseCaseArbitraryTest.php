@@ -289,7 +289,9 @@ final class NegativeResponseCaseArbitraryTest
             'n' => ['type' => 'integer', 'nullable' => true, 'minimum' => 1],
             'u' => ['type' => ['integer', 'string']],
             'x' => ['type' => 'string', 'not' => ['const' => 'a']],
-            'e' => ['type' => 'string', 'enum' => [['nested']]],
+            // A non-scalar enum member, under the type that admits it: one
+            // the type rejects is refused outright since #160.
+            'e' => ['type' => 'array', 'enum' => [['nested']]],
             'c' => ['type' => 'object', 'const' => ['a' => 1]],
             'k' => ['type' => 'integer', 'enum' => [1, 2]],
         ]]]]]]);

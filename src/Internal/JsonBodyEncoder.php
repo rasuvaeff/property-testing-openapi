@@ -50,6 +50,9 @@ final readonly class JsonBodyEncoder
             $schema = $this->dereference($schema['$ref'], $defs);
         }
         $schema = $this->encodingSchema($schema, $value);
+        if (is_array($value) && !SchemaShape::isArray($schema) && !SchemaShape::isObject($schema)) {
+            $schema = $this->branchFor($schema, $value, $defs) ?? $schema;
+        }
         if (SchemaShape::isArray($schema) && is_array($value) && array_is_list($value)) {
             $result = [];
             /** @var mixed $item */
@@ -167,6 +170,80 @@ final readonly class JsonBodyEncoder
         }
 
         return $schema;
+    }
+
+    /**
+     * The branch of a union or a conditional that gives a container its
+     * shape, when the schema itself declares none: `anyOf: [{object},
+     * {null}]` is an object schema for a map, and its empty value is `{}` on
+     * the wire, not `[]` (#154). A list takes the first array branch and a
+     * map the first object branch; the empty value — both at once in PHP —
+     * takes a branch only when the branches declare one of the two shapes and
+     * not the other, and otherwise stays as it was.
+     *
+     * @param array<string, mixed> $schema
+     * @param array<array-key, mixed> $value
+     * @param array<string, mixed> $defs
+     * @return null|array<string, mixed>
+     */
+    private function branchFor(array $schema, array $value, array $defs): ?array
+    {
+        $arrays = [];
+        $objects = [];
+        foreach (['anyOf', 'oneOf'] as $keyword) {
+            $this->classifyEach($schema[$keyword] ?? null, $value, $defs, $arrays, $objects);
+        }
+        foreach (['then', 'else'] as $keyword) {
+            $this->classify($schema[$keyword] ?? null, $value, $defs, $arrays, $objects);
+        }
+
+        return match (true) {
+            $value === [] && $arrays === [] && $objects !== [] => $objects[0],
+            $value === [] && $objects === [] && $arrays !== [] => $arrays[0],
+            $value !== [] && array_is_list($value) => $arrays[0] ?? null,
+            $value !== [] => $objects[0] ?? null,
+            default => null,
+        };
+    }
+
+    /**
+     * @param array<array-key, mixed> $value
+     * @param array<string, mixed> $defs
+     * @param list<array<string, mixed>> $arrays
+     * @param list<array<string, mixed>> $objects
+     */
+    private function classifyEach(mixed $members, array $value, array $defs, array &$arrays, array &$objects): void
+    {
+        if (!is_array($members)) {
+            return;
+        }
+        foreach (array_keys($members) as $index) {
+            $this->classify($members[$index], $value, $defs, $arrays, $objects);
+        }
+    }
+
+    /**
+     * @param array<array-key, mixed> $value
+     * @param array<string, mixed> $defs
+     * @param list<array<string, mixed>> $arrays
+     * @param list<array<string, mixed>> $objects
+     */
+    private function classify(mixed $member, array $value, array $defs, array &$arrays, array &$objects): void
+    {
+        if (!is_array($member) || ($member !== [] && array_is_list($member))) {
+            return;
+        }
+        /** @var array<string, mixed> $member */
+        if (isset($member['$ref'])) {
+            $member = $this->dereference($member['$ref'], $defs);
+        }
+        $member = $this->encodingSchema($member, $value);
+        if (SchemaShape::isArray($member)) {
+            $arrays[] = $member;
+        }
+        if (SchemaShape::isObject($member)) {
+            $objects[] = $member;
+        }
     }
 
     /** @return bool|array<string, mixed> */

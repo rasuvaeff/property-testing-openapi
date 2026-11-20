@@ -27,11 +27,26 @@ final class CompositionArbitrariesTest
         }
     }
 
-    public function aSiblingAfterAnUnevaluatedKeywordIsStillRefused(): void
+    /**
+     * An assertion beside `allOf` is one more member of its conjunction, as
+     * the contract reads it (#153).
+     */
+    public function aSiblingAfterAnUnevaluatedKeywordJoinsTheConjunction(): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['allOf' => [['type' => 'integer', 'maximum' => 3]], 'unevaluatedItems' => false, 'minimum' => 1]), count: 30, seed: 1) as $value) {
+            Assert::true(is_int($value) && $value >= 1 && $value <= 3);
+        }
+    }
+
+    /**
+     * A sibling `allOf` meets in another combinator is still refused: `anyOf`
+     * and `oneOf` are not conjunctions.
+     */
+    public function aSiblingOfAUnionIsStillRefused(): void
     {
         Expect::exception(UnsupportedGeneration::class)
-            ->withMessage('Unsupported OpenAPI schema generation: allOf with sibling keyword "minimum" is outside the supported subset');
-        (new SchemaArbitraryCompiler())->compile(['allOf' => [['type' => 'integer']], 'unevaluatedItems' => false, 'minimum' => 1]);
+            ->withMessage('Unsupported OpenAPI schema generation: anyOf with sibling keyword "minimum" is outside the supported subset');
+        (new SchemaArbitraryCompiler())->compile(['anyOf' => [['type' => 'integer']], 'minimum' => 1, 'description' => 'a', 'x-note' => 'b']);
     }
 
     public function everyNumericOneOfBranchIsEquallyLikely(): void
@@ -140,6 +155,121 @@ final class CompositionArbitrariesTest
         foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: 1) as $value) {
             Assert::true(is_array($value));
             Assert::same($value[0], 0);
+        }
+    }
+
+    /**
+     * Annotations are carried through the conjunction, not merged as
+     * constraints: two components with their own `description` compose
+     * (#153).
+     */
+    public function branchesThatDifferOnlyInAnnotationsMerge(): void
+    {
+        $schema = ['allOf' => [
+            ['type' => 'object', 'description' => 'A', 'title' => 'a', 'x-owner' => 'one', 'required' => ['a'], 'properties' => ['a' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 3]]],
+            ['type' => 'object', 'description' => 'B', 'title' => 'b', 'x-owner' => 'two', 'example' => ['b' => 'x'], 'properties' => ['b' => ['type' => 'string', 'maxLength' => 2]]],
+        ]];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 30, seed: 1) as $value) {
+            Assert::true(is_array($value) && is_int($value['a'] ?? null));
+        }
+    }
+
+    /**
+     * The same bound from two branches is met by the tighter one (#153).
+     *
+     * @param array<string, mixed> $first
+     * @param array<string, mixed> $second
+     */
+    #[DataProvider('repeatedBoundProvider')]
+    public function aBoundRepeatedAcrossBranchesIsTheTighterOne(array $first, array $second, \Closure $holds): void
+    {
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['allOf' => [$first, $second]]), count: 60, seed: 2) as $value) {
+            Assert::true($holds($value), json_encode($value, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public static function repeatedBoundProvider(): iterable
+    {
+        yield 'minimum' => [['type' => 'integer', 'minimum' => 1, 'maximum' => 9], ['minimum' => 5], static fn(mixed $v): bool => is_int($v) && $v >= 5 && $v <= 9];
+        yield 'maximum' => [['type' => 'integer', 'minimum' => 1, 'maximum' => 9], ['maximum' => 3], static fn(mixed $v): bool => is_int($v) && $v >= 1 && $v <= 3];
+        yield 'maximum, the looser one second' => [['type' => 'integer', 'minimum' => 1, 'maximum' => 3], ['maximum' => 9], static fn(mixed $v): bool => is_int($v) && $v <= 3];
+        yield 'minLength and maxLength' => [['type' => 'string', 'minLength' => 1, 'maxLength' => 6], ['minLength' => 3, 'maxLength' => 4], static fn(mixed $v): bool => is_string($v) && mb_strlen($v) >= 3 && mb_strlen($v) <= 4];
+        yield 'minItems and maxItems' => [['type' => 'array', 'items' => ['type' => 'boolean'], 'minItems' => 1, 'maxItems' => 5], ['minItems' => 2, 'maxItems' => 3], static fn(mixed $v): bool => is_array($v) && count($v) >= 2 && count($v) <= 3];
+        yield 'minProperties and maxProperties' => [['type' => 'object', 'minProperties' => 1, 'maxProperties' => 4], ['minProperties' => 2, 'maxProperties' => 2], static fn(mixed $v): bool => is_array($v) && count($v) === 2];
+    }
+
+    /**
+     * @param array<string, mixed> $second
+     */
+    #[DataProvider('unmergeableBoundProvider')]
+    public function aBoundThatCannotBeIntersectedIsStillRefused(array $second, string $keyword): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage(sprintf('Unsupported OpenAPI schema generation: allOf constraint "%s" cannot be merged safely', $keyword));
+        (new SchemaArbitraryCompiler())->compile(['allOf' => [['type' => 'integer', 'minimum' => 1, 'multipleOf' => 2], $second]]);
+    }
+
+    public static function unmergeableBoundProvider(): iterable
+    {
+        yield 'a keyword that is no bound' => [['multipleOf' => 3], 'multipleOf'];
+        yield 'a bound that is not a number' => [['minimum' => '5'], 'minimum'];
+        yield 'beside an exclusive bound in the later branch' => [['minimum' => 5, 'exclusiveMinimum' => true], 'minimum'];
+        yield 'beside an exclusive upper bound in the later branch' => [['minimum' => 5, 'exclusiveMaximum' => true], 'minimum'];
+    }
+
+    public function aBoundBesideAnExclusiveOneInTheEarlierBranchIsStillRefused(): void
+    {
+        foreach (['exclusiveMinimum', 'exclusiveMaximum'] as $exclusive) {
+            try {
+                (new SchemaArbitraryCompiler())->compile(['allOf' => [['type' => 'integer', 'minimum' => 1, 'maximum' => 9, $exclusive => true], ['minimum' => 5]]]);
+                Assert::true(actual: false, message: $exclusive . ' was merged');
+            } catch (UnsupportedGeneration $refusal) {
+                Assert::same($refusal->getMessage(), 'Unsupported OpenAPI schema generation: allOf constraint "minimum" cannot be merged safely');
+            }
+        }
+    }
+
+    /**
+     * The contract compiles a 3.1 `$ref` with an asserting sibling into
+     * `allOf` plus the target's hoisted `type` and `description`; that shape
+     * generates, and the sibling assertion holds (#153).
+     */
+    public function theContractsFormOfAReferenceWithSiblingsGenerates(): void
+    {
+        $schema = ['allOf' => [['type' => 'string', 'description' => 'a code', 'minLength' => 1], ['maxLength' => 4]], 'type' => 'string', 'description' => 'a code'];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 40, seed: 3) as $value) {
+            Assert::true(is_string($value) && mb_strlen($value) >= 1 && mb_strlen($value) <= 4);
+        }
+    }
+
+    /**
+     * OAS 3.0 `nullable` beside an `allOf` of one reference: the sibling
+     * joins the conjunction instead of refusing it (#153).
+     */
+    public function aNullableSiblingOfAnAllOfIsAccepted(): void
+    {
+        $schema = ['nullable' => true, 'allOf' => [['type' => 'object', 'description' => 'owner', 'required' => ['n'], 'properties' => ['n' => ['type' => 'integer']]]]];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: 3) as $value) {
+            Assert::true(is_array($value) && is_int($value['n'] ?? null));
+        }
+    }
+
+    public function anAnnotationOrExtensionBesideAUnionIsAccepted(): void
+    {
+        $schema = ['anyOf' => [['const' => 'v']], 'example' => 'v', 'default' => 'v', 'discriminator' => ['propertyName' => 'k'], 'x-note' => 1, 'externalDocs' => ['url' => 'https://example.com'], 'xml' => ['name' => 'v']];
+
+        Assert::same(Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 3, seed: 1), ['v', 'v', 'v']);
+    }
+
+    public function aNumberBranchMayCarryAnyAnnotation(): void
+    {
+        $schema = ['oneOf' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 9], ['type' => 'number', 'minimum' => 0, 'maximum' => 9, 'x-unit' => 'kg', 'default' => 1.5]]];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: 1) as $value) {
+            Assert::true(is_int($value) || is_float($value));
         }
     }
 }

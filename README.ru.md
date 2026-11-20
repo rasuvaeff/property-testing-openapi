@@ -67,7 +67,11 @@ Case (`CaseData`, объявлен один раз psalm-типом на `Contra
 умолчание OAS для схемы элемента, если Encoding Object не задал свой.
 Часть под JSON media type несёт JSON-кодировку значения; `text/*` и
 `application/octet-stream` — значение как есть; любой другой media type
-части падает fail-closed. Required parameters и
+части падает fail-closed. Заголовок, который Encoding Object требует у
+части, несёт её `example`, `default` или литерал `x-openapi` — что первым
+допускает его схема, — а иначе значение, взятое из этой схемы; обязательный
+заголовок части, для которого значение не построить, падает fail-closed.
+Required parameters и
 request bodies присутствуют всегда; для optional parameters и JSON body
 генерируются обе ветви - presence и absence. В нём нет credentials, поэтому
 case можно сохранять в property corpus.
@@ -126,14 +130,15 @@ request-направлению схемы — `readOnly`-свойства ухо
 
 | Keyword | Генерация |
 |---|---|
-| `type` (один или список), `const`, `enum`, `nullable` (OAS 3.0) | поддержано; список типов — взвешенное объединение |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1; граница настолько широкая, что кратным нужно больше 15 значащих цифр, которые double передаёт точно, падает fail-closed |
+| `type` (один или список), `const`, `enum`, `nullable` (OAS 3.0) | поддержано; список типов — взвешенное объединение; член `enum` и `const` проверяются по соседним keywords (`{integer, maximum: 5, enum: [1, 100]}` даёт только `1`), а `const` или `enum`, от которых они ничего не оставляют, падают fail-closed |
+| аннотации: `description`, `title`, `$comment`, `deprecated`, `example`, `examples`, `default`, `externalDocs`, `xml`, `discriminator`, `x-*` | ничего не ограничивают: схема из одних аннотаций допускает любое значение, как `{}` |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; необъявленная граница — ±1000, а граница, объявленная только с одной стороны и лежащая за этим окном, берёт другую сторону в 2000 от себя (`minimum: 1900` даёт 1900–3900); дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1; граница настолько широкая, что кратным нужно больше 15 значащих цифр, которые double передаёт точно, падает fail-closed |
 | `minLength`, `maxLength` (не более 64), `pattern` (подмножество PCRE) | поддержано |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
 | `items`, `minItems`, `maxItems` (не более 16), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
 | `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано; ключи pattern генерируются из объявленных regex, значения удовлетворяют всем совпавшим схемам, кардинальность выполняется по построению |
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
-| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано |
+| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви: аннотации переносятся, а не сливаются; утверждение рядом с `allOf` — `nullable` OAS 3.0 или поднятый `type` в форме, в которую контракт компилирует 3.1 `$ref` с соседями, — входит в конъюнкцию; одна и та же граница `minimum`/`maximum`/длины/количества в двух ветвях выполняется более строгой; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано; пустое значение `anyOf`/`oneOf`/`if`, ветви которого объявляют object и не объявляют array, кодируется как `{}` |
 | `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed; пустой `[]` берёт тип (array или object) из схемы, поэтому `not: {type: object}` никогда не пропускает `{}` |
 | `$defs` + локальный `$ref` (`#/$defs/…`) — скомпилированная контрактом форма схемы, ссылающейся на саму себя: дерево, чьи `children` тоже деревья | поддерживается; def разворачивается на три уровня под корнем и заканчивается листом, который опускает рекурсивный член (необязательное свойство пропущено, массив, которому можно быть пустым, пуст, ветка выбора пропущена); def, единственный путь вниз которого — обязательный член, равный самому def, не имеет конечного экземпляра и fail-closed; `$ref` куда-либо кроме собственных `$defs` схемы — fail-closed |
 | `if`/`then`/`else` (включая boolean schemas и вложенные conditionals) | поддержано; значения конструктивно строятся для обеих достижимых веток и проверяются собственным `SchemaCheck` контракта; невыполнимая ветка пропускается, а conditional без единой производимой ветки падает fail-closed |
@@ -278,7 +283,11 @@ JSON-варианте. Вложенные свойства пока не
 `UnsupportedGeneration`; они не расширяются молча до произвольных строк.
 Отказ по схеме называет операцию и параметр или body, которые компилировал
 (`Unsupported OpenAPI schema generation for operation "pets.list", query
-parameter "limit": minLength exceeds maxLength`).
+parameter "limit": minLength exceeds maxLength`). Отказ бросает
+`forOperation()`, а не последующий draw: media type части, которую генератор
+не умеет записать, `Content-Type` или заголовок части, которые не несёт ни
+одно HTTP-поле, параметр с вложенным объектом или списком и заголовок ответа,
+объявленный объектом, известны из документа.
 
 ### Исключения
 
@@ -289,7 +298,8 @@ parameter "limit": minLength exceeds maxLength`).
 | Исключение | Родитель | Когда |
 |---|---|---|
 | `UnsupportedGeneration` | `InvalidArgumentException` | документ использует возможность вне матрицы поддержки |
-| `InvalidCase` | `InvalidArgumentException` | рукописный кейс не имеет экспортируемой формы или нацелен на другую операцию |
+| `InvalidCase` | `InvalidArgumentException` | рукописный кейс не имеет экспортируемой формы, нацелен на другую операцию, или валидная/негативная проверка получила кейс другого вида |
+| `InvalidConfiguration` | `InvalidArgumentException` | аргумент конфигурации некорректен: base URI, политика rejection или redaction, credentials, security requirement, число прогонов, значение `PROPERTY_*` |
 | `SuiteConfigurationError` | `LogicException` | suite или transport просят работать в форме, которую конфигурация не допускает |
 | `CheckFailed` | `RuntimeException` | встроенная проверка увидела нарушение контракта (`$result` хранит результат валидации) |
 | `OperationPropertyFailed` | `RuntimeException` | фаза `OperationProperty::check()` фальсифицирована |

@@ -17,6 +17,12 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  */
 final readonly class ContainerArbitraries
 {
+    /**
+     * A span this wide no longer fits an integer once the doubles that
+     * measure it are rounded: 2^63 less a few ulps (1024 each there).
+     */
+    private const float UNBOUNDED_SPAN = 9_223_372_036_854_771_712.0;
+
     private const int MAX_COLLECTION_SIZE = 16;
 
     public function __construct(
@@ -188,10 +194,16 @@ final readonly class ContainerArbitraries
             // An upper bound on the domain, not its size: a multipleOf would
             // thin it further. Enough to refuse `minItems: 3` over `0..1`
             // before a run-time exhaustion does (#123).
-            $minimum = (int) $items['minimum'] + ((($items['exclusiveMinimum'] ?? false) === true) ? 1 : 0);
-            $maximum = (int) $items['maximum'] - ((($items['exclusiveMaximum'] ?? false) === true) ? 1 : 0);
+            $minimum = (int) $items['minimum'];
+            $maximum = (int) $items['maximum'];
+            if ((float) $maximum - (float) $minimum >= self::UNBOUNDED_SPAN) {
+                // The span would leave the integer range, and such a domain
+                // is too large to bound a `uniqueItems` list anyway (#158).
+                return null;
+            }
+            $excluded = ((($items['exclusiveMinimum'] ?? false) === true) ? 1 : 0) + ((($items['exclusiveMaximum'] ?? false) === true) ? 1 : 0);
 
-            return max(0, $maximum - $minimum + 1);
+            return max(0, $maximum - $minimum + 1 - $excluded);
         }
 
         return match ($items['type'] ?? null) {
@@ -218,6 +230,9 @@ final readonly class ContainerArbitraries
                     throw UnsupportedGeneration::forSchema(sprintf('propertyNames keyword "%s" is outside the supported generator subset', $keyword));
                 }
             }
+            if (!$this->isRegex($propertyNames['pattern'] ?? null)) {
+                throw UnsupportedGeneration::forSchema('propertyNames pattern is not supported');
+            }
         }
         $patternArbitraries = [];
         /** @var array<string, array<string, mixed>> $typedPatterns */
@@ -228,6 +243,9 @@ final readonly class ContainerArbitraries
             }
             /** @var array<string, mixed> $patternSchema */
             $typedPatterns[$pattern] = $patternSchema;
+            if (!$this->isRegex($pattern)) {
+                throw UnsupportedGeneration::forSchema(sprintf('patternProperties key is not supported: %s', $pattern));
+            }
 
             try {
                 $key = Gen::stringMatching($pattern);
@@ -284,7 +302,7 @@ final readonly class ContainerArbitraries
 
             $applicable = [$property];
             foreach ($patterns as $pattern => $patternSchema) {
-                if (preg_match('~' . $pattern . '~', $name) === 1) {
+                if ($this->regexMatches($pattern, $name)) {
                     /** @var array<string, mixed> $patternSchema */
                     $applicable[] = $patternSchema;
                 }
@@ -362,7 +380,7 @@ final readonly class ContainerArbitraries
                         }
                         $matches = [];
                         foreach (array_keys($patterns) as $candidate) {
-                            if (preg_match('~' . $candidate . '~', $name) === 1) {
+                            if ($this->regexMatches($candidate, $name)) {
                                 $matches[] = $candidate;
                             }
                         }
@@ -399,7 +417,7 @@ final readonly class ContainerArbitraries
             if (is_string($drawn)) {
                 /** @var list<array<string, mixed>> $matching */
                 foreach ($patterns as $pattern => $patternSchema) {
-                    if (preg_match('~' . $pattern . '~', $drawn) === 1) {
+                    if ($this->regexMatches($pattern, $drawn)) {
                         /** @var array<string, mixed> $patternSchema */
                         $matching[] = $patternSchema;
                     }
@@ -436,12 +454,33 @@ final readonly class ContainerArbitraries
             throw UnsupportedGeneration::forSchema('propertyNames pattern must be a string');
         }
 
-        $result = preg_match('~' . $pattern . '~', $value);
+        $result = @preg_match("\x07{$pattern}\x07uD", $value);
         if ($result === false) {
             throw UnsupportedGeneration::forSchema('propertyNames pattern is not supported');
         }
 
         return $result === 1;
+    }
+
+    /**
+     * A name is matched the way the contract matches it — the delimiter and
+     * the `u`/`D` modifiers its validator wraps a pattern in, which
+     * {@see \Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness}
+     * uses too. A `~` delimiter broke on a pattern holding one, and without
+     * `u` a non-ASCII name was measured in bytes (#159).
+     */
+    private function regexMatches(string $pattern, string $subject): bool
+    {
+        return @preg_match("\x07{$pattern}\x07uD", $subject) === 1;
+    }
+
+    /**
+     * Whether PCRE compiles the pattern at all, asked before generation. A
+     * pattern that is no string is reported by the caller that reads it.
+     */
+    private function isRegex(mixed $pattern): bool
+    {
+        return !is_string($pattern) || @preg_match("\x07{$pattern}\x07uD", '') !== false;
     }
 
     /** @return ArbitraryInterface<mixed> */

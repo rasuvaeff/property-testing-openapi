@@ -27,15 +27,15 @@ final readonly class SecurityRequirement
     private function assertSchemes(mixed $schemes): void
     {
         if (!is_array($schemes)) {
-            throw new \InvalidArgumentException('Security requirement schemes must map names to scope lists');
+            throw new InvalidConfiguration('Security requirement schemes must map names to scope lists');
         }
         foreach ($schemes as $name => $scopes) {
             if (!is_string($name) || $name === '' || !is_array($scopes) || !array_is_list($scopes)) {
-                throw new \InvalidArgumentException('Security requirement schemes must map names to scope lists');
+                throw new InvalidConfiguration('Security requirement schemes must map names to scope lists');
             }
             foreach (array_keys($scopes) as $index) {
                 if (!is_string($scopes[$index])) {
-                    throw new \InvalidArgumentException('Security requirement scopes must contain strings');
+                    throw new InvalidConfiguration('Security requirement scopes must contain strings');
                 }
             }
         }

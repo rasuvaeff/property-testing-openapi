@@ -33,11 +33,11 @@ final readonly class RedactionPolicy
     private function assertNames(mixed $names, string $label): void
     {
         if (!is_array($names) || !array_is_list($names)) {
-            throw new \InvalidArgumentException(sprintf('Redacted %s must be a list of non-empty strings', $label));
+            throw new InvalidConfiguration(sprintf('Redacted %s must be a list of non-empty strings', $label));
         }
         foreach ($names as $name) {
             if (!is_string($name) || $name === '') {
-                throw new \InvalidArgumentException(sprintf('Redacted %s must be a list of non-empty strings', $label));
+                throw new InvalidConfiguration(sprintf('Redacted %s must be a list of non-empty strings', $label));
             }
         }
     }

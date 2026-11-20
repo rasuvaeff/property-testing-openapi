@@ -50,6 +50,14 @@ final readonly class CompositionArbitraries
                         $schemas[] = [$closure => $schema[$closure]];
                     }
                 }
+                // Assertions beside `allOf` are one more member of the same
+                // conjunction — the shape the contract itself compiles a 3.1
+                // `$ref` with siblings into, a hoisted `type` included (#153).
+                $siblings = Annotations::strip($schema);
+                unset($siblings['allOf'], $siblings['unevaluatedProperties'], $siblings['unevaluatedItems']);
+                if ($siblings !== []) {
+                    $schemas[] = $siblings;
+                }
                 [$schemas, $inlined] = $this->inlineReferences($schemas);
 
                 return $this->definitions->inlining($inlined, fn(): ArbitraryInterface => $this->compiler->compile($this->mergeAllOf($schemas)));
@@ -130,7 +138,7 @@ final readonly class CompositionArbitraries
     {
         $number = $branches[$numberIndex];
         foreach (array_keys($number) as $keyword) {
-            if (!in_array($keyword, ['type', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'description', 'title', '$comment', 'deprecated', 'examples', 'example'], strict: true)) {
+            if (!Annotations::is($keyword) && !in_array($keyword, ['type', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'], strict: true)) {
                 throw UnsupportedGeneration::forSchema(sprintf('oneOf over integer and number cannot read number keyword "%s" to keep the branches apart', $keyword));
             }
         }
@@ -403,7 +411,13 @@ final readonly class CompositionArbitraries
                     continue;
                 }
                 if (array_key_exists($key, $merged) && $merged[$key] !== $branch[$key]) {
-                    throw UnsupportedGeneration::forSchema(sprintf('allOf constraint "%s" cannot be merged safely', $key));
+                    if (Annotations::is($key)) {
+                        // An annotation describes; two that differ do not
+                        // conflict, and the first one stays (#153).
+                        continue;
+                    }
+                    $merged[$key] = $this->intersectBound($key, $merged[$key], $branch[$key], $merged, $branch);
+                    continue;
                 }
                 $merged = array_merge($merged, [$key => $branch[$key]]);
             }
@@ -462,6 +476,30 @@ final readonly class CompositionArbitraries
         }
 
         return $merged;
+    }
+
+    /**
+     * Two branches bounding the same quantity from the same side are both
+     * met by the tighter bound: `minimum: 1` and `minimum: 5` is `minimum: 5`
+     * (#153). Only plain inclusive bounds are intersected — beside an OAS 3.0
+     * boolean `exclusiveMinimum`/`exclusiveMaximum` the tighter bound may be
+     * the exclusive one, and that stays a refusal.
+     *
+     * @param array<string, mixed> $merged
+     * @param array<string, mixed> $branch
+     */
+    private function intersectBound(string $key, mixed $current, mixed $candidate, array $merged, array $branch): int|float
+    {
+        $lower = in_array($key, ['minimum', 'minLength', 'minItems', 'minProperties'], strict: true);
+        $upper = in_array($key, ['maximum', 'maxLength', 'maxItems', 'maxProperties'], strict: true);
+        $numeric = (is_int($current) || is_float($current)) && (is_int($candidate) || is_float($candidate));
+        $exclusive = array_key_exists('exclusiveMinimum', $merged) || array_key_exists('exclusiveMaximum', $merged)
+            || array_key_exists('exclusiveMinimum', $branch) || array_key_exists('exclusiveMaximum', $branch);
+        if (!$lower && !$upper || !$numeric || $exclusive) {
+            throw UnsupportedGeneration::forSchema(sprintf('allOf constraint "%s" cannot be merged safely', $key));
+        }
+
+        return $lower ? max($current, $candidate) : min($current, $candidate);
     }
 
     /**
@@ -563,18 +601,12 @@ final readonly class CompositionArbitraries
     /** @param array<string, mixed> $schema */
     private function assertNoCombinatorSiblings(array $schema, string $keyword): void
     {
-        $annotations = [
-            '$comment' => true,
-            'deprecated' => true,
-            'description' => true,
-            'examples' => true,
-            'title' => true,
-        ];
+        if ($keyword === 'allOf') {
+            // Every sibling of `allOf` joins its conjunction.
+            return;
+        }
         foreach (array_keys($schema) as $name) {
-            if ($name === $keyword || isset($annotations[$name])) {
-                continue;
-            }
-            if ($keyword === 'allOf' && in_array($name, ['unevaluatedProperties', 'unevaluatedItems'], strict: true)) {
+            if ($name === $keyword || Annotations::is($name)) {
                 continue;
             }
 

@@ -38,7 +38,16 @@ Public API:
   interior space and obs-text; a query `+` stays `%2B` under `allowReserved`.
   A multipart part under a JSON media type carries the JSON encoding of its
   value; `text/*`/`application/octet-stream` parts carry it verbatim; any
-  other part media type fails closed.
+  other part media type fails closed. A required part header carries its
+  `example`, `default` or `x-openapi`, whichever its schema admits, else a
+  value drawn from the schema. Every refusal is raised by `forOperation()`,
+  never by a draw. An undeclared numeric bound is ±1000; a one-sided bound
+  past that window takes the other side 2000 from itself. `enum`/`const` are
+  checked against their sibling keywords; a schema of annotations only
+  (`description`, `x-*`, …) admits any value. `allOf` carries annotations
+  through, joins sibling assertions (OAS 3.0 `nullable`, a hoisted `type`)
+  to the conjunction and meets a bound repeated across branches with the
+  tighter one. An empty object under `anyOf`/`oneOf`/`if` is encoded `{}`.
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
   builds the request target against the operation's first effective server
   (relative server -> path-only URI, absolute server -> absolute URI);
@@ -159,7 +168,8 @@ Public API:
   lacks the exported shape — a missing key is named (`Case is missing the
   "misuse" key`) by `checkValid()`, `checkNegative()`, `reproduce()`,
   `redact()` and `RequestMaterializer::materialize()`. Every exception of the
-  package (`UnsupportedGeneration`, `InvalidCase`, `SuiteConfigurationError`,
+  package (`UnsupportedGeneration`, `InvalidCase`, `InvalidConfiguration` for
+  a malformed configuration argument, `SuiteConfigurationError`,
   `CheckFailed`, `OperationPropertyFailed`, `CredentialsUnavailable`,
   `CoverageIncomplete`) implements the marker `OpenApiPropertyTestingException`.
 - `ContractSuite::fromContract(Contract, RequestFactoryInterface, StreamFactoryInterface)`
@@ -202,7 +212,7 @@ Public API:
   materialized request before transport, sends it, and throws `CheckFailed` on
   a 5xx status or a non-conforming exchange. Declared non-JSON responses are
   opaque (no schema) or validated as a string (string-typed schema) by
-  `openapi-contract` ^0.4; only `response.body.unsupported` remains. Present
+  `openapi-contract` ^0.16; only `response.body.unsupported` remains. Present
   response headers with a `schema` are decoded `simple`-style and validated
   too (`response.header.schema` / `.serialization` / `.unsupported`).
 - `ContractSuite::checkNegative(string $operationKey, array $case)` requires
@@ -238,8 +248,9 @@ Public API:
   non-JSON content throw `UnsupportedGeneration`.
 - `ResponseMaterializer(ResponseFactoryInterface, StreamFactoryInterface)
   ::materialize(Operation, array $case): ResponseInterface` builds the PSR-7
-  response (headers serialized with the `simple` style: percent-encoded, lists
-  joined with commas; JSON body is schema-aware, so `{}` stays an object;
+  response (headers serialized with the `simple` style and written as sent,
+  never percent-encoded — the validator reads a header as sent; lists joined
+  with commas; JSON body is schema-aware, so `{}` stays an object;
   `Content-Type` from the case).
 - `NegativeResponseCaseArbitrary::forOperation(Operation, int $status)` is the
   weighted union of constructive invalid-response categories; per-category

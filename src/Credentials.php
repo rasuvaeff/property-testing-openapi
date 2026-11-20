@@ -87,7 +87,7 @@ final readonly class Credentials
         $normalized = [];
         foreach ($map as $name => $values) {
             if (!is_string($name) || $name === '') {
-                throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
+                throw new InvalidConfiguration(sprintf('Credential %s must map names to value lists', $label));
             }
             if (is_string($values)) {
                 $normalized[$name] = [$values];
@@ -95,11 +95,11 @@ final readonly class Credentials
                 continue;
             }
             if (!is_array($values) || !array_is_list($values)) {
-                throw new \InvalidArgumentException(sprintf('Credential %s must map names to value lists', $label));
+                throw new InvalidConfiguration(sprintf('Credential %s must map names to value lists', $label));
             }
             foreach (array_keys($values) as $index) {
                 if (!is_string($values[$index])) {
-                    throw new \InvalidArgumentException(sprintf('Credential %s values must be strings', $label));
+                    throw new InvalidConfiguration(sprintf('Credential %s values must be strings', $label));
                 }
             }
             /** @var list<string> $values */
@@ -112,11 +112,11 @@ final readonly class Credentials
     private function assertSecretFields(mixed $fields): void
     {
         if (!is_array($fields) || !array_is_list($fields)) {
-            throw new \InvalidArgumentException('Credential secret fields must be a list');
+            throw new InvalidConfiguration('Credential secret fields must be a list');
         }
         foreach ($fields as $field) {
             if (!is_string($field) || $field === '') {
-                throw new \InvalidArgumentException('Credential secret fields must be non-empty strings');
+                throw new InvalidConfiguration('Credential secret fields must be non-empty strings');
             }
         }
     }

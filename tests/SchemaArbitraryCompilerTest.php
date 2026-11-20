@@ -1270,7 +1270,8 @@ final class SchemaArbitraryCompilerTest
         yield 'allOf conflicting type' => [['allOf' => [['type' => 'string'], ['type' => 'integer']]]];
         yield 'allOf invalid required' => [['allOf' => [['type' => 'object', 'required' => 'id']]]];
         yield 'allOf invalid property' => [['allOf' => [['type' => 'object', 'properties' => ['id' => ['string']]]]]];
-        yield 'allOf conflicting constraint' => [['allOf' => [['type' => 'string', 'minLength' => 1], ['type' => 'string', 'minLength' => 2]]]];
+        yield 'allOf conflicting constraint' => [['allOf' => [['type' => 'string', 'pattern' => '^a'], ['type' => 'string', 'pattern' => '^b']]]];
+        yield 'allOf conflicting bound beside an exclusive one' => [['allOf' => [['type' => 'integer', 'minimum' => 1, 'exclusiveMinimum' => true], ['type' => 'integer', 'minimum' => 2]]]];
     }
 
     #[DataProvider('combinatorAnnotationCases')]
@@ -2892,12 +2893,12 @@ final class SchemaArbitraryCompilerTest
         }
         Assert::true($extras > 0, 'a closed object was generated as an open one');
 
-        // An `allOf` sibling is refused by name: a member the branches do not
-        // mention cannot be closed after the fact.
-        foreach (['properties' => ['id' => ['type' => 'integer']], 'type' => 'object'] as $keyword => $value) {
-            Expect::exception(UnsupportedGeneration::class)
-                ->withMessage(sprintf('Unsupported OpenAPI schema generation: allOf with sibling keyword "%s" is outside the supported subset', $keyword));
-            $compiler->compile(['allOf' => [['type' => 'object']], $keyword => $value, 'description' => 'annotated']);
+        // A sibling of `allOf` joins the conjunction, so the closure sees the
+        // members it declares as evaluated (#153).
+        $sibling = ['allOf' => [['type' => 'object']], 'properties' => ['id' => ['type' => 'integer']], 'required' => ['id'], 'unevaluatedProperties' => false, 'description' => 'annotated'];
+        foreach (Gen::sample($compiler->compile($sibling), count: 40, seed: 181) as $value) {
+            Assert::same(array_keys((array) $value), ['id']);
+            Assert::true($check->accepts((object) $value, $sibling, SchemaDialect::OpenApi31));
         }
 
         // A branch that closes the object on its own is refused too — the

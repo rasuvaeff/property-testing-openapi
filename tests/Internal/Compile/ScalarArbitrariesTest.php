@@ -140,4 +140,56 @@ final class ScalarArbitrariesTest
             ->withMessage('Unsupported OpenAPI schema generation: number multipleOf leaves no value');
         (new SchemaArbitraryCompiler())->compile(['type' => 'number', 'minimum' => 0.1, 'maximum' => 0.2, 'multipleOf' => 1]);
     }
+
+    /**
+     * A bound declared on one side only and lying past the default window
+     * takes the other side 2000 from itself (#155); one inside the window
+     * keeps the window's end, so what generated before generates the same.
+     *
+     * @param array<string, mixed> $schema
+     */
+    #[DataProvider('oneSidedBoundProvider')]
+    public function aOneSidedBoundPastTheWindowTakesTheOtherSideFromItself(array $schema, int|float $low, int|float $high): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 200, seed: 3);
+        Assert::true(min($values) >= $low, sprintf('min %s below %s', (string) min($values), (string) $low));
+        Assert::true(max($values) <= $high, sprintf('max %s above %s', (string) max($values), (string) $high));
+        Assert::true(max($values) > $low);
+    }
+
+    public static function oneSidedBoundProvider(): iterable
+    {
+        yield 'integer minimum' => [['type' => 'integer', 'minimum' => 1900], 1900, 3900];
+        yield 'integer exclusive minimum at the window' => [['type' => 'integer', 'minimum' => 1000, 'exclusiveMinimum' => true], 1001, 3001];
+        yield 'integer maximum' => [['type' => 'integer', 'maximum' => -5000], -7000, -5000];
+        yield 'integer exclusive maximum at the window' => [['type' => 'integer', 'maximum' => -1000, 'exclusiveMaximum' => true], -3001, -1001];
+        yield 'integer minimum inside the window' => [['type' => 'integer', 'minimum' => 999], 999, 1000];
+        yield 'integer maximum inside the window' => [['type' => 'integer', 'maximum' => -999], -1000, -999];
+        yield 'number minimum' => [['type' => 'number', 'minimum' => 2000.5], 2000.5, 4000.5];
+        yield 'number maximum' => [['type' => 'number', 'maximum' => -2000.5], -4000.5, -2000.5];
+        yield 'integer minimum near the native limit' => [['type' => 'integer', 'minimum' => PHP_INT_MAX - 10], PHP_INT_MAX - 10, PHP_INT_MAX];
+        yield 'integer maximum near the native limit' => [['type' => 'integer', 'maximum' => PHP_INT_MIN + 10], PHP_INT_MIN, PHP_INT_MIN + 10];
+    }
+
+    public function aOneSidedBoundAtTheEdgeOfTheSaturationWindowDrawsTheFullWindow(): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'integer', 'minimum' => PHP_INT_MAX - 2000]), count: 300, seed: 5);
+        Assert::true(min($values) >= PHP_INT_MAX - 2000);
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'integer', 'maximum' => PHP_INT_MIN + 2000]), count: 300, seed: 5);
+        Assert::true(max($values) <= PHP_INT_MIN + 2000);
+    }
+
+    public function twoDeclaredBoundsThatCrossAreStillRefused(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: integer bounds leave no value');
+        (new SchemaArbitraryCompiler())->compile(['type' => 'integer', 'minimum' => 2000, 'maximum' => 1500]);
+    }
+
+    public function twoDeclaredNumberBoundsThatCrossAreStillRefused(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: number bounds leave no value');
+        (new SchemaArbitraryCompiler())->compile(['type' => 'number', 'minimum' => 2000.0, 'maximum' => 1500.0]);
+    }
 }

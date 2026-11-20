@@ -69,7 +69,10 @@ or binary only — nested objects and arrays fail closed as
 item schema unless the Encoding Object names one. A part declared under a
 JSON media type carries the JSON encoding of its value; `text/*` and
 `application/octet-stream` parts carry it verbatim; any other part media type
-fails closed. Required
+fails closed. A header the Encoding Object requires on a part carries its
+`example`, its `default` or the literal `x-openapi`, whichever its schema
+admits first, and otherwise a value drawn from that schema; a required part
+header no value of which can be generated fails closed. Required
 parameters and request bodies are always present; optional parameters and JSON
 bodies take both present and absent branches. It does not include security
 credentials and can therefore be persisted by the property corpus.
@@ -128,14 +131,15 @@ the same way.
 
 | Keyword | Generation |
 |---|---|
-| `type` (single or list), `const`, `enum`, `nullable` (OAS 3.0) | supported; a type list is a weighted union |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1; a bound so wide that the multiples need more than the 15 significant digits a double spells back exactly fails closed |
+| `type` (single or list), `const`, `enum`, `nullable` (OAS 3.0) | supported; a type list is a weighted union; an `enum` member or a `const` is checked against the keywords beside it (`{integer, maximum: 5, enum: [1, 100]}` draws only `1`), and a `const` or an `enum` they leave nothing of fails closed |
+| annotations: `description`, `title`, `$comment`, `deprecated`, `example`, `examples`, `default`, `externalDocs`, `xml`, `discriminator`, `x-*` | constrain nothing: a schema made of annotations only admits any value, like `{}` |
+| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; an undeclared bound is ±1000, and a bound declared on one side only that lies past that window takes the other side 2000 away from itself (`minimum: 1900` draws from 1900–3900); a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1; a bound so wide that the multiples need more than the 15 significant digits a double spells back exactly fails closed |
 | `minLength`, `maxLength` (capped at 64), `pattern` (PCRE subset) | supported |
 | `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
 | `items`, `minItems`, `maxItems` (capped at 16), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
 | `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (capped at 16), `additionalProperties` (boolean or schema) | supported; pattern keys are generated from the declared regexes and values satisfy every matching pattern schema; the cardinality is met by construction |
 | `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
-| `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches; a branch bounding `additionalProperties` must declare every sibling property) | supported |
+| `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches: annotations are carried, not merged; an assertion beside `allOf` — an OAS 3.0 `nullable`, or the hoisted `type` of the contract's form for a 3.1 `$ref` with siblings — joins the conjunction; the same `minimum`/`maximum`/length/count bound in two branches is met by the tighter one; a branch bounding `additionalProperties` must declare every sibling property) | supported; the empty value of an `anyOf`/`oneOf`/`if` whose branches declare an object and no array is encoded as `{}` |
 | `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed; an empty `[]` takes its type (array or object) from the schema, so `not: {type: object}` never lets `{}` through |
 | `$defs` + local `$ref` (`#/$defs/…`) — the contract's compiled form of a schema that refers to itself, a tree whose `children` are trees | supported; the def unfolds three levels below the root and ends at a leaf that leaves the recursive member out (an optional property omitted, an array that may be empty left empty, a branch of a choice skipped); a def whose only way down is a required member that is the def itself has no finite instance and fails closed; a `$ref` to anything but the schema's own `$defs` fails closed |
 | `if`/`then`/`else` (including boolean schemas and nested conditionals) | supported; values are constructed for both reachable branches and checked with the contract's `SchemaCheck`; an unsatisfiable branch is skipped, and a conditional with no producible branch fails closed |
@@ -272,7 +276,11 @@ Unsupported schema assertions and non-JSON request bodies throw
 `UnsupportedGeneration`; they are never silently widened to arbitrary strings.
 A refusal over a schema names the operation and the parameter or body it was
 compiling (`Unsupported OpenAPI schema generation for operation "pets.list",
-query parameter "limit": minLength exceeds maxLength`).
+query parameter "limit": minLength exceeds maxLength`). The refusal is raised
+by `forOperation()`, never by a later draw: a part media type the generator
+cannot write, a part `Content-Type` or header no HTTP field can carry, a
+parameter nesting an object or a list, and a response header declared as an
+object are all known from the document.
 
 ### Exceptions
 
@@ -283,7 +291,8 @@ catches whatever the package reports; each keeps its SPL parent too.
 | Exception | Parent | When |
 |---|---|---|
 | `UnsupportedGeneration` | `InvalidArgumentException` | the document uses a feature outside the support matrix |
-| `InvalidCase` | `InvalidArgumentException` | a hand-written case does not have the exported shape, or targets another operation |
+| `InvalidCase` | `InvalidArgumentException` | a hand-written case does not have the exported shape, or targets another operation, or a valid/negative check gets a case of the other kind |
+| `InvalidConfiguration` | `InvalidArgumentException` | a configuration argument is malformed: a base URI, a rejection or redaction policy, credentials, a security requirement, the run count, a `PROPERTY_*` value |
 | `SuiteConfigurationError` | `LogicException` | the suite or a transport is asked to run in a shape its configuration does not allow |
 | `CheckFailed` | `RuntimeException` | a built-in check observed a contract failure (`$result` keeps the validation result) |
 | `OperationPropertyFailed` | `RuntimeException` | a phase of `OperationProperty::check()` was falsified |

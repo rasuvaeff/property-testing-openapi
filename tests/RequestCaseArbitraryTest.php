@@ -140,7 +140,8 @@ final class RequestCaseArbitraryTest
 {
     public function multipartEncodingRejectsHeaderInjection(): void
     {
-        Expect::exception(InvalidCase::class)->withMessage('Header "X-Trace" carries a value no HTTP field can');
+        // A defect of the document, refused while it is compiled (#156).
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "upload.create", request body "multipart/form-data": multipart property "title": Header "X-Trace" carries a value no HTTP field can');
 
         $operation = new Operation(
             key: 'upload.create',
@@ -168,12 +169,12 @@ final class RequestCaseArbitraryTest
             ],
         );
 
-        (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(1));
+        (new RequestCaseArbitrary())->forOperation($operation);
     }
 
     public function multipartEncodingRejectsContentTypeInjection(): void
     {
-        Expect::exception(InvalidCase::class)->withMessage('Header "Content-Type" carries a value no HTTP field can');
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "upload.create", request body "multipart/form-data": multipart property "title": Header "Content-Type" carries a value no HTTP field can');
 
         $operation = new Operation(
             key: 'upload.create',
@@ -195,7 +196,7 @@ final class RequestCaseArbitraryTest
             ],
         );
 
-        (new RequestCaseArbitrary())->forOperation($operation)->generate(new Random(1));
+        (new RequestCaseArbitrary())->forOperation($operation);
     }
 
     #[Property(runs: 100)]
@@ -2552,9 +2553,9 @@ final class RequestCaseArbitraryTest
             ]]],
         ]);
 
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Parameter values must be scalar, arrays, or objects with scalar properties');
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "pets.list", query parameter "filter": Parameter values must be scalar, arrays, or objects with scalar properties');
 
-        (new RequestCaseArbitrary())->forOperation($contract->operation('pets.list'))->generate(new Random(1));
+        (new RequestCaseArbitrary())->forOperation($contract->operation('pets.list'));
     }
 
     public function multipartWithoutPropertiesProducesAnEmptyPartList(): void

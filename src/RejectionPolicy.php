@@ -36,7 +36,7 @@ final readonly class RejectionPolicy
     public function forOperation(string $operationKey, int|string ...$statuses): self
     {
         if ($operationKey === '') {
-            throw new \InvalidArgumentException('Operation key must be a non-empty string');
+            throw new InvalidConfiguration('Operation key must be a non-empty string');
         }
         $overrides = $this->overrides;
         $overrides[$operationKey] = self::selectors(array_values($statuses));
@@ -62,15 +62,15 @@ final readonly class RejectionPolicy
     private static function selectors(array $statuses): array
     {
         if ($statuses === []) {
-            throw new \InvalidArgumentException('A rejection policy requires at least one accepted status selector');
+            throw new InvalidConfiguration('A rejection policy requires at least one accepted status selector');
         }
         foreach ($statuses as $status) {
             if (is_int($status)) {
                 if ($status < 100 || $status > 599) {
-                    throw new \InvalidArgumentException(sprintf('Status code %d is outside the 100-599 range', $status));
+                    throw new InvalidConfiguration(sprintf('Status code %d is outside the 100-599 range', $status));
                 }
             } elseif (preg_match('/^[1-5]XX\z/', $status) !== 1) {
-                throw new \InvalidArgumentException(sprintf('Status selector "%s" must be an NXX range', $status));
+                throw new InvalidConfiguration(sprintf('Status selector "%s" must be an NXX range', $status));
             }
         }
 
