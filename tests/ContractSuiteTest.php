@@ -739,7 +739,7 @@ final class ContractSuiteTest
             'info' => ['title' => 'Hosts', 'version' => '1.0.0'],
             'paths' => ['/hosts' => ['get' => [
                 'operationId' => 'hosts.get',
-                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'phone']]],
+                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'iri']]],
                 'responses' => ['204' => ['description' => 'ok']],
             ]]],
         ]);
@@ -749,7 +749,7 @@ final class ContractSuiteTest
         $format = array_values(array_filter($coverage['hosts.get']['skipped'], static fn(array $entry): bool => $entry['kind'] === 'format' && $entry['side'] === 'parameter'));
 
         Assert::same(count($format), 1);
-        Assert::string($format[0]['reason'])->contains('no witness is held for format "phone"');
+        Assert::string($format[0]['reason'])->contains('no witness is held for format "iri"');
     }
 
     /**
@@ -775,8 +775,9 @@ final class ContractSuiteTest
     // has since #152, and the half-an-operation gates went from 0.5% to 0.4%
     // to stay as many standard deviations under their mean as they were.
     // 0.21.0 brought the zoo to 45 operations, and the runs to 1300 with it,
-    // so each operation is still drawn about as often as at 1100 over 39.
-    #[Property(runs: 1300, generators: [ZooContracts::class, 'taggedCase'])]
+    // so each operation is still drawn about as often as at 1100 over 39;
+    // 0.22.0 to 47 and 1400.
+    #[Property(runs: 1400, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
@@ -810,6 +811,15 @@ final class ContractSuiteTest
             Assert::true($mediaType === 'application/json' || $mediaType === 'application/x-www-form-urlencoded');
             Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.4);
             Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.4);
+        }
+        if ($key === 'memos.create') {
+            $encoding = $case['body']['encoding'] ?? null;
+            Assert::true($encoding === 'json' || $encoding === 'raw');
+            Classify::cover(condition: $encoding === 'json', label: 'memo body as json', minPercent: 0.4);
+            Classify::cover(condition: $encoding === 'raw', label: 'memo body as text', minPercent: 0.4);
+        }
+        if ($key === 'contacts.create') {
+            Assert::same(preg_match('/^[A-Z]{2}-[0-9]{3}$/', (string) ($case['query']['sku'] ?? '')), 1);
         }
         if ($key === 'enum.get') {
             Assert::same($case['path']['mode'], 'ok');

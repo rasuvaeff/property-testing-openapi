@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
 use DateTimeImmutable;
+use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -38,6 +39,9 @@ final readonly class ScalarArbitraries
      *
      * @var array<string, array{int, int}>
      */
+    /** Every format {@see string()} has a generator of its own for. */
+    private const array GENERATED_FORMATS = ['password', 'uuid', 'email', 'ipv4', 'uri', 'uri-reference', 'url', 'date-time', 'date', 'hostname', 'ipv6', 'time', 'duration'];
+
     private const array FORMAT_LENGTHS = [
         'uuid' => [36, 36],
         'email' => [6, 36],
@@ -117,6 +121,14 @@ final readonly class ScalarArbitraries
         $pattern = $schema['pattern'] ?? null;
         if ($pattern !== null && !is_string($pattern)) {
             throw UnsupportedGeneration::forSchema('pattern must be a string');
+        }
+        if ($format !== null && !in_array($format, self::GENERATED_FORMATS, strict: true) && !SchemaCheck::assertsFormat('string', $format)) {
+            // An annotation the contract does not check — `phone`, `byte`, a
+            // format of the document's own — admits every string, so the
+            // string is drawn as if no format were declared. Whether it is an
+            // annotation is the contract's answer, never a copy of its list
+            // (#168); an asserted format with no generator still refuses.
+            $format = null;
         }
         if ($pattern !== null && $format !== null && $format !== 'password') {
             throw UnsupportedGeneration::forSchema(sprintf('pattern combined with format "%s" is outside the supported subset', $format));

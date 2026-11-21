@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
+use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 
 /**
@@ -260,7 +261,7 @@ final readonly class SchemaProbe
     public function unsupportedFormat(array $schema): ?string
     {
         $format = $schema['format'] ?? null;
-        if (!is_string($format) || $format === '' || array_key_exists($format, self::FORMAT_WITNESSES)) {
+        if (!is_string($format) || $format === '' || array_key_exists($format, self::FORMAT_WITNESSES) || $this->isAnnotation($schema, $format)) {
             return null;
         }
 
@@ -268,9 +269,31 @@ final readonly class SchemaProbe
     }
 
     /**
+     * Whether the contract reads the format as an annotation on every type
+     * the schema declares — a string when it declares none — so that no
+     * value contradicts it and its absence of a witness is no gap (#168).
+     *
+     * @param array<string, mixed> $schema
+     */
+    public function isAnnotation(array $schema, string $format): bool
+    {
+        $types = $this->declaredTypes($schema);
+        if ($types === []) {
+            $types = ['string'];
+        }
+        foreach (array_keys($types) as $index) {
+            if (is_string($types[$index]) && SchemaCheck::assertsFormat($types[$index], $format)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Why no `format` witness is offered, or `null` when one is.
      *
-     * The three causes are opposite situations for a document owner. A schema
+     * The causes are opposite situations for a document owner. A schema
      * that declares no format is not a gap. One that declares a format this
      * package holds no witness for is a gap, and the right response to it is
      * to say so here rather than to edit the schema — which a bare `null`
@@ -284,7 +307,7 @@ final readonly class SchemaProbe
             return FormatRefusal::NotDeclared;
         }
         if (!array_key_exists($schema['format'], self::FORMAT_WITNESSES)) {
-            return FormatRefusal::Unsupported;
+            return $this->isAnnotation($schema, $schema['format']) ? FormatRefusal::Annotation : FormatRefusal::Unsupported;
         }
         if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
             return FormatRefusal::NotAString;

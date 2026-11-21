@@ -184,7 +184,9 @@ final class SchemaProbeTest
 
     public static function unsupportedFormatProvider(): iterable
     {
-        yield 'unsupported' => [['type' => 'string', 'format' => 'phone'], 'phone'];
+        yield 'unsupported' => [['type' => 'string', 'format' => 'iri'], 'iri'];
+        yield 'an annotation is no gap' => [['type' => 'string', 'format' => 'phone'], null];
+        yield 'asserted on an integer' => [['type' => 'integer', 'format' => 'int32'], 'int32'];
         yield 'supported' => [['type' => 'string', 'format' => 'email'], null];
         yield 'none declared' => [['type' => 'string'], null];
         yield 'empty' => [['type' => 'string', 'format' => ''], null];
@@ -201,7 +203,9 @@ final class SchemaProbeTest
     {
         yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
         yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Unsupported];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'iri'], FormatRefusal::Unsupported];
+        yield 'an annotation' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Annotation];
+        yield 'asserted on one member of a union' => [['type' => ['string', 'integer'], 'format' => 'int64'], FormatRefusal::Unsupported];
         yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
         yield 'supported format without a type' => [['format' => 'date'], FormatRefusal::NotAString];
         yield 'no refusal' => [['type' => 'string', 'format' => 'email'], null];

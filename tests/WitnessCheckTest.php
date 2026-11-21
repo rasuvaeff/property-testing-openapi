@@ -109,8 +109,10 @@ final class WitnessCheckTest
     {
         yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
         yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Unsupported];
-        yield 'url is deliberately unsupported' => [['type' => 'string', 'format' => 'url'], FormatRefusal::Unsupported];
+        yield 'an annotation the contract does not check' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Annotation];
+        yield 'url is an annotation to the contract' => [['type' => 'string', 'format' => 'url'], FormatRefusal::Annotation];
+        yield 'an asserted format with no witness' => [['type' => 'string', 'format' => 'iri'], FormatRefusal::Unsupported];
+        yield 'an annotation on an untyped schema' => [['format' => 'byte'], FormatRefusal::Annotation];
         yield 'supported format on a non-string' => [['type' => 'integer', 'format' => 'int64'], FormatRefusal::Unsupported];
         yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
         yield 'no refusal' => [['type' => 'string', 'format' => 'email'], null];
@@ -126,14 +128,17 @@ final class WitnessCheckTest
     public function anUnsupportedFormatIsNamedInTheRefusal(): void
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
-            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'phone'], 'specPointer' => '#/h'],
-            ['name' => 'when', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'byte'], 'specPointer' => '#/w'],
+            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'iri'], 'specPointer' => '#/h'],
+            ['name' => 'when', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'idn-email'], 'specPointer' => '#/w'],
+            ['name' => 'tel', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'phone'], 'specPointer' => '#/t'],
         ]);
 
         try {
             (new ParameterTargets())->formatMismatch($operation);
         } catch (UnsupportedGeneration $exception) {
-            Assert::string($exception->getMessage())->contains('no witness is held for format "phone", "byte"');
+            Assert::string($exception->getMessage())->contains('no witness is held for format "iri", "idn-email"');
+            // `phone` is an annotation: nothing contradicts it, and it is no gap (#168).
+            Assert::false(str_contains($exception->getMessage(), 'phone'));
 
             return;
         }

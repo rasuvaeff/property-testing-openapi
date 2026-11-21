@@ -695,11 +695,11 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
-    public function rejectsUnknownFormats(): void
+    public function rejectsAssertedFormatsWithoutAGenerator(): void
     {
         Expect::exception(UnsupportedGeneration::class);
 
-        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'binary']);
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'iri']);
     }
 
     #[DataProvider('unsupportedKeywordCases')]
