@@ -128,7 +128,7 @@ final readonly class ResponseTargets
     }
 
     /**
-     * @param 'type'|'enum'|'const'|'boundary'|'length'|'pattern' $kind
+     * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
      * @return non-empty-list<Target>
      */
     public function bodyWitness(Operation $operation, int $status, string $kind): array

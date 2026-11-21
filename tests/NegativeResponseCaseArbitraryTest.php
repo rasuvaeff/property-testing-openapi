@@ -10,6 +10,7 @@ use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
@@ -30,6 +31,7 @@ use Testo\Test;
 #[Covers(NegativeResponseCaseArbitrary::class)]
 #[Covers(ResponseTargets::class)]
 #[Covers(JsonBodyWitness::class)]
+#[Covers(ConstructibleCategories::class)]
 final class NegativeResponseCaseArbitraryTest
 {
     #[DataProvider('categoryProvider')]
@@ -93,6 +95,69 @@ final class NegativeResponseCaseArbitraryTest
         ksort($kinds);
 
         Assert::same(array_keys($kinds), ['additional-properties', 'boundary', 'const', 'enum', 'json-syntax', 'length', 'media-type', 'missing-required', 'pattern', 'type', 'undeclared-status']);
+    }
+
+    public function aFormatTheBodyDeclaresIsContradicted(): void
+    {
+        $contract = ResponseContracts::contacts();
+        $operation = $contract->operation('contacts.get');
+        $factory = new Psr17Factory();
+        $materializer = new ResponseMaterializer($factory, $factory);
+        $negative = new NegativeResponseCaseArbitrary();
+
+        foreach (range(1, 10) as $seed) {
+            $case = $negative->formatMismatchForOperation($operation, 200)->generate(new Random($seed))->value;
+
+            Assert::same($case['misuse'], ['kind' => 'format', 'location' => 'body', 'name' => 'email']);
+            Assert::same($case['body']['value']['email'] ?? null, 'not-an-email');
+            Assert::false($contract->validateResponse('contacts.get', $materializer->materialize($operation, $case))->isValid());
+        }
+        Assert::same(array_keys($negative->categoriesForOperation($operation, 200)), ['undeclared-status', 'missing-required', 'type', 'media-type', 'json-syntax', 'format']);
+    }
+
+    public function categoriesAreKeyedByKindInWeightingOrder(): void
+    {
+        $categories = (new NegativeResponseCaseArbitrary())->categoriesForOperation(ResponseContracts::pets()->operation('pets.get'), 200);
+
+        Assert::same(array_keys($categories), ['undeclared-status', 'missing-required-header', 'missing-required', 'type', 'enum', 'const', 'boundary', 'length', 'pattern', 'additional-properties', 'media-type', 'json-syntax']);
+        Assert::same($categories['missing-required-header']->generate(new Random(1))->value['misuse'], ['kind' => 'missing-required', 'location' => 'header', 'name' => 'X-Rate-Limit']);
+    }
+
+    public function theAnyUnionIsTheSameUnion(): void
+    {
+        $operation = ResponseContracts::pets()->operation('pets.get');
+        $negative = new NegativeResponseCaseArbitrary();
+
+        foreach (range(1, 20) as $seed) {
+            Assert::same($negative->anyForOperation($operation, 200)->generate(new Random($seed))->value, $negative->forOperation($operation, 200)->generate(new Random($seed))->value);
+        }
+    }
+
+    public function coverageListsWhatTheResponsePhaseReachesAndWhyNot(): void
+    {
+        $coverage = (new NegativeResponseCaseArbitrary())->coverageForOperation(ResponseContracts::pets()->operation('pets.count'), 200);
+
+        Assert::same($coverage['covered'], [
+            ['kind' => 'undeclared-status', 'location' => 'status', 'name' => '599'],
+            ['kind' => 'type', 'location' => 'body', 'name' => '$'],
+            ['kind' => 'boundary', 'location' => 'body', 'name' => '$'],
+            ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'],
+            ['kind' => 'json-syntax', 'location' => 'body', 'name' => 'body'],
+        ]);
+        Assert::same(array_map(static fn(array $entry): string => $entry['kind'] . '@' . $entry['location'], $coverage['skipped']), [
+            'missing-required@header', 'missing-required@body', 'enum@body', 'const@body', 'length@body', 'pattern@body', 'additional-properties@body', 'format@body',
+        ]);
+        Assert::same($coverage['skipped'][0]['reason'], 'Response for status 200 of operation "pets.count" declares no required header');
+    }
+
+    public function coverageOfTheObjectBodyNamesEveryTarget(): void
+    {
+        $coverage = (new NegativeResponseCaseArbitrary())->coverageForOperation(ResponseContracts::pets()->operation('pets.get'), 200);
+
+        Assert::true(in_array(['kind' => 'missing-required', 'location' => 'header', 'name' => 'X-Rate-Limit'], $coverage['covered'], strict: true));
+        Assert::true(in_array(['kind' => 'missing-required', 'location' => 'body', 'name' => 'id'], $coverage['covered'], strict: true));
+        Assert::true(in_array(['kind' => 'additional-properties', 'location' => 'body', 'name' => '__openapi_extra_property__'], $coverage['covered'], strict: true));
+        Assert::true(in_array(['kind' => 'enum', 'location' => 'body', 'name' => 'status'], $coverage['covered'], strict: true));
     }
 
     #[Property(runs: 20)]

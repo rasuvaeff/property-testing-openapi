@@ -676,6 +676,38 @@ final class ContractSuiteTest
      * rather than raising — a document owner asking what is covered is asking
      * precisely about that case.
      */
+    public function generationCoverageNamesTheRefusalOfEveryUnsupportedOperation(): void
+    {
+        $factory = new Psr17Factory();
+        $contract = Contract::fromArray(['openapi' => '3.1.0', 'paths' => [
+            '/ok' => ['get' => ['operationId' => 'ok', 'responses' => ['204' => []]]],
+            '/no' => ['get' => [
+                'operationId' => 'no',
+                'parameters' => [['name' => 'n', 'in' => 'query', 'schema' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 2]]],
+                'responses' => ['204' => []],
+            ]],
+        ]]);
+
+        $coverage = ContractSuite::fromContract($contract, $factory, $factory)->operations(['ok', 'no'])->generationCoverage();
+
+        Assert::same($coverage, [
+            'ok' => ['supported' => true, 'reason' => null],
+            'no' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "no", query parameter "n": minLength exceeds maxLength or the generation budget'],
+        ]);
+    }
+
+    public function generationCoverageCoversOnlyTheSelection(): void
+    {
+        Assert::same($this->suite()->operations(['pets.list'])->generationCoverage(), ['pets.list' => ['supported' => true, 'reason' => null]]);
+    }
+
+    public function everyZooOperationIsSupported(): void
+    {
+        foreach ([ZooContracts::suite(), ZooContracts::legacySuite()] as $suite) {
+            Assert::same(array_filter($suite->generationCoverage(), static fn(array $operation): bool => !$operation['supported']), []);
+        }
+    }
+
     public function negativeCoverageIsEmptyForAnOperationWithNoMisuse(): void
     {
         $factory = new Psr17Factory();

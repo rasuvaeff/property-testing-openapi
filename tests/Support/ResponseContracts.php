@@ -71,6 +71,26 @@ final class ResponseContracts
         ]);
     }
 
+    /**
+     * A response whose only constrained member is a `format`, for the format
+     * category the response side gained with #171.
+     */
+    public static function contacts(): Contract
+    {
+        return Contract::fromArray([
+            'openapi' => '3.1.0',
+            'paths' => ['/contacts/{id}' => ['get' => [
+                'operationId' => 'contacts.get',
+                'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                'responses' => ['200' => ['description' => 'contact', 'content' => ['application/json' => ['schema' => [
+                    'type' => 'object',
+                    'required' => ['email'],
+                    'properties' => ['email' => ['type' => 'string', 'format' => 'email']],
+                ]]]]],
+            ]]],
+        ]);
+    }
+
     /** @return array<string, ArbitraryInterface> */
     public static function petCase(): array
     {
