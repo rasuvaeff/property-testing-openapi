@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
@@ -91,7 +92,7 @@ final readonly class ResponseTargets
     {
         $schema = $this->requireJsonBody($operation, $status, 'missing required property')['schema'];
         $required = $this->mapOf($schema['required'] ?? null);
-        if ($this->isObject($schema)) {
+        if (SchemaShape::isObject($schema)) {
             /** @var mixed $name */
             foreach ($required as $name) {
                 if (is_string($name) && $name !== '') {
@@ -107,7 +108,7 @@ final readonly class ResponseTargets
     public function additionalProperty(Operation $operation, int $status): string
     {
         $schema = $this->requireJsonBody($operation, $status, 'additional property')['schema'];
-        if (!$this->isObject($schema) || ($schema['additionalProperties'] ?? null) !== false) {
+        if (!SchemaShape::isObject($schema) || ($schema['additionalProperties'] ?? null) !== false) {
             throw new UnsupportedGeneration(sprintf('Response for status %d of operation "%s" does not reject additional properties', $status, $operation->key));
         }
         $properties = $this->mapOf($schema['properties'] ?? null);
@@ -132,12 +133,6 @@ final readonly class ResponseTargets
         }
 
         throw new UnsupportedGeneration(sprintf('Response for status %d of operation "%s" has no body value with a constructible %s mismatch', $status, $operation->key, $kind));
-    }
-
-    /** @param array<string, mixed> $schema */
-    private function isObject(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
     }
 
     /** @return array<array-key, mixed> */

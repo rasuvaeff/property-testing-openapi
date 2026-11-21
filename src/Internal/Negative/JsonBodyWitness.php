@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Random;
@@ -100,7 +101,7 @@ final readonly class JsonBodyWitness
      */
     private function candidates(array $schema, SchemaDirection $direction): array
     {
-        if (!$this->isObject($schema)) {
+        if (!SchemaShape::isObject($schema)) {
             return [self::ROOT => $schema];
         }
         $candidates = [];
@@ -236,12 +237,6 @@ final readonly class JsonBodyWitness
         $witness = $this->patterns->search($constraints['pattern'], $constraints['minLength'], $constraints['maxLength']);
 
         return $witness === null ? [] : [$witness];
-    }
-
-    /** @param array<string, mixed> $schema */
-    private function isObject(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
     }
 
     /** @return array<array-key, mixed> */

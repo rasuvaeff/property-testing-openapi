@@ -14,6 +14,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
@@ -30,6 +31,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(NegativeResponseCaseArbitrary::class)]
+#[Covers(SchemaShape::class)]
 #[Covers(UndeclaredMediaType::class)]
 #[Covers(ResponseTargets::class)]
 #[Covers(JsonBodyWitness::class)]

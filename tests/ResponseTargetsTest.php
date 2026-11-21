@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -19,6 +20,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(ResponseTargets::class)]
+#[Covers(SchemaShape::class)]
 #[Covers(UndeclaredMediaType::class)]
 final class ResponseTargetsTest
 {
@@ -93,6 +95,26 @@ final class ResponseTargetsTest
         $operation = $this->jsonResponse(['properties' => ['__openapi_extra_property__' => ['type' => 'string']], 'additionalProperties' => false]);
 
         Assert::same((new ResponseTargets())->additionalProperty($operation, 200), '__openapi_extra_property___');
+    }
+
+    /**
+     * A nullable object spelled as a type list is an object too: its
+     * required member and its closed shape are targets, and its properties
+     * are witnessed one by one rather than as a scalar root (#163).
+     */
+    public function aTypeListWithObjectIsAnObjectBody(): void
+    {
+        $operation = $this->jsonResponse([
+            'type' => ['object', 'null'],
+            'required' => ['id'],
+            'additionalProperties' => false,
+            'properties' => ['id' => ['type' => 'integer', 'maximum' => 9]],
+        ]);
+        $targets = new ResponseTargets();
+
+        Assert::same($targets->missingRequired($operation, 200), 'id');
+        Assert::same($targets->additionalProperty($operation, 200), '__openapi_extra_property__');
+        Assert::same($targets->bodyWitness($operation, 200, 'boundary'), [['name' => 'id', 'invalid' => 10]]);
     }
 
     public function aScalarBodyRejectsNoAdditionalProperty(): void
