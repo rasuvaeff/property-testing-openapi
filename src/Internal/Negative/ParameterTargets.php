@@ -205,8 +205,8 @@ final readonly class ParameterTargets
 
         return match ($kind) {
             'type' => $this->probe->typeWitnesses($schema, self::TYPE_WITNESSES),
-            'enum' => $this->probe->finiteCandidates($schema, 'enum', '__openapi_invalid_enum__', self::constMarker(...)),
-            'const' => $this->probe->finiteCandidates($schema, 'const', '__openapi_invalid_enum__', self::constMarker(...)),
+            'enum' => $this->probe->finiteCandidates($schema, 'enum', '__openapi_invalid_enum__', $this->constMarker(...)),
+            'const' => $this->probe->finiteCandidates($schema, 'const', '__openapi_invalid_enum__', $this->constMarker(...)),
             'boundary' => $this->probe->outOfRangeValues($schema),
             'length' => $this->probe->outOfLengthValues($schema),
             'format' => $this->probe->formatWitnesses($schema),
@@ -217,7 +217,7 @@ final readonly class ParameterTargets
     /**
      * A wire string for a scalar `const`; a parameter cannot carry `null`.
      */
-    private static function constMarker(mixed $const): ?string
+    private function constMarker(mixed $const): ?string
     {
         if (!is_scalar($const)) {
             return null;

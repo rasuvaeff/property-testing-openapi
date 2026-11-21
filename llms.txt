@@ -56,9 +56,14 @@ Public API:
   bound wins). The 64-character and 16-member budgets rise to a declared
   `minLength`/`minItems`/`minProperties` above them. A `text/plain` or
   `application/octet-stream` body (request or response) is sent as it is
-  (`encoding: 'raw'`, non-empty UTF-8) when no JSON/form/multipart media type
-  is declared beside it: opaque without a schema, a string schema's value
-  otherwise, refused under any other schema.
+  (`encoding: 'raw'`, non-empty UTF-8), drawn evenly beside every other
+  media type the operation offers (0.22.0): opaque without a schema, a string
+  schema's value otherwise; under any other schema it is skipped beside
+  another body and refused when it is the only one.
+- A `format` the contract reads as an annotation (`SchemaCheck::assertsFormat()`
+  is false: `phone`, `byte`, `binary`, custom ones) is generated as a plain
+  string, `pattern` allowed; an asserted format without a generator (`iri`,
+  `idn-email`, `json-pointer`, `regex`, …) refuses the operation.
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
   builds the request target against the operation's first effective server
   (relative server -> path-only URI, absolute server -> absolute URI);
@@ -124,8 +129,9 @@ Public API:
   `format` and records `misuse.kind = 'format'`. Witnesses are held for
   exactly eleven formats: `uuid`, `email`, `ipv4`, `ipv6`, `hostname`, `uri`,
   `uri-reference`, `date`, `date-time`, `time`, `duration`. `url`
-  is excluded deliberately (the backend does not assert it); any other format
-  has no witness, contributes no case, and is named in the refusal.
+  is excluded deliberately (the backend does not assert it); an annotation
+  format has nothing to contradict and is not named; an asserted format with
+  no witness contributes no case and is named in the refusal.
 - Every value category is verified, not asserted: a candidate witness is kept
   only when the property's schema rejects it and the same schema without the
   category's keywords accepts it, checked through `Contract::accepts()`. A
@@ -265,8 +271,9 @@ Public API:
   Response Object the status resolves to (exact -> NXX -> default via
   `Operation::responseFor`); required headers always present, `writeOnly`
   properties left out; `jsonBody(Operation, int)` exposes the response-direction
-  media type + schema. A response with no JSON media type but a
-  `text/plain`/`application/octet-stream` one gets a raw body. Undeclared
+  media type + schema. A `text/plain`/`application/octet-stream` media type
+  gets a raw body, drawn beside the first JSON one when both are declared;
+  body misuse cases are written over a JSON value only. Undeclared
   status / required header without schema / content with neither throw
   `UnsupportedGeneration`. `ResponseMaterializer` refuses a case missing a key
   (or with one of the wrong type) with `InvalidCase`.

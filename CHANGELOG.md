@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.22.0 — 2026-11-21
+
+- **Changed (draws).** A `text/plain` or `application/octet-stream` body is
+  drawn evenly beside every other media type a request body declares, and
+  beside the first JSON one of a response, so an operation accepting JSON and
+  `text/plain` exercises both. In 0.21.0 it was generated only where no JSON,
+  form or multipart media type was declared. Operations declaring such a pair
+  draw differently; others draw what they drew. A raw media type whose schema
+  is refused is skipped beside another body and refuses only when it is the
+  only one. Negative response body misuse cases keep a JSON base (#175).
+- **Added.** A `format` the contract reads as an annotation (`phone`, `byte`,
+  `binary`, a format of the document's own) is generated as a plain string,
+  `pattern` included, instead of refusing the operation. The answer comes
+  from `SchemaCheck::assertsFormat()` (openapi-contract 0.18.0), never from a
+  copy of the contract's list; a format the contract asserts and this package
+  has no generator for (`iri`, `idn-email`, `json-pointer`, `regex`, …) still
+  refuses. On the negative side such an annotation is no longer reported as
+  a format without a witness: nothing contradicts it (#168).
+- **Changed.** The negative body targets (response `missing-required`,
+  `additional-properties` and the body value categories, request body value
+  categories) read a type list such as `['object', 'null']` as an object, as
+  the generator does: such a schema gains targets, so its negative draws
+  differ (#163).
+- **Changed (requirements).** `rasuvaeff/openapi-contract` `^0.18`.
+- **Internal.** `FormBodies` and `MultipartBodies` split out of
+  `RequestCaseArbitrary` (892 → about 400 lines); `ContainerArbitraries::object()`,
+  `SchemaArbitraryCompiler::dependencies()` and
+  `CompositionArbitraries::mergeAllOf()` split into named steps; one source
+  for the map readings of the materializers (`CaseMaps`), the undeclared
+  media type of both media type mismatches, the type/enum/const witnesses of
+  the parameter and body sides (each side keeps its markers) and
+  `SchemaShape::isObject()`. The multipart part header drawn at compile time
+  goes through `Probe::first()` with the same seed and budget. Draws of every
+  case that existed before are unchanged: the recorded corpus is identical
+  apart from the two new zoo operations (#163).
+- **Tests.** Zoo operations `contacts.create` (annotation formats on path,
+  query with a `pattern`, header, cookie and body) and `memos.create` (JSON
+  beside `text/plain`); the zoo property runs 1400 times over 47 operations.
+
 ## 0.21.0 — 2026-11-21
 
 - **Added.** `oneOf` over objects told apart by one property — required by

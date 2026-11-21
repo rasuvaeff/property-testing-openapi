@@ -105,6 +105,11 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   rounds `floor($max / $m)` onto it.
 - **`[]` has no type of its own.** It is the empty array and the empty
   object; under `not` its type comes from the source schema (#146).
+- **Whether a `format` is an assertion is the contract's answer.**
+  `SchemaCheck::assertsFormat()` (openapi-contract 0.18.0) decides whether an
+  unknown format is an annotation that a plain string satisfies; a format it
+  asserts and `ScalarArbitraries` has no generator for still refuses. Never
+  keep a list of asserted formats here.
 - **Never predict a contract verdict with a copy of its rule.** Whether the
   `number` branch of a `oneOf` admits an integer is
   `SchemaCheck::isMultipleOf()` (openapi-contract 0.12.2); the float copy
@@ -170,8 +175,11 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   every site that silently drops a refused alternative — the media-type skip
   in `body()`, `ConstructibleCategories::built()`, the presence combinations
   of `dependencies()` — for a document that generated before and now draws a
-  new alternative. Raw bodies are generated only where no JSON, form or
-  multipart media type is declared beside them for exactly this reason.
+  new alternative — and when it does, say so under Changed in CHANGELOG and
+  explain the moved `expect` values in the corpus PR. Since 0.22.0 raw bodies
+  are drawn beside JSON, form and multipart ones (a deliberate draw shift);
+  a raw media type whose schema is refused is skipped beside another body,
+  never refusing an operation that generated.
 - A `oneOf` over objects is disjoint only by proof: every branch requires one
   property pinned by scalar `const`/`enum` values no two branches share
   (`1` and `1.0` are one value). Never widen this to a filter that keeps
@@ -209,7 +217,9 @@ value is passed on as a `string` argument), `isset()` guarding an
 behavior), and `true` values in a name-lookup map read only through
 `array_keys()`.
 
-`RequestCaseArbitrary` (form/multipart generation) adds: redundant `(array)` /
+`FormBodies`/`MultipartBodies` (form/multipart generation, part of
+`RequestCaseArbitrary` until 0.22.0 — their tests carry `#[Covers]` for both)
+add: redundant `(array)` /
 `(string)` / `(int)` casts on operands already narrowed by `is_array()` /
 `is_string()` / `is_int()`; `LogicException` guards on shapes the generator
 itself produced (unreachable typing guards); the default lower bound of a

@@ -295,7 +295,7 @@ final readonly class NegativeResponseCaseArbitrary
     {
         $target = $this->targets->mediaTypeMismatch($operation, $status);
 
-        return $this->mutate($operation, $status, json: true, mutation: static function (array $case) use ($target): array {
+        return $this->mutate($operation, $status, mutation: static function (array $case) use ($target): array {
             $body = $case['body'];
             if ($body === null) {
                 throw new \LogicException('JSON response body expected for a media type misuse');
@@ -305,7 +305,7 @@ final readonly class NegativeResponseCaseArbitrary
             $case['misuse'] = ['kind' => 'media-type', 'location' => 'body', 'name' => 'body'];
 
             return $case;
-        });
+        }, json: true);
     }
 
     /** @return ArbitraryInterface<ResponseCaseData> */
@@ -364,7 +364,7 @@ final readonly class NegativeResponseCaseArbitrary
      */
     private function mutateBody(Operation $operation, int $status, string $kind, string $name, \Closure $mutation, bool $root = false): ArbitraryInterface
     {
-        return $this->mutate($operation, $status, json: true, mutation: fn(array $case): array => $this->writeBody($case, $kind, $name, $mutation, $root));
+        return $this->mutate($operation, $status, mutation: fn(array $case): array => $this->writeBody($case, $kind, $name, $mutation, $root), json: true);
     }
 
     /**

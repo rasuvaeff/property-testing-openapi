@@ -208,7 +208,7 @@ final readonly class RequestCaseArbitrary
                 $bodies[] = [1, $body];
             }
         }
-        if ($bodies === [] && $rawRefusal !== null) {
+        if ($bodies === [] && $rawRefusal instanceof \Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration) {
             throw $rawRefusal;
         }
         if ($bodies === []) {

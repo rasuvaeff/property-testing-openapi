@@ -136,6 +136,7 @@ the same way.
 | `minimum`, `maximum`, `exclusiveMinimum`/`exclusiveMaximum` (the OAS 3.0 boolean and the OAS 3.1 number), `multipleOf` | supported; a numeric exclusive bound beside an inclusive one is met by the tighter of the two, and an integer above a fractional exclusive bound starts at the next integer (`exclusiveMinimum: 0.5` draws from 1); an undeclared bound is ±1000, and a bound declared on one side only that lies past that window takes the other side 2000 away from itself (`minimum: 1900` draws from 1900–3900); a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1; a bound so wide that the multiples need more than the 15 significant digits a double spells back exactly fails closed |
 | `minLength`, `maxLength` (capped at 64, or at `minLength` when it is larger), `pattern` (PCRE subset) | supported |
 | `format`: `uuid`, `email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `time`, `duration`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
+| any other `format` the contract reads as an annotation (`phone`, `byte`, `binary`, a format of the document's own) | supported as a plain string, with `pattern` too — the answer comes from `SchemaCheck::assertsFormat()` in `openapi-contract`, not from a list kept here; a format the contract asserts and this package has no generator for (`iri`, `idn-email`, `json-pointer`, `regex`, …) fails closed |
 | `items`, `minItems`, `maxItems` (capped at 16, or at `minItems` when it is larger), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
 | `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (capped at 16, or at `minProperties` when it is larger), `additionalProperties` (boolean or schema) | supported; pattern keys are generated from the declared regexes and values satisfy every matching pattern schema; the cardinality is met by construction |
 | `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
@@ -206,12 +207,13 @@ fixed witness that provably violates its `format` and records
 `misuse.kind = 'format'`. A witness is held for eleven formats — `uuid`,
 `email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `date`,
 `date-time`, `time`, `duration` — and `url` is deliberately not among them,
-because the validation backend does not assert it. Any other format (`phone`,
-`byte`, a custom one) has no
-witness and contributes no case: the refusal names it, so a constraint going
-untested for want of a witness here is visible rather than silent, and the
-right response is an issue on this repository rather than an edit to the
-document.
+because the validation backend does not assert it. A format the contract
+reads as an annotation (`phone`, `byte`, a custom one) has nothing to
+contradict and is not named. A format the contract asserts and no witness is
+held for (`iri`, `idn-email`, …) contributes no case: the refusal names it,
+so a constraint going untested for want of a witness here is visible rather
+than silent, and the right response is an issue on this repository rather
+than an edit to the document.
 `patternMismatchForOperation()` replaces one `string` parameter with a
 searched wire value that provably fails its `pattern` and records
 `misuse.kind = 'pattern'`. The pattern itself is the oracle: bounded candidates
@@ -280,9 +282,12 @@ strings. A `text/plain` or `application/octet-stream` body is sent as it is
 declares no schema, the string value of a string schema otherwise
 (`format: binary` is read as the annotation it is), and refused under any
 other schema, which the contract cannot judge an undecoded payload against.
-It is generated where the operation offers no JSON, form or multipart media
-type — beside one it is left out, so an operation that generated before
-draws the cases it always drew.
+It is drawn beside every other media type the operation offers, evenly, so
+an operation accepting JSON and `text/plain` exercises both (0.22.0; before,
+a raw body was generated only where no JSON, form or multipart media type
+was declared). A raw media type whose schema is refused is skipped beside
+another body, as an unrecognised media type is, and refuses the operation
+only when it is all there is.
 A refusal over a schema names the operation and the parameter or body it was
 compiling (`Unsupported OpenAPI schema generation for operation "pets.list",
 query parameter "limit": minLength exceeds maxLength`). The refusal is raised
@@ -546,7 +551,7 @@ rather than by it.
 $suite->generationCoverage();
 // [
 //   'pets.list' => ['supported' => true, 'reason' => null],
-//   'pets.scan' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "pets.scan", query parameter "n": format "phone" is outside the supported format subset'],
+//   'pets.scan' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "pets.scan", query parameter "n": format "iri" is outside the supported format subset'],
 // ]
 ```
 
@@ -580,9 +585,10 @@ optional ones take both branches, and the JSON body is generated with
 values with the `simple` style like request headers — as sent, a list joined
 with commas — and the generator keeps a control character or a comma inside
 an item out of them, so neither reaches the PSR-7 factory. `ResponseCaseData` is JSON-compatible and
-corpus-safe like its request counterpart. A response that declares no JSON
-media type but a `text/plain` or `application/octet-stream` one gets a raw
-body under the same rules as a request body. An undeclared status, a required
+corpus-safe like its request counterpart. A `text/plain` or
+`application/octet-stream` media type gets a raw body under the same rules as
+a request body, drawn beside the first JSON one when the response declares
+both; a body misuse is still written over a JSON value only. An undeclared status, a required
 header without a schema, or a body with neither fail closed as
 `UnsupportedGeneration`. `ResponseMaterializer` refuses a hand-written case
 that lacks a key, or carries one of the wrong type, with `InvalidCase` naming

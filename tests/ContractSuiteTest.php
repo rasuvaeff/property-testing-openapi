@@ -776,7 +776,11 @@ final class ContractSuiteTest
     // to stay as many standard deviations under their mean as they were.
     // 0.21.0 brought the zoo to 45 operations, and the runs to 1300 with it,
     // so each operation is still drawn about as often as at 1100 over 39;
-    // 0.22.0 to 47 and 1400.
+    // 0.22.0 to 47 and 1400. Operations are not drawn evenly — the element
+    // generator biases toward the ends of the list — and at 1400 runs the
+    // half-an-operation gates at 0.4% landed on 4 and 5 cases in two local
+    // runs out of five, so they are 0.2% (3 cases) now: still red on a
+    // branch reached zero times, no longer red on an unlucky seed.
     #[Property(runs: 1400, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
@@ -809,14 +813,14 @@ final class ContractSuiteTest
         if ($key === 'dual.create') {
             $mediaType = $case['body']['mediaType'] ?? null;
             Assert::true($mediaType === 'application/json' || $mediaType === 'application/x-www-form-urlencoded');
-            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.4);
-            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.4);
+            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.2);
+            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.2);
         }
         if ($key === 'memos.create') {
             $encoding = $case['body']['encoding'] ?? null;
             Assert::true($encoding === 'json' || $encoding === 'raw');
-            Classify::cover(condition: $encoding === 'json', label: 'memo body as json', minPercent: 0.4);
-            Classify::cover(condition: $encoding === 'raw', label: 'memo body as text', minPercent: 0.4);
+            Classify::cover(condition: $encoding === 'json', label: 'memo body as json', minPercent: 0.2);
+            Classify::cover(condition: $encoding === 'raw', label: 'memo body as text', minPercent: 0.2);
         }
         if ($key === 'contacts.create') {
             Assert::same(preg_match('/^[A-Z]{2}-[0-9]{3}$/', (string) ($case['query']['sku'] ?? '')), 1);
@@ -831,13 +835,13 @@ final class ContractSuiteTest
             foreach (is_array($value) && is_array($value['history'] ?? null) ? $value['history'] : [] as $entry) {
                 Assert::true(is_array($entry) && !array_key_exists('at', $entry));
             }
-            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 0.4);
+            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 0.2);
         }
         if ($key === 'search.get') {
             Assert::true(in_array($case['path']['scope'], ['all', 'mine'], strict: true));
             Assert::true($case['query']['limit'] !== 'null');
-            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 0.4);
-            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 0.4);
+            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 0.2);
+            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 0.2);
         }
     }
 

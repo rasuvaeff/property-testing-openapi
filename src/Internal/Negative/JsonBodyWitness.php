@@ -143,8 +143,8 @@ final readonly class JsonBodyWitness
 
         return match ($kind) {
             'type' => $this->probe->typeWitnesses($schema, self::TYPE_WITNESSES),
-            'enum' => $this->probe->finiteCandidates($schema, 'enum', '__openapi_misuse__', self::constMarker(...)),
-            'const' => $this->probe->finiteCandidates($schema, 'const', '__openapi_misuse__', self::constMarker(...)),
+            'enum' => $this->probe->finiteCandidates($schema, 'enum', '__openapi_misuse__', $this->constMarker(...)),
+            'const' => $this->probe->finiteCandidates($schema, 'const', '__openapi_misuse__', $this->constMarker(...)),
             'boundary' => $this->probe->outOfRangeValues($schema),
             'length' => $this->lengthWitness($schema, array_values($this->probe->declaredTypes($schema))),
             'format' => $this->probe->formatWitnesses($schema),
@@ -156,7 +156,7 @@ final readonly class JsonBodyWitness
      * The JSON marker for a `const`, `null` included: a string const is
      * contradicted by itself with a suffix, anything else by the marker.
      */
-    private static function constMarker(mixed $const): ?string
+    private function constMarker(mixed $const): ?string
     {
         if (!is_scalar($const) && $const !== null) {
             return null;
