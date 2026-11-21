@@ -16,6 +16,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RawBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
@@ -170,6 +171,8 @@ final readonly class RequestCaseArbitrary
         }
         /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
         $bodies = [];
+        /** @var array<string, array<string, mixed>> $raw */
+        $raw = [];
         foreach ($content as $mediaType => $definition) {
             // A media type without a schema, or with the `true` schema, admits
             // any value — the contract reads both as unconstrained. Only the
@@ -185,6 +188,12 @@ final readonly class RequestCaseArbitrary
             $schema = $this->requestSchemas->effective($schema);
 
             /** @var array<string, mixed> $definition */
+            if (RawBodies::carries($mediaType)) {
+                $raw[$mediaType] = $schema;
+
+                continue;
+            }
+
             try {
                 $body = $this->bodyArbitrary($mediaType, $normalized, $schema, $definition, $operation->dialect);
             } catch (UnsupportedGeneration $refusal) {
@@ -192,6 +201,19 @@ final readonly class RequestCaseArbitrary
             }
             if ($body instanceof ArbitraryInterface) {
                 $bodies[] = [1, $body];
+            }
+        }
+        // A body sent as it is (`text/plain`, `application/octet-stream`) is
+        // generated where it is the only kind the operation offers (#170):
+        // beside a JSON, form or multipart media type it is left out, so an
+        // operation that generated before draws the cases it always drew.
+        if ($bodies === []) {
+            foreach ($raw as $mediaType => $schema) {
+                try {
+                    $bodies[] = [1, RawBodies::arbitrary($mediaType, $schema, $this->bodySchemas)];
+                } catch (UnsupportedGeneration $refusal) {
+                    throw $refusal->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
+                }
             }
         }
         if ($bodies === []) {

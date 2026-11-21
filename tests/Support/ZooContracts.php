@@ -33,7 +33,7 @@ final class ZooContracts
         'tree.create', 'shipments.create',
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
-        'prices.create', 'batches.create', 'hosts.create',
+        'prices.create', 'batches.create', 'hosts.create', 'notes.create', 'blobs.put',
     ];
 
     /**
@@ -634,6 +634,18 @@ final class ZooContracts
                             'period' => ['type' => 'string', 'format' => 'duration'],
                         ],
                     ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // Bodies sent as they are (#170): a string schema under
+                // `text/plain`, and an opaque optional octet stream.
+                '/notes' => ['post' => [
+                    'operationId' => 'notes.create',
+                    'requestBody' => ['required' => true, 'content' => ['text/plain' => ['schema' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 20]]]],
+                    'responses' => ['204' => []],
+                ]],
+                '/blobs' => ['put' => [
+                    'operationId' => 'blobs.put',
+                    'requestBody' => ['content' => ['application/octet-stream' => ['schema' => ['type' => 'string', 'format' => 'binary']]]],
                     'responses' => ['204' => []],
                 ]],
             ],
