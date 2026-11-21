@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.21.0 — 2026-11-21
+
+- **Added.** `oneOf` over objects told apart by one property — required by
+  every branch and pinned with a `const` or an `enum` no two branches share,
+  a `$ref` branch read through `$defs` — is generated: a value drawn from one
+  branch is rejected by every other one, so no filter is needed. It used to
+  be refused as not provably disjoint (#167).
+- **Added.** The numeric OAS 3.1 `exclusiveMinimum`/`exclusiveMaximum` are
+  generated and contradicted instead of refused: the tighter of a numeric
+  exclusive bound and an inclusive one wins, and an integer above a
+  fractional exclusive bound starts at the next integer (#166).
+- **Added.** `format: hostname`, `ipv6`, `time` and `duration` are generated
+  and get a `format` witness; they used to refuse the whole operation (#168).
+- **Added.** A declared `minLength`, `minItems` or `minProperties` above the
+  64-character or 16-member generation budget raises the budget to it instead
+  of being refused (a repeated multipart part too). Under the budget the cap
+  is unchanged, so nothing that generated before draws differently. The
+  recursion depth stays at three: no keyword declares a minimum depth (#169).
+- **Added.** `text/plain` and `application/octet-stream` bodies are generated
+  as sent (`encoding: 'raw'`, non-empty UTF-8) on requests and responses:
+  opaque without a schema, a string schema's value otherwise (`format: binary`
+  read as the annotation), refused under any other schema. They are generated
+  where no JSON, form or multipart media type is declared beside them, so an
+  operation that generated before draws the cases it always drew (#170).
+- **Added.** `ContractSuite::generationCoverage()` says per selected operation
+  whether the valid phase can generate it, or the refusal it would raise,
+  without drawing (#171).
+- **Added.** `NegativeRequestCaseArbitrary::categoriesForOperation()` and
+  `anyForOperation()` — every constructible category keyed by name, and their
+  union, which `ContractSuite::negativeCases()` now delegates to with the same
+  order, weights and draws. The categories, their finders and their order are
+  one registry, where they used to be two lists that had to agree (#164).
+- **Added.** `NegativeResponseCaseArbitrary::categoriesForOperation()`,
+  `anyForOperation()` (the same union as `forOperation()`),
+  `coverageForOperation()` and `formatMismatchForOperation()`. **Changed:**
+  the `forOperation()` union of a response with a constructible `format`
+  target now draws that category as well, so its draws differ from 0.20.0
+  (#164, #171).
+- **Added.** `ResponseMaterializer::materialize()` refuses a response case
+  missing a key, or carrying one of the wrong type, with `InvalidCase` naming
+  it, as the request side does; it used to raise a PHP warning (#165).
+- **Changed.** Every request body refusal names the operation: a body whose
+  `content` is not an object, a `false` schema, a body with no supported media
+  type, and the form and multipart refusals now read `Unsupported OpenAPI
+  schema generation for operation "op", request body "…": <reason>`. Only the
+  message text changes (#161).
+- **Internal.** One compile-time probe (`Internal\Probe`, same seed and
+  budget) instead of three copies; a shared `Schema`/`Subschema` psalm type;
+  the parameter shape imported from the contract's `CompiledParameter`; a
+  response target's witness typed as `Witness` (#163, #165).
+- **Tests.** Six zoo operations pin the additions end to end
+  (`prices.create`, `batches.create`, `hosts.create`, `notes.create`,
+  `blobs.put`, `animals.create`); the `openapi-contract` corpus is
+  re-recorded with them, every existing case unchanged.
+
 ## 0.20.0 — 2026-11-20
 
 - **Changed.** Every refusal is raised by `forOperation()`, never by a later

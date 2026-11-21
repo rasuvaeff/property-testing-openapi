@@ -15,7 +15,8 @@ Public API:
   `properties`/`required`, nested and inside combinators).
 - Compile-time fail-closed (`UnsupportedGeneration`) on: `pattern` +
   asserted `format`; a length window outside the format's band (uuid 36,
-  date 10, date-time 29, ipv4 7–15, email 6–36, uri/url 12–55); `uniqueItems`
+  date 10, date-time 29, ipv4 7–15, ipv6 15–39, hostname 1–32, time 9–14,
+  duration 8–11, email 6–36, uri/url 12–55); `uniqueItems`
   over a finite item domain (`boolean`, `enum`, `const`, `null`, a bounded
   `integer`) smaller than `minItems`; `not.type` covering every declared
   type; an `allOf` branch bounding `additionalProperties` that does not
@@ -48,6 +49,16 @@ Public API:
   through, joins sibling assertions (OAS 3.0 `nullable`, a hoisted `type`)
   to the conjunction and meets a bound repeated across branches with the
   tighter one. An empty object under `anyOf`/`oneOf`/`if` is encoded `{}`.
+  `oneOf` over objects is disjoint when every branch requires one property
+  and pins it with `const`/`enum` values no two branches share (a `$ref`
+  branch is read through `$defs`). Numeric OAS 3.1 `exclusiveMinimum`/
+  `exclusiveMaximum` are generated (the tighter of them and an inclusive
+  bound wins). The 64-character and 16-member budgets rise to a declared
+  `minLength`/`minItems`/`minProperties` above them. A `text/plain` or
+  `application/octet-stream` body (request or response) is sent as it is
+  (`encoding: 'raw'`, non-empty UTF-8) when no JSON/form/multipart media type
+  is declared beside it: opaque without a schema, a string schema's value
+  otherwise, refused under any other schema.
 - `RequestMaterializer::materialize(Operation, array $case): RequestInterface`
   builds the request target against the operation's first effective server
   (relative server -> path-only URI, absolute server -> absolute URI);
@@ -102,7 +113,7 @@ Public API:
   `misuse.kind = 'const'`.
 - `NegativeRequestCaseArbitrary::boundaryMismatchForOperation(Operation)`
   replaces one integer/number parameter with a wire value just outside
-  its `minimum`/`maximum` bound (boolean exclusive bounds honoured) and records
+  its `minimum`/`maximum` bound (exclusive bounds honoured, boolean or numeric) and records
   `misuse.kind = 'boundary'`.
 - `NegativeRequestCaseArbitrary::lengthMismatchForOperation(Operation)`
   replaces one string parameter with a value just outside its
@@ -110,9 +121,9 @@ Public API:
   parameters with `enum`/`const`/`pattern`/`format` are skipped.
 - `NegativeRequestCaseArbitrary::formatMismatchForOperation(Operation)`
   replaces one string parameter with a fixed witness violating its
-  `format` (uuid, email, ipv4, uri, uri-reference, date, date-time) and records
-  `misuse.kind = 'format'`. Witnesses are held for exactly seven formats:
-  `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `date`, `date-time`. `url`
+  `format` and records `misuse.kind = 'format'`. Witnesses are held for
+  exactly eleven formats: `uuid`, `email`, `ipv4`, `ipv6`, `hostname`, `uri`,
+  `uri-reference`, `date`, `date-time`, `time`, `duration`. `url`
   is excluded deliberately (the backend does not assert it); any other format
   has no witness, contributes no case, and is named in the refusal.
 - Every value category is verified, not asserted: a candidate witness is kept
@@ -196,7 +207,17 @@ Public API:
 - `ContractSuite::validCases(string $operationKey)` /
   `negativeCases(string $operationKey)` return case arbitraries for a selected
   operation; `negativeCases` weights every constructively supported negative
-  category and throws `UnsupportedGeneration` when none applies.
+  category and throws `UnsupportedGeneration` when none applies — it is
+  `NegativeRequestCaseArbitrary::anyForOperation(Operation)`.
+- `NegativeRequestCaseArbitrary::categoriesForOperation(Operation): array<string, ArbitraryInterface>`
+  returns every constructible category keyed by name in weighting order:
+  `missing-required`, `type`, `enum`, `const`, `boundary`, `length`, `format`,
+  `pattern`, `additional-properties`, `media-type`, `part-content-type`,
+  `json-syntax`, `body-type`, `body-enum`, `body-const`, `body-boundary`,
+  `body-length`, `body-format`, `body-pattern`.
+- `ContractSuite::generationCoverage(): array<string, array{supported: bool, reason: ?string}>`
+  says per selected operation whether the valid phase can generate it, or the
+  refusal it would raise, without drawing.
 - `ContractSuite::negativeCoverage(): array<string, array{covered: list<array{kind, location, name}>, skipped: list<array{kind, side, reason}>}>`
   says which misuses the negative phase can reach per selected operation and
   why it reaches nothing where it cannot, computed from the document without
@@ -244,8 +265,11 @@ Public API:
   Response Object the status resolves to (exact -> NXX -> default via
   `Operation::responseFor`); required headers always present, `writeOnly`
   properties left out; `jsonBody(Operation, int)` exposes the response-direction
-  media type + schema. Undeclared status / required header without schema /
-  non-JSON content throw `UnsupportedGeneration`.
+  media type + schema. A response with no JSON media type but a
+  `text/plain`/`application/octet-stream` one gets a raw body. Undeclared
+  status / required header without schema / content with neither throw
+  `UnsupportedGeneration`. `ResponseMaterializer` refuses a case missing a key
+  (or with one of the wrong type) with `InvalidCase`.
 - `ResponseMaterializer(ResponseFactoryInterface, StreamFactoryInterface)
   ::materialize(Operation, array $case): ResponseInterface` builds the PSR-7
   response (headers serialized with the `simple` style and written as sent,
@@ -259,7 +283,11 @@ Public API:
   `enumMismatchForOperation`, `constMismatchForOperation`,
   `boundaryMismatchForOperation`, `lengthMismatchForOperation`,
   `patternMismatchForOperation`, `additionalPropertyForOperation`,
-  `mediaTypeMismatchForOperation`, `malformedJsonForOperation`. Body targets
+  `mediaTypeMismatchForOperation`, `malformedJsonForOperation`,
+  `formatMismatchForOperation`. `anyForOperation` is the same union;
+  `categoriesForOperation(Operation, int)` keys them by kind (the header one
+  is `missing-required-header`); `coverageForOperation(Operation, int)` returns
+  `{covered: list<{kind, location, name}>, skipped: list<{kind, location, reason}>}`. Body targets
   are top-level object properties or the scalar/array root (`misuse.name` =
   `$`); every case is provably invalid under `Contract::validateResponse()`,
   misuse survives shrinking, unconstructible categories throw
@@ -302,7 +330,8 @@ Public API:
 separate path/query/headers/cookies maps,
 an optional JSON-compatible body: `{mediaType, encoding: 'json'|'raw'|'form', value}`
 or `{mediaType, encoding: 'multipart', boundary, parts}` (binary parts use base64), and
-`misuse: null`; `encoding: 'raw'` appears only in malformed-JSON negative cases.
+`misuse: null`; `encoding: 'raw'` carries a `text/plain`/`application/octet-stream`
+body as it is, and the malformed payload of a `json-syntax` negative case.
 It must contain only JSON-compatible values and never secrets or PSR-7 objects.
 Multipart parts are scalar/binary only (nested objects/arrays throw
 `UnsupportedGeneration`); the part content type is the OAS default of the item

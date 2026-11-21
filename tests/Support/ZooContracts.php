@@ -33,6 +33,8 @@ final class ZooContracts
         'tree.create', 'shipments.create',
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
+        'prices.create', 'batches.create', 'hosts.create', 'notes.create', 'blobs.put',
+        'animals.create',
     ];
 
     /**
@@ -577,8 +579,98 @@ final class ZooContracts
                     ]]],
                     'responses' => ['204' => []],
                 ]],
+                // OAS 3.1 spells an exclusive bound as a number of its own
+                // (#166): `price > 0` from a real document, an integer above
+                // a fraction, and a bound tighter than the inclusive one.
+                '/prices' => ['post' => [
+                    'operationId' => 'prices.create',
+                    'parameters' => [['name' => 'limit', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 10]]],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['price', 'quantity'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'price' => ['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 1000],
+                            'quantity' => ['type' => 'integer', 'exclusiveMinimum' => 0.5, 'maximum' => 5],
+                            'discount' => ['type' => 'number', 'minimum' => 0, 'maximum' => 50, 'exclusiveMaximum' => 1],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A declared minimum above the generation budget raises it
+                // instead of refusing the operation (#169).
+                '/batches' => ['post' => [
+                    'operationId' => 'batches.create',
+                    'parameters' => [['name' => 'ref', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 66, 'maxLength' => 80]]],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['note', 'ids', 'flags'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'note' => ['type' => 'string', 'minLength' => 70],
+                            'ids' => ['type' => 'array', 'minItems' => 18, 'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
+                            'flags' => ['type' => 'object', 'minProperties' => 17, 'additionalProperties' => ['type' => 'boolean']],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // The four formats the contract validates and the generator
+                // used to refuse (#168), on every wire they can travel.
+                '/hosts/{name}' => ['post' => [
+                    'operationId' => 'hosts.create',
+                    'parameters' => [
+                        ['name' => 'name', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'hostname']],
+                        ['name' => 'address', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'ipv6']],
+                        ['name' => 'X-At', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'time']],
+                        ['name' => 'ttl', 'in' => 'cookie', 'schema' => ['type' => 'string', 'format' => 'duration']],
+                    ],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['host', 'address', 'opens', 'period'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'host' => ['type' => 'string', 'format' => 'hostname'],
+                            'address' => ['type' => 'string', 'format' => 'ipv6'],
+                            'opens' => ['type' => 'string', 'format' => 'time'],
+                            'period' => ['type' => 'string', 'format' => 'duration'],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // Bodies sent as they are (#170): a string schema under
+                // `text/plain`, and an opaque optional octet stream.
+                '/notes' => ['post' => [
+                    'operationId' => 'notes.create',
+                    'requestBody' => ['required' => true, 'content' => ['text/plain' => ['schema' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 20]]]],
+                    'responses' => ['204' => []],
+                ]],
+                '/blobs' => ['put' => [
+                    'operationId' => 'blobs.put',
+                    'requestBody' => ['content' => ['application/octet-stream' => ['schema' => ['type' => 'string', 'format' => 'binary']]]],
+                    'responses' => ['204' => []],
+                ]],
+                // `oneOf` over objects told apart by a required `const`
+                // property, through component references as real documents
+                // write it (#167).
+                '/animals' => ['post' => [
+                    'operationId' => 'animals.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'oneOf' => [['$ref' => '#/components/schemas/Cat'], ['$ref' => '#/components/schemas/Dog']],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
             ],
-            'components' => ['schemas' => ['Named' => [
+            'components' => ['schemas' => ['Cat' => [
+                'type' => 'object',
+                'required' => ['kind', 'lives'],
+                'additionalProperties' => false,
+                'properties' => ['kind' => ['type' => 'string', 'const' => 'cat'], 'lives' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9]],
+            ], 'Dog' => [
+                'type' => 'object',
+                'required' => ['kind'],
+                'additionalProperties' => false,
+                'properties' => ['kind' => ['type' => 'string', 'const' => 'dog'], 'good' => ['type' => 'boolean']],
+            ], 'Named' => [
                 'type' => 'object',
                 'description' => 'Has a name',
                 'required' => ['name'],

@@ -15,6 +15,8 @@ use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\RawBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
@@ -118,7 +120,7 @@ final readonly class RequestCaseArbitrary
                 // see, a `pattern`, whose alphabet is the pattern's own.
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isSeparatorSafe($value, $separator));
             }
-            if (($location === 'path' || $location === 'header') && $this->mentionsPattern($schema) && !$this->yieldsSomething($compiled)) {
+            if (($location === 'path' || $location === 'header') && $this->mentionsPattern($schema) && !Probe::yields($compiled)) {
                 // The rewrite cannot see inside a pattern; the filter above
                 // can, and a pattern none of whose strings survives the wire
                 // is refused here, by name, instead of exhausting mid-run.
@@ -147,28 +149,6 @@ final readonly class RequestCaseArbitrary
     }
 
     /**
-     * Whether a filtered arbitrary produces anything, judged the way the
-     * compiler's pattern probe does: deterministic draws, each with the
-     * filter's own retry budget, so an arbitrary that fails here is one that
-     * would have exhausted mid-run.
-     */
-    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
-    {
-        $random = new Random(self::PROBE_SEED);
-        for ($probe = 0; $probe < self::PROBES; ++$probe) {
-            try {
-                $arbitrary->generate($random);
-
-                return true;
-            } catch (GenerationExhaustedException) {
-                continue;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * A delimited style cannot escape its own separator, so no generated
      * string may carry one — the compiler is built with that character out of
      * its alphabet rather than the value being filtered afterwards. Built per
@@ -187,10 +167,12 @@ final readonly class RequestCaseArbitrary
         }
         $content = $operation->requestBody['content'] ?? null;
         if (!is_array($content)) {
-            throw new UnsupportedGeneration('Request body content must be an object');
+            throw UnsupportedGeneration::forSchema('Request body content must be an object')->inOperation($operation->key, 'request body');
         }
         /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
         $bodies = [];
+        /** @var array<string, array<string, mixed>> $raw */
+        $raw = [];
         foreach ($content as $mediaType => $definition) {
             // A media type without a schema, or with the `true` schema, admits
             // any value — the contract reads both as unconstrained. Only the
@@ -200,12 +182,18 @@ final readonly class RequestCaseArbitrary
                 $schema = [];
             }
             if ($schema === false) {
-                throw new UnsupportedGeneration(sprintf('Request body "%s" declares the false schema, which admits no value', $mediaType));
+                throw UnsupportedGeneration::forSchema('the false schema admits no value')->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
             }
             $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
 
             /** @var array<string, mixed> $definition */
+            if (RawBodies::carries($mediaType)) {
+                $raw[$mediaType] = $schema;
+
+                continue;
+            }
+
             try {
                 $body = $this->bodyArbitrary($mediaType, $normalized, $schema, $definition, $operation->dialect);
             } catch (UnsupportedGeneration $refusal) {
@@ -215,8 +203,21 @@ final readonly class RequestCaseArbitrary
                 $bodies[] = [1, $body];
             }
         }
+        // A body sent as it is (`text/plain`, `application/octet-stream`) is
+        // generated where it is the only kind the operation offers (#170):
+        // beside a JSON, form or multipart media type it is left out, so an
+        // operation that generated before draws the cases it always drew.
         if ($bodies === []) {
-            throw new UnsupportedGeneration('Request body has no supported media type');
+            foreach ($raw as $mediaType => $schema) {
+                try {
+                    $bodies[] = [1, RawBodies::arbitrary($mediaType, $schema, $this->bodySchemas)];
+                } catch (UnsupportedGeneration $refusal) {
+                    throw $refusal->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
+                }
+            }
+        }
+        if ($bodies === []) {
+            throw UnsupportedGeneration::forSchema('Request body has no supported media type')->inOperation($operation->key, 'request body');
         }
 
         // Every declared media type this package can generate, not the first
@@ -354,23 +355,23 @@ final readonly class RequestCaseArbitrary
     {
         $properties = is_array($schema['properties'] ?? null) ? (array) $schema['properties'] : [];
         if ($properties !== [] && array_is_list($properties)) {
-            throw new UnsupportedGeneration('Multipart properties must be an object');
+            throw UnsupportedGeneration::forSchema('Multipart properties must be an object');
         }
         $required = $schema['required'] ?? [];
         if (!is_array($required) || !array_is_list($required)) {
-            throw new UnsupportedGeneration('Multipart required must be a list');
+            throw UnsupportedGeneration::forSchema('Multipart required must be a list');
         }
         $requiredNames = [];
         foreach ($required as $name) {
             if (!is_string($name)) {
-                throw new UnsupportedGeneration('Multipart required must contain property names');
+                throw UnsupportedGeneration::forSchema('Multipart required must contain property names');
             }
             $requiredNames[$name] = true;
         }
         $shape = [];
         foreach ($properties as $name => $property) {
             if (!is_string($name) || !is_array($property) || array_is_list($property)) {
-                throw new UnsupportedGeneration('Multipart properties must contain named schema objects');
+                throw UnsupportedGeneration::forSchema('Multipart properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
             if (($property['readOnly'] ?? false) === true) {
@@ -415,22 +416,24 @@ final readonly class RequestCaseArbitrary
         if (SchemaShape::isArray($schema)) {
             $items = $schema['items'] ?? null;
             if (!is_array($items) || array_is_list($items)) {
-                throw new UnsupportedGeneration('Multipart array items must be a schema object');
+                throw UnsupportedGeneration::forSchema('Multipart array items must be a schema object');
             }
             /** @var array<string, mixed> $items */
             if (SchemaShape::isArray($items) || SchemaShape::isObject($items)) {
-                throw new UnsupportedGeneration('Nested multipart array items are not supported');
+                throw UnsupportedGeneration::forSchema('Nested multipart array items are not supported');
             }
             $item = $this->multipartProperty($items);
             $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
-            $max = min(is_int($schema['maxItems'] ?? null) ? (int) $schema['maxItems'] : 16, 16);
+            // The budget yields to a declared minimum above it (#169).
+            $budget = max(16, $min);
+            $max = min(is_int($schema['maxItems'] ?? null) ? (int) $schema['maxItems'] : $budget, $budget);
 
             return ($schema['uniqueItems'] ?? false) === true
                 ? Gen::uniqueArrayOf($item, $min, $max)
                 : Gen::arrayOf($item, $min, $max);
         }
         if (SchemaShape::isObject($schema)) {
-            throw new UnsupportedGeneration('Nested multipart object properties are not supported');
+            throw UnsupportedGeneration::forSchema('Nested multipart object properties are not supported');
         }
 
         // A text part is written verbatim into a CRLF-delimited body, and the
@@ -772,14 +775,14 @@ final readonly class RequestCaseArbitrary
             return;
         }
         if (!is_array($encoding) || array_is_list($encoding)) {
-            throw new UnsupportedGeneration('Form encoding must be an object');
+            throw UnsupportedGeneration::forSchema('Form encoding must be an object');
         }
         foreach ($encoding as $name => $configuration) {
             if (!is_string($name) || !is_array($configuration) || array_is_list($configuration)) {
-                throw new UnsupportedGeneration('Form encoding entries must be objects');
+                throw UnsupportedGeneration::forSchema('Form encoding entries must be objects');
             }
             if (($configuration['style'] ?? 'form') !== 'form' || (isset($configuration['explode']) && !is_bool($configuration['explode']))) {
-                throw new UnsupportedGeneration('Form encoding supports only form style and boolean explode');
+                throw UnsupportedGeneration::forSchema('Form encoding supports only form style and boolean explode');
             }
         }
     }
@@ -790,11 +793,11 @@ final readonly class RequestCaseArbitrary
             return;
         }
         if (!is_array($encoding) || array_is_list($encoding)) {
-            throw new UnsupportedGeneration('Multipart encoding must be an object');
+            throw UnsupportedGeneration::forSchema('Multipart encoding must be an object');
         }
         foreach ($encoding as $name => $configuration) {
             if (!is_string($name) || !is_array($configuration) || array_is_list($configuration) || ($configuration['style'] ?? 'form') !== 'form') {
-                throw new UnsupportedGeneration('Multipart encoding supports only form style');
+                throw UnsupportedGeneration::forSchema('Multipart encoding supports only form style');
             }
         }
     }
@@ -849,7 +852,7 @@ final readonly class RequestCaseArbitrary
     private function assertObjectSchema(array $schema, string $message): void
     {
         if (!SchemaShape::isObject($schema)) {
-            throw new UnsupportedGeneration($message);
+            throw UnsupportedGeneration::forSchema($message);
         }
     }
 
@@ -882,7 +885,7 @@ final readonly class RequestCaseArbitrary
     private function scalar(mixed $value): string
     {
         return WireValue::of($value)
-            ?? throw new UnsupportedGeneration('Parameter values must be scalar, arrays, or objects with scalar properties');
+            ?? throw UnsupportedGeneration::forSchema('Parameter values must be scalar, arrays, or objects with scalar properties');
     }
 
 

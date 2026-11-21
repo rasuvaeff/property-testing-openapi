@@ -7,10 +7,10 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
-use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
-use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * Compiles the supported, constructive subset of composition keywords.
@@ -19,10 +19,6 @@ use Rasuvaeff\PropertyTesting\Random;
  */
 final readonly class CompositionArbitraries
 {
-    private const int PROBES = 8;
-
-    private const int PROBE_SEED = 11;
-
     public function __construct(
         private SchemaArbitraryCompiler $compiler,
         private SchemaFacts $facts,
@@ -62,7 +58,7 @@ final readonly class CompositionArbitraries
 
                 return $this->definitions->inlining($inlined, fn(): ArbitraryInterface => $this->compiler->compile($this->mergeAllOf($schemas)));
             }
-            if ($keyword === 'oneOf' && !$this->areDisjoint($schemas)) {
+            if ($keyword === 'oneOf' && !$this->areDisjoint($schemas) && !$this->areTagged($schemas)) {
                 $numeric = $this->integerAndNumberBranches($schemas);
                 if ($numeric === null) {
                     throw UnsupportedGeneration::forSchema('oneOf branches must be provably disjoint');
@@ -154,7 +150,7 @@ final readonly class CompositionArbitraries
 
                 continue;
             }
-            if ($this->yieldsSomething($kept)) {
+            if (Probe::yields($kept)) {
                 $pairs[] = [1, $kept];
                 ++$numeric;
             }
@@ -169,6 +165,7 @@ final readonly class CompositionArbitraries
     /** @param array<string, mixed> $number */
     private function numberBranchAdmits(int $value, array $number): bool
     {
+        $number = SchemaFacts::exclusiveBounds($number, integer: false);
         $minimum = $this->facts->numberBound($number, 'minimum', -INF);
         $maximum = $this->facts->numberBound($number, 'maximum', INF);
         if ($value < $minimum || $value > $maximum) {
@@ -189,28 +186,6 @@ final readonly class CompositionArbitraries
     private function positiveNumber(mixed $value): int|float|null
     {
         return (is_int($value) || is_float($value)) && $value > 0 ? $value : null;
-    }
-
-    /**
-     * Whether a filtered branch produces anything at all, judged the way the
-     * pattern probe does: deterministic draws, twice the budget the filter
-     * gets at run time, so a branch that fails here is one that would have
-     * exhausted mid-run.
-     */
-    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
-    {
-        $random = new Random(self::PROBE_SEED);
-        for ($probe = 0; $probe < self::PROBES; ++$probe) {
-            try {
-                $arbitrary->generate($random);
-
-                return true;
-            } catch (GenerationExhaustedException) {
-                continue;
-            }
-        }
-
-        return false;
     }
 
     /** @param array<string, mixed> $schema */
@@ -596,6 +571,111 @@ final readonly class CompositionArbitraries
         }
 
         return true;
+    }
+
+    /**
+     * Whether the branches are objects told apart by one property: a
+     * property every branch requires and pins with a `const` or an `enum`,
+     * and no two branches admit the same value of (#167). A value drawn from
+     * one branch carries one of its own values there, which every other
+     * branch rejects — so it is valid against exactly one branch, which is
+     * what `oneOf` asks, without a filter. A branch that is a reference into
+     * `$defs` is read through it; a branch the property cannot be read off
+     * (an `allOf`, a nested `oneOf`) keeps the union refused.
+     *
+     * @param list<array<string, mixed>> $branches
+     */
+    private function areTagged(array $branches): bool
+    {
+        $tags = [];
+        foreach ($branches as $index => $branch) {
+            if (array_key_exists('$ref', $branch)) {
+                $branch = $this->definitions->target($branch['$ref'])[1];
+            }
+            $tags[$index] = $this->pinnedProperties($branch);
+        }
+        $candidates = array_keys($tags[0] ?? []);
+        foreach ($candidates as $name) {
+            $seen = [];
+            foreach ($tags as $pinned) {
+                if (!array_key_exists($name, $pinned)) {
+                    continue 2;
+                }
+                foreach ($pinned[$name] as $key) {
+                    if (isset($seen[$key])) {
+                        continue 3;
+                    }
+                }
+                foreach ($pinned[$name] as $key) {
+                    $seen[$key] = true;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * The required properties of an object schema that a `const` or an
+     * `enum` pins to a finite set of values, by name.
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, list<string>> the comparable key of each value
+     */
+    private function pinnedProperties(array $schema): array
+    {
+        $required = $schema['required'] ?? null;
+        $properties = $schema['properties'] ?? null;
+        if (!SchemaShape::isObject($schema) || !is_array($required) || !is_array($properties)) {
+            return [];
+        }
+        $pinned = [];
+        /** @var mixed $name */
+        foreach ($required as $name) {
+            if (!is_string($name) || !is_array($properties[$name] ?? null)) {
+                continue;
+            }
+            /** @var array<array-key, mixed> $property */
+            $property = $properties[$name];
+            $values = array_key_exists('const', $property) ? [$property['const']] : $this->members($property['enum'] ?? null);
+            if ($values === null) {
+                continue;
+            }
+            $keys = [];
+            /** @var mixed $value */
+            foreach ($values as $value) {
+                $key = $this->tagKey($value);
+                if ($key === null) {
+                    continue 2;
+                }
+                $keys[] = $key;
+            }
+            $pinned[$name] = $keys;
+        }
+
+        return $pinned;
+    }
+
+    /** @return null|non-empty-list<mixed> */
+    private function members(mixed $enum): ?array
+    {
+        return is_array($enum) && $enum !== [] ? array_values($enum) : null;
+    }
+
+    /**
+     * A tag value as JSON Schema compares it: `1` and `1.0` are one number.
+     * Only a scalar is a tag; two objects that are equal in any key order
+     * would read as two values here, and an unsound proof is worse than none.
+     */
+    private function tagKey(mixed $value): ?string
+    {
+        if (is_float($value) && is_finite($value) && floor($value) === $value && abs($value) < 2 ** 53) {
+            $value = (int) $value;
+        }
+
+        return $value === null || is_scalar($value) ? serialize($value) : null;
     }
 
     /** @param array<string, mixed> $schema */

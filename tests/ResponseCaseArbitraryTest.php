@@ -179,7 +179,6 @@ final class ResponseCaseArbitraryTest
     public static function unsupportedProvider(): iterable
     {
         yield 'undeclared status' => ['ping', 500, 'Operation "ping" declares no response for status 500'];
-        yield 'no JSON media type' => ['ping', 503, 'Response content declares no JSON media type'];
     }
 
     #[DataProvider('handBuiltUnsupportedProvider')]
@@ -195,6 +194,9 @@ final class ResponseCaseArbitraryTest
 
     public static function handBuiltUnsupportedProvider(): iterable
     {
+        yield 'no JSON media type and none sent as it is' => [['200' => ['content' => ['text/csv' => ['schema' => ['type' => 'string']]]]], 'Response content declares no JSON media type'];
+        yield 'text body with a non-string schema' => [['200' => ['content' => ['text/plain' => ['schema' => ['type' => 'object']]]]], 'Unsupported OpenAPI schema generation for operation "op", response "200" body: a "text/plain" body is sent as it is, so its schema must be a string schema'];
+        yield 'text body with a schema that is a list' => [['200' => ['content' => ['text/plain' => ['schema' => ['x']]]]], 'Unsupported OpenAPI schema generation for operation "op", response "200" body: Response "text/plain" schema must be an object'];
         yield 'required header without schema' => [['200' => ['headers' => ['X-Req' => ['required' => true]]]], 'Required response header "X-Req" has no schema object'];
         yield 'list of objects header' => [['200' => ['headers' => ['X-List' => ['required' => true, 'schema' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string']]]]]]]], 'Unsupported OpenAPI schema generation for operation "op", response "200" header "X-List": Response header "X-List" must carry scalar values'];
         yield 'object header value' => [['200' => ['headers' => ['X-Obj' => ['required' => true, 'schema' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string']]]]]]], 'Unsupported OpenAPI schema generation for operation "op", response "200" header "X-Obj": Response header "X-Obj" cannot carry an object value'];

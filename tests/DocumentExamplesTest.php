@@ -66,7 +66,7 @@ final class DocumentExamplesTest
             'application/vnd.op+json' => ['schema' => ['type' => 'object'], 'example' => ['a' => 2]],
         ]]);
 
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Request body "application/json" declares the false schema, which admits no value');
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "op", request body "application/json": the false schema admits no value');
 
         (new DocumentExamples())->forOperation($operation);
     }

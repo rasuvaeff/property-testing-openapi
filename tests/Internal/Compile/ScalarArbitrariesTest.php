@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests\Internal\Compile;
 
 use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDialect;
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Property;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -17,8 +23,162 @@ use Testo\Test;
 
 #[Test]
 #[Covers(ScalarArbitraries::class)]
+#[Covers(SchemaFacts::class)]
 final class ScalarArbitrariesTest
 {
+    /**
+     * The OAS 3.1 spelling of an exclusive bound is a number (#166): every
+     * value drawn is one the contract accepts, the values next to the bound
+     * are reached, and the bound itself never is.
+     *
+     * @param list<int|float> $reached
+     * @param list<int|float> $never
+     */
+    #[DataProvider('numericExclusiveProvider')]
+    public function aNumericExclusiveBoundIsHonouredAndReached(array $schema, array $reached, array $never): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 300, seed: 5);
+        foreach ($values as $value) {
+            Assert::true((new SchemaCheck())->accepts($value, $schema, SchemaDialect::OpenApi31), json_encode([$schema, $value], JSON_THROW_ON_ERROR));
+        }
+        foreach ($reached as $value) {
+            Assert::true(in_array($value, $values, strict: true), json_encode($value, JSON_THROW_ON_ERROR));
+        }
+        foreach ($never as $value) {
+            Assert::false(in_array($value, $values, strict: true), json_encode($value, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public static function numericExclusiveProvider(): iterable
+    {
+        yield 'integer above zero' => [['type' => 'integer', 'exclusiveMinimum' => 0, 'maximum' => 3], [1, 2, 3], [0]];
+        yield 'integer below three' => [['type' => 'integer', 'minimum' => 0, 'exclusiveMaximum' => 3], [0, 1, 2], [3]];
+        yield 'integer between both' => [['type' => 'integer', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 3], [1, 2], [0, 3]];
+        yield 'integer above a fraction' => [['type' => 'integer', 'exclusiveMinimum' => 0.5, 'maximum' => 2], [1, 2], [0]];
+        yield 'integer below a fraction' => [['type' => 'integer', 'minimum' => 0, 'exclusiveMaximum' => 2.5], [0, 1, 2], [3]];
+        yield 'integer above an integral float' => [['type' => 'integer', 'exclusiveMinimum' => 1.0, 'maximum' => 3], [2, 3], [1]];
+        yield 'a tighter inclusive minimum wins' => [['type' => 'integer', 'minimum' => 2, 'exclusiveMinimum' => 0, 'maximum' => 3], [2, 3], [1]];
+        yield 'a tighter exclusive minimum wins' => [['type' => 'integer', 'minimum' => 0, 'exclusiveMinimum' => 1, 'maximum' => 3], [2, 3], [1]];
+        yield 'a tighter inclusive maximum wins' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 1, 'exclusiveMaximum' => 3], [0, 1], [2]];
+        yield 'a tighter exclusive maximum wins' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 3, 'exclusiveMaximum' => 2], [0, 1], [2]];
+        yield 'an equal bound is exclusive' => [['type' => 'integer', 'minimum' => 1, 'exclusiveMinimum' => 1, 'maximum' => 3, 'exclusiveMaximum' => 3], [2], [1, 3]];
+        yield 'number between both' => [['type' => 'number', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 1], [], [0.0, 1.0]];
+        yield 'number with a multiple' => [['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 0.3, 'multipleOf' => 0.1], [0.1, 0.2], [0.0]];
+        yield 'number with a tighter inclusive maximum' => [['type' => 'number', 'minimum' => 0, 'maximum' => 1, 'exclusiveMaximum' => 5, 'multipleOf' => 1], [0.0, 1.0], [2.0]];
+    }
+
+    public function aSchemaWithoutANumericExclusiveBoundIsUntouched(): void
+    {
+        $schema = ['type' => 'integer', 'minimum' => 0, 'exclusiveMinimum' => true, 'maximum' => 5, 'exclusiveMaximum' => false];
+
+        Assert::same(SchemaFacts::exclusiveBounds($schema, integer: true), $schema);
+        Assert::same(SchemaFacts::exclusiveBounds(['type' => 'number', 'exclusiveMinimum' => 0.5], integer: false), ['type' => 'number', 'minimum' => 0.5, 'exclusiveMinimum' => true]);
+        Assert::same(SchemaFacts::exclusiveBounds(['type' => 'integer', 'exclusiveMinimum' => 0.5], integer: true), ['type' => 'integer', 'minimum' => 0.5]);
+        Assert::same(SchemaFacts::exclusiveBounds(['type' => 'integer', 'maximum' => 1, 'exclusiveMaximum' => 3], integer: true), ['type' => 'integer', 'maximum' => 1]);
+    }
+
+    /**
+     * The 64-character budget yields to a declared `minLength` above it
+     * (#169); under it the cap is what it was.
+     */
+    #[DataProvider('stringBudgetProvider')]
+    public function theStringBudgetYieldsToADeclaredMinimum(array $schema, int $shortest, int $longest): void
+    {
+        $lengths = array_map(static fn(mixed $value): int => is_string($value) ? mb_strlen($value) : -1, Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 200, seed: 4));
+
+        Assert::same([min($lengths), max($lengths)], [$shortest, $longest]);
+    }
+
+    public static function stringBudgetProvider(): iterable
+    {
+        yield 'minLength under the budget' => [['type' => 'string', 'minLength' => 63], 63, 64];
+        yield 'minLength at the budget' => [['type' => 'string', 'minLength' => 64], 64, 64];
+        yield 'minLength past the budget' => [['type' => 'string', 'minLength' => 65], 65, 65];
+        yield 'minLength past the budget with room declared' => [['type' => 'string', 'minLength' => 100, 'maxLength' => 120], 100, 100];
+        yield 'a maximum past the budget is still capped' => [['type' => 'string', 'minLength' => 60, 'maxLength' => 120], 60, 64];
+    }
+
+    /**
+     * The four formats the contract validates and the generator used to
+     * refuse (#168): every value drawn is one the contract accepts, and each
+     * format is drawn often enough for that to mean something.
+     *
+     * @param array{format: string, value: mixed} $drawn
+     */
+    #[Property(runs: 400)]
+    public function everyValueOfANewFormatIsOneTheContractAccepts(array $drawn): void
+    {
+        $schema = ['type' => 'string', 'format' => $drawn['format']];
+
+        Classify::cover($drawn['format'] === 'hostname', 'hostname', 15.0);
+        Classify::cover($drawn['format'] === 'ipv6', 'ipv6', 15.0);
+        Classify::cover($drawn['format'] === 'time', 'time', 15.0);
+        Classify::cover($drawn['format'] === 'duration', 'duration', 15.0);
+        Assert::true(is_string($drawn['value']));
+        Assert::true((new SchemaCheck())->accepts($drawn['value'], $schema, SchemaDialect::OpenApi31), json_encode($drawn, JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function everyValueOfANewFormatIsOneTheContractAcceptsGenerators(): array
+    {
+        return ['drawn' => Gen::flatMap(
+            Gen::elements(['hostname', 'ipv6', 'time', 'duration']),
+            static fn(mixed $format): ArbitraryInterface => Gen::map(
+                (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format]),
+                static fn(mixed $value): array => ['format' => $format, 'value' => $value],
+            ),
+        )];
+    }
+
+    /**
+     * The length band each new format is generated in: a window inside it
+     * keeps the format, one outside it is refused at compile time.
+     */
+    #[DataProvider('newFormatBandProvider')]
+    public function aNewFormatStaysInsideItsLengthBand(string $format, int $shortest, int $longest): void
+    {
+        $lengths = array_map(static fn(mixed $value): int => is_string($value) ? strlen($value) : -1, Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format]), count: 300, seed: 6));
+
+        Assert::true(min($lengths) >= $shortest && max($lengths) <= $longest, json_encode([min($lengths), max($lengths)], JSON_THROW_ON_ERROR));
+    }
+
+    public static function newFormatBandProvider(): iterable
+    {
+        yield 'hostname' => ['hostname', 1, 32];
+        yield 'ipv6' => ['ipv6', 15, 39];
+        yield 'time' => ['time', 9, 14];
+        yield 'duration' => ['duration', 8, 11];
+    }
+
+    #[DataProvider('newFormatBandProvider')]
+    public function aNewFormatOutsideItsLengthBandIsRefused(string $format, int $shortest, int $longest): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage(sprintf('Unsupported OpenAPI schema generation: format "%s" cannot satisfy the length window', $format));
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format, 'minLength' => $longest + 1]);
+    }
+
+    #[DataProvider('newFormatBandProvider')]
+    public function aNewFormatBelowItsLengthBandIsRefused(string $format, int $shortest): void
+    {
+        if ($shortest === 1) {
+            // A hostname is never shorter than one character: no window
+            // under its band is a non-empty one.
+            Assert::same($shortest, 1);
+
+            return;
+        }
+        Expect::exception(UnsupportedGeneration::class)->withMessage(sprintf('Unsupported OpenAPI schema generation: format "%s" cannot satisfy the length window', $format));
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format, 'maxLength' => $shortest - 1]);
+    }
+
+    #[DataProvider('newFormatBandProvider')]
+    public function theWitnessOfANewFormatIsOneTheContractRejects(string $format): void
+    {
+        Assert::false((new SchemaCheck())->accepts(SchemaProbe::FORMAT_WITNESSES[$format], ['type' => 'string', 'format' => $format], SchemaDialect::OpenApi31));
+    }
+
     public function aFormatStringHonoursItsLengthWindow(): void
     {
         foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'email', 'minLength' => 14, 'maxLength' => 20]), count: 50, seed: 1) as $value) {

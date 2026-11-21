@@ -676,6 +676,38 @@ final class ContractSuiteTest
      * rather than raising — a document owner asking what is covered is asking
      * precisely about that case.
      */
+    public function generationCoverageNamesTheRefusalOfEveryUnsupportedOperation(): void
+    {
+        $factory = new Psr17Factory();
+        $contract = Contract::fromArray(['openapi' => '3.1.0', 'paths' => [
+            '/ok' => ['get' => ['operationId' => 'ok', 'responses' => ['204' => []]]],
+            '/no' => ['get' => [
+                'operationId' => 'no',
+                'parameters' => [['name' => 'n', 'in' => 'query', 'schema' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 2]]],
+                'responses' => ['204' => []],
+            ]],
+        ]]);
+
+        $coverage = ContractSuite::fromContract($contract, $factory, $factory)->operations(['ok', 'no'])->generationCoverage();
+
+        Assert::same($coverage, [
+            'ok' => ['supported' => true, 'reason' => null],
+            'no' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "no", query parameter "n": minLength exceeds maxLength or the generation budget'],
+        ]);
+    }
+
+    public function generationCoverageCoversOnlyTheSelection(): void
+    {
+        Assert::same($this->suite()->operations(['pets.list'])->generationCoverage(), ['pets.list' => ['supported' => true, 'reason' => null]]);
+    }
+
+    public function everyZooOperationIsSupported(): void
+    {
+        foreach ([ZooContracts::suite(), ZooContracts::legacySuite()] as $suite) {
+            Assert::same(array_filter($suite->generationCoverage(), static fn(array $operation): bool => !$operation['supported']), []);
+        }
+    }
+
     public function negativeCoverageIsEmptyForAnOperationWithNoMisuse(): void
     {
         $factory = new Psr17Factory();
@@ -697,7 +729,7 @@ final class ContractSuiteTest
             'info' => ['title' => 'Hosts', 'version' => '1.0.0'],
             'paths' => ['/hosts' => ['get' => [
                 'operationId' => 'hosts.get',
-                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'hostname']]],
+                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'phone']]],
                 'responses' => ['204' => ['description' => 'ok']],
             ]]],
         ]);
@@ -707,7 +739,7 @@ final class ContractSuiteTest
         $format = array_values(array_filter($coverage['hosts.get']['skipped'], static fn(array $entry): bool => $entry['kind'] === 'format' && $entry['side'] === 'parameter'));
 
         Assert::same(count($format), 1);
-        Assert::string($format[0]['reason'])->contains('no witness is held for format "hostname"');
+        Assert::string($format[0]['reason'])->contains('no witness is held for format "phone"');
     }
 
     /**
@@ -732,7 +764,9 @@ final class ContractSuiteTest
     // zoo too: 900 runs over 32 operations became 1100 over the 39 the zoo
     // has since #152, and the half-an-operation gates went from 0.5% to 0.4%
     // to stay as many standard deviations under their mean as they were.
-    #[Property(runs: 1100, generators: [ZooContracts::class, 'taggedCase'])]
+    // 0.21.0 brought the zoo to 45 operations, and the runs to 1300 with it,
+    // so each operation is still drawn about as often as at 1100 over 39.
+    #[Property(runs: 1300, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];

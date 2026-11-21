@@ -22,24 +22,39 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 final readonly class ConstructibleCategories
 {
     /**
+     * Builds every category, in registry order, and keeps the ones the
+     * document admits.
+     *
+     * @template K of array-key
      * @template T
-     * @param list<\Closure(): ArbitraryInterface<T>> $factories
-     * @param non-empty-string $missing
-     * @return ArbitraryInterface<T>
+     * @param array<K, \Closure(): ArbitraryInterface<T>> $factories
+     * @return array<K, ArbitraryInterface<T>>
      */
-    public static function anyOf(array $factories, string $missing): ArbitraryInterface
+    public static function built(array $factories): array
     {
-        $pairs = [];
-        foreach ($factories as $factory) {
+        $categories = [];
+        foreach ($factories as $key => $factory) {
             try {
-                $pairs[] = [1, $factory()];
+                $categories[$key] = $factory();
             } catch (UnsupportedGeneration) {
             }
         }
-        if ($pairs === []) {
+
+        return $categories;
+    }
+
+    /**
+     * @template T
+     * @param array<array-key, ArbitraryInterface<T>> $categories
+     * @param non-empty-string $missing
+     * @return ArbitraryInterface<T>
+     */
+    public static function union(array $categories, string $missing): ArbitraryInterface
+    {
+        if ($categories === []) {
             throw new UnsupportedGeneration($missing);
         }
 
-        return Gen::frequency($pairs);
+        return Gen::frequency(array_map(static fn(ArbitraryInterface $category): array => [1, $category], array_values($categories)));
     }
 }

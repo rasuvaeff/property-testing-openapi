@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseCaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\Tests\Support\ResponseContracts;
@@ -19,8 +20,52 @@ use Testo\Test;
 #[Test]
 #[Covers(ResponseMaterializer::class)]
 #[Covers(JsonBodyEncoder::class)]
+#[Covers(ResponseCaseShape::class)]
 final class ResponseMaterializerTest
 {
+    #[DataProvider('malformedCaseProvider')]
+    public function aMalformedCaseIsRefusedByName(array $case, string $message): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['204' => []]);
+
+        Expect::exception(InvalidCase::class)->withMessage($message);
+
+        $this->materializer()->materialize($operation, $case);
+    }
+
+    public static function malformedCaseProvider(): iterable
+    {
+        $case = ['operationKey' => 'op', 'status' => 204, 'headers' => [], 'body' => null, 'misuse' => null];
+        foreach (array_keys($case) as $key) {
+            $missing = $case;
+            unset($missing[$key]);
+            yield 'without ' . $key => [$missing, sprintf('Case is missing the "%s" key', $key)];
+        }
+        yield 'operation key not a string' => [['operationKey' => 1] + $case, 'Response case "operationKey" must be a string'];
+        yield 'status not an integer' => [['status' => '204'] + $case, 'Response case "status" must be an integer'];
+        yield 'headers not a map' => [['headers' => 'X-A: 1'] + $case, 'Response case "headers" must be a map of header values'];
+        $body = 'Response case "body" must be null or carry a string "mediaType", an "encoding" of "json" or "raw", and a "value"';
+        yield 'body not an array' => [['body' => 'x'] + $case, $body];
+        yield 'body without a media type' => [['body' => ['encoding' => 'json', 'value' => 1]] + $case, $body];
+        yield 'body with an unknown encoding' => [['body' => ['mediaType' => 'application/json', 'encoding' => 'form', 'value' => 1]] + $case, $body];
+        yield 'body without a value' => [['body' => ['mediaType' => 'application/json', 'encoding' => 'json']] + $case, $body];
+        $misuse = 'Response case "misuse" must be null or carry string "kind", "location" and "name" members';
+        yield 'misuse not an array' => [['misuse' => 'type'] + $case, $misuse];
+        yield 'misuse without a kind' => [['misuse' => ['location' => 'body', 'name' => 'x']] + $case, $misuse];
+        yield 'misuse without a location' => [['misuse' => ['kind' => 'type', 'name' => 'x']] + $case, $misuse];
+        yield 'misuse without a name' => [['misuse' => ['kind' => 'type', 'location' => 'body']] + $case, $misuse];
+    }
+
+    public function aNullBodyAndARawBodyAreWellFormed(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => []]);
+
+        $response = $this->materializer()->materialize($operation, ['operationKey' => 'op', 'status' => 599, 'headers' => [], 'body' => ['mediaType' => 'text/plain', 'encoding' => 'raw', 'value' => 'x'], 'misuse' => ['kind' => 'undeclared-status', 'location' => 'status', 'name' => '599']]);
+
+        Assert::same($response->getStatusCode(), 599);
+        Assert::same((string) $response->getBody(), 'x');
+    }
+
     public function materializesStatusHeadersAndASchemaAwareJsonBody(): void
     {
         $contract = ResponseContracts::pets();

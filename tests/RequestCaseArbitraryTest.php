@@ -2259,8 +2259,8 @@ final class RequestCaseArbitraryTest
 
     public static function unsupportedEncodingObjectProvider(): iterable
     {
-        yield 'form' => ['application/x-www-form-urlencoded', 'Form encoding supports only form style and boolean explode'];
-        yield 'multipart' => ['multipart/form-data', 'Multipart encoding supports only form style'];
+        yield 'form' => ['application/x-www-form-urlencoded', 'Unsupported OpenAPI schema generation for operation "login", request body "application/x-www-form-urlencoded": Form encoding supports only form style and boolean explode'];
+        yield 'multipart' => ['multipart/form-data', 'Unsupported OpenAPI schema generation for operation "login", request body "multipart/form-data": Multipart encoding supports only form style'];
     }
 
     #[Property(runs: 120, generators: [BodyContracts::class, 'multipartCase'])]
@@ -2438,27 +2438,27 @@ final class RequestCaseArbitraryTest
         $form = 'application/x-www-form-urlencoded';
         $multipart = 'multipart/form-data';
         $object = ['type' => 'object', 'properties' => ['a' => ['type' => 'string']]];
-        yield 'form schema not an object' => [['content' => [$form => ['schema' => ['type' => 'string']]]], 'Form request body schema must be an object'];
-        yield 'form encoding is a list' => [['content' => [$form => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Form encoding must be an object'];
-        yield 'form encoding entry is a list' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['form']]]]], 'Form encoding entries must be objects'];
-        yield 'form encoding style' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['style' => 'deepObject']]]]], 'Form encoding supports only form style and boolean explode'];
-        yield 'form encoding explode' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['explode' => 'yes']]]]], 'Form encoding supports only form style and boolean explode'];
-        yield 'multipart schema not an object' => [['content' => [$multipart => ['schema' => ['type' => 'array']]]], 'Multipart request body schema must be an object'];
-        yield 'multipart encoding is a list' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Multipart encoding must be an object'];
-        yield 'multipart encoding with a non-string key' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [7 => ['style' => 'form']]]]], 'Multipart encoding supports only form style'];
-        yield 'form encoding with a non-string key' => [['content' => [$form => ['schema' => $object, 'encoding' => [7 => ['style' => 'form']]]]], 'Form encoding entries must be objects'];
-        yield 'multipart encoding entry not an object' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => 'form']]]], 'Multipart encoding supports only form style'];
-        yield 'multipart encoding style' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => ['style' => 'spaceDelimited']]]]], 'Multipart encoding supports only form style'];
-        yield 'multipart properties is a list' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => [['type' => 'string']]]]]], 'Multipart properties must be an object'];
-        yield 'multipart required not a list' => [['content' => [$multipart => ['schema' => $object + ['required' => 'a']]]], 'Multipart required must be a list'];
-        yield 'multipart required with non-names' => [['content' => [$multipart => ['schema' => $object + ['required' => [1]]]]], 'Multipart required must contain property names'];
-        yield 'multipart property not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => 'string']]]]], 'Multipart properties must contain named schema objects'];
-        yield 'multipart nested object' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'object', 'properties' => []]]]]]], 'Nested multipart object properties are not supported'];
-        yield 'multipart nested array items' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ['type' => 'integer']]]]]]]], 'Nested multipart array items are not supported'];
-        yield 'multipart array of objects' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => []]]]]]]], 'Nested multipart array items are not supported'];
-        yield 'multipart array items not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['x']]]]]]], 'Multipart array items must be a schema object'];
-        yield 'request body content not an object' => [['content' => 'oops'], 'Request body content must be an object'];
-        yield 'no supported media type' => [['content' => ['text/csv' => ['schema' => ['type' => 'string']]]], 'Request body has no supported media type'];
+        yield 'form schema not an object' => [['content' => [$form => ['schema' => ['type' => 'string']]]], 'Unsupported OpenAPI schema generation for operation "op", request body "application/x-www-form-urlencoded": Form request body schema must be an object'];
+        yield 'form encoding is a list' => [['content' => [$form => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "application/x-www-form-urlencoded": Form encoding must be an object'];
+        yield 'form encoding entry is a list' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['form']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "application/x-www-form-urlencoded": Form encoding entries must be objects'];
+        yield 'form encoding style' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['style' => 'deepObject']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "application/x-www-form-urlencoded": Form encoding supports only form style and boolean explode'];
+        yield 'form encoding explode' => [['content' => [$form => ['schema' => $object, 'encoding' => ['a' => ['explode' => 'yes']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "application/x-www-form-urlencoded": Form encoding supports only form style and boolean explode'];
+        yield 'multipart schema not an object' => [['content' => [$multipart => ['schema' => ['type' => 'array']]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart request body schema must be an object'];
+        yield 'multipart encoding is a list' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [['style' => 'form']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart encoding must be an object'];
+        yield 'multipart encoding with a non-string key' => [['content' => [$multipart => ['schema' => $object, 'encoding' => [7 => ['style' => 'form']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart encoding supports only form style'];
+        yield 'form encoding with a non-string key' => [['content' => [$form => ['schema' => $object, 'encoding' => [7 => ['style' => 'form']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "application/x-www-form-urlencoded": Form encoding entries must be objects'];
+        yield 'multipart encoding entry not an object' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => 'form']]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart encoding supports only form style'];
+        yield 'multipart encoding style' => [['content' => [$multipart => ['schema' => $object, 'encoding' => ['a' => ['style' => 'spaceDelimited']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart encoding supports only form style'];
+        yield 'multipart properties is a list' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => [['type' => 'string']]]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart properties must be an object'];
+        yield 'multipart required not a list' => [['content' => [$multipart => ['schema' => $object + ['required' => 'a']]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart required must be a list'];
+        yield 'multipart required with non-names' => [['content' => [$multipart => ['schema' => $object + ['required' => [1]]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart required must contain property names'];
+        yield 'multipart property not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => 'string']]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart properties must contain named schema objects'];
+        yield 'multipart nested object' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'object', 'properties' => []]]]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Nested multipart object properties are not supported'];
+        yield 'multipart nested array items' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ['type' => 'integer']]]]]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Nested multipart array items are not supported'];
+        yield 'multipart array of objects' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => []]]]]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Nested multipart array items are not supported'];
+        yield 'multipart array items not a schema' => [['content' => [$multipart => ['schema' => ['type' => 'object', 'properties' => ['a' => ['type' => 'array', 'items' => ['x']]]]]]], 'Unsupported OpenAPI schema generation for operation "op", request body "multipart/form-data": Multipart array items must be a schema object'];
+        yield 'request body content not an object' => [['content' => 'oops'], 'Unsupported OpenAPI schema generation for operation "op", request body: Request body content must be an object'];
+        yield 'no supported media type' => [['content' => ['text/csv' => ['schema' => ['type' => 'string']]]], 'Unsupported OpenAPI schema generation for operation "op", request body: Request body has no supported media type'];
     }
 
     public function formRequiredPropertyThatIsNotASchemaFailsClosed(): void

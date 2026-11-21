@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+
 /**
  * Pure schema probes shared by the negative target finders.
  *
@@ -33,6 +35,10 @@ final readonly class SchemaProbe
         'uri-reference' => '%',
         'date' => 'not-a-date',
         'date-time' => 'not-a-date-time',
+        'hostname' => '-not-a-hostname',
+        'ipv6' => 'not-an-ipv6',
+        'time' => 'not-a-time',
+        'duration' => 'not-a-duration',
     ];
 
     /**
@@ -81,6 +87,7 @@ final readonly class SchemaProbe
         if (!$integer && !in_array('number', $types, strict: true)) {
             return [];
         }
+        $schema = SchemaFacts::exclusiveBounds($schema, $integer);
         $candidates = [];
 
         $minimum = $this->numericBound($schema['minimum'] ?? null);

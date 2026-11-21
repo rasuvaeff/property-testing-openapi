@@ -48,6 +48,9 @@ final class SchemaProbeTest
     public static function outOfRangeProvider(): iterable
     {
         yield 'integer minimum' => [['type' => 'integer', 'minimum' => 1], [0]];
+        yield 'numeric exclusive integer bounds' => [['type' => 'integer', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 9], [0, 9]];
+        yield 'numeric exclusive number bounds' => [['type' => 'number', 'exclusiveMinimum' => 0.5, 'exclusiveMaximum' => 9], [0.5, 9.0]];
+        yield 'a tighter inclusive bound beside a numeric exclusive one' => [['type' => 'integer', 'minimum' => 3, 'exclusiveMinimum' => 0], [2]];
         yield 'integer maximum' => [['type' => 'integer', 'maximum' => 9], [10]];
         yield 'both bounds, both sides offered' => [['type' => 'integer', 'minimum' => 1, 'maximum' => 9], [0, 10]];
         yield 'exclusive minimum is the bound itself' => [['type' => 'integer', 'minimum' => 1, 'exclusiveMinimum' => true], [1]];
@@ -117,7 +120,7 @@ final class SchemaProbeTest
         yield 'date' => [['type' => 'string', 'format' => 'date'], ['not-a-date']];
         yield 'date-time' => [['type' => 'string', 'format' => 'date-time'], ['not-a-date-time']];
         yield 'a length bound no longer refuses' => [['type' => 'string', 'format' => 'email', 'maxLength' => 255], ['not-an-email']];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], []];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], []];
         yield 'url is deliberately unsupported' => [['type' => 'string', 'format' => 'url'], []];
         yield 'no format' => [['type' => 'string'], []];
         yield 'non-string format value' => [['type' => 'string', 'format' => ['email']], []];
@@ -181,7 +184,7 @@ final class SchemaProbeTest
 
     public static function unsupportedFormatProvider(): iterable
     {
-        yield 'unsupported' => [['type' => 'string', 'format' => 'hostname'], 'hostname'];
+        yield 'unsupported' => [['type' => 'string', 'format' => 'phone'], 'phone'];
         yield 'supported' => [['type' => 'string', 'format' => 'email'], null];
         yield 'none declared' => [['type' => 'string'], null];
         yield 'empty' => [['type' => 'string', 'format' => ''], null];
@@ -198,7 +201,7 @@ final class SchemaProbeTest
     {
         yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
         yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], FormatRefusal::Unsupported];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Unsupported];
         yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
         yield 'supported format without a type' => [['format' => 'date'], FormatRefusal::NotAString];
         yield 'no refusal' => [['type' => 'string', 'format' => 'email'], null];

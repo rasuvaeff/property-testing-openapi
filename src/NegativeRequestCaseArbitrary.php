@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
@@ -121,7 +122,7 @@ final readonly class NegativeRequestCaseArbitrary
 
     /**
      * Replaces one numeric parameter with a wire value just outside its
-     * `minimum`/`maximum` bound, honouring boolean exclusive bounds.
+     * `minimum`/`maximum` bound, honouring exclusive bounds, boolean or numeric.
      *
      * @return ArbitraryInterface<CaseData>
      */
@@ -311,8 +312,8 @@ final readonly class NegativeRequestCaseArbitrary
 
     /**
      * Replaces one top-level numeric value of the required JSON body with one
-     * just outside its `minimum`/`maximum` bound, honouring boolean exclusive
-     * bounds.
+     * just outside its `minimum`/`maximum` bound, honouring exclusive bounds,
+     * boolean or numeric.
      *
      * @return ArbitraryInterface<CaseData>
      */
@@ -459,7 +460,7 @@ final readonly class NegativeRequestCaseArbitrary
     {
         $covered = [];
         $skipped = [];
-        foreach ($this->coverageSources($operation) as [$kind, $side, $find]) {
+        foreach ($this->categories($operation) as ['kind' => $kind, 'side' => $side, 'find' => $find]) {
             try {
                 foreach ($find() as $target) {
                     $covered[] = ['kind' => $kind, 'location' => $target['location'], 'name' => $target['name']];
@@ -473,8 +474,51 @@ final readonly class NegativeRequestCaseArbitrary
     }
 
     /**
-     * Each category paired with the finder that decides it, in the order
-     * {@see ContractSuite::negativeCases()} weights them.
+     * Every negative category the operation supports constructively, keyed
+     * by its name, in the order {@see anyForOperation()} weights them. A
+     * category the document gives no target is absent; why it is absent is
+     * what {@see coverageForOperation()} reports.
+     *
+     * The key is the misuse kind for the categories over the request as a
+     * whole and over the parameters (`missing-required`, `type`, `enum`,
+     * `const`, `boundary`, `length`, `format`, `pattern`), the kind for the
+     * body-level ones (`additional-properties`, `media-type`,
+     * `part-content-type`, `json-syntax`), and `body-` plus the kind for the
+     * seven body value categories (`body-type` … `body-pattern`), whose
+     * `misuse.kind` is the same as their parameter twins' (#164).
+     *
+     * @return array<non-empty-string, ArbitraryInterface<CaseData>>
+     */
+    public function categoriesForOperation(Operation $operation): array
+    {
+        return ConstructibleCategories::built(array_map(
+            static fn(array $category): \Closure => $category['build'],
+            $this->categories($operation),
+        ));
+    }
+
+    /**
+     * Weighted choice among every category of {@see categoriesForOperation()},
+     * each with the same weight; an operation with no constructible category
+     * fails closed with {@see UnsupportedGeneration}. This is the union
+     * {@see ContractSuite::negativeCases()} draws from.
+     *
+     * @return ArbitraryInterface<CaseData>
+     */
+    public function anyForOperation(Operation $operation): ArbitraryInterface
+    {
+        return ConstructibleCategories::union(
+            $this->categoriesForOperation($operation),
+            sprintf('Operation "%s" supports no constructible negative case category', $operation->key),
+        );
+    }
+
+    /**
+     * The one registry of negative categories: each one's key, its kind and
+     * side, the finder that decides whether it is constructible, and the
+     * arbitrary that builds it. The order is the weighting order of
+     * {@see anyForOperation()} — draws depend on it, so a new category is
+     * appended, never inserted (#164).
      *
      * The finders are the ones the arbitraries use, so a category listed as
      * covered is one an arbitrary can build and a category listed as skipped
@@ -484,47 +528,101 @@ final readonly class NegativeRequestCaseArbitrary
      * category over the parameters and another over the body, and a refusal
      * that did not say which would be unreadable.
      *
-     * @return list<array{0: non-empty-string, 1: 'request'|'parameter'|'body', 2: \Closure(): list<array{location: string, name: string}>}>
+     * @return array<non-empty-string, array{
+     *     kind: non-empty-string,
+     *     side: 'request'|'parameter'|'body',
+     *     find: \Closure(): list<array{location: string, name: string}>,
+     *     build: \Closure(): ArbitraryInterface<CaseData>,
+     * }>
      */
-    private function coverageSources(Operation $operation): array
+    private function categories(Operation $operation): array
     {
         $body = static fn(string $name): array => [['location' => 'body', 'name' => $name]];
 
         return [
-            ['missing-required', 'request', fn(): array => $this->located($this->parameterTargets->missingRequired($operation))],
-            ['type', 'parameter', fn(): array => $this->located($this->parameterTargets->typeMismatch($operation))],
-            ['enum', 'parameter', fn(): array => $this->located($this->parameterTargets->enumMismatch($operation))],
-            ['const', 'parameter', fn(): array => $this->located($this->parameterTargets->constMismatch($operation))],
-            ['boundary', 'parameter', fn(): array => $this->located($this->parameterTargets->boundaryMismatch($operation))],
-            ['length', 'parameter', fn(): array => $this->located($this->parameterTargets->lengthMismatch($operation))],
-            ['format', 'parameter', fn(): array => $this->located($this->parameterTargets->formatMismatch($operation))],
-            ['pattern', 'parameter', fn(): array => $this->located($this->parameterTargets->patternMismatch($operation))],
-            ['additional-properties', 'body', fn(): array => $body($this->bodyTargets->additionalProperty($operation)['name'])],
-            ['media-type', 'body', function () use ($operation, $body): array {
-                $this->bodyTargets->mediaTypeMismatch($operation);
+            'missing-required' => [
+                'kind' => 'missing-required',
+                'side' => 'request',
+                'find' => fn(): array => $this->located($this->parameterTargets->missingRequired($operation)),
+                'build' => fn(): ArbitraryInterface => $this->forOperation($operation),
+            ],
+            'type' => $this->parameterCategory('type', fn(): array => $this->parameterTargets->typeMismatch($operation), fn(): ArbitraryInterface => $this->typeMismatchForOperation($operation)),
+            'enum' => $this->parameterCategory('enum', fn(): array => $this->parameterTargets->enumMismatch($operation), fn(): ArbitraryInterface => $this->enumMismatchForOperation($operation)),
+            'const' => $this->parameterCategory('const', fn(): array => $this->parameterTargets->constMismatch($operation), fn(): ArbitraryInterface => $this->constMismatchForOperation($operation)),
+            'boundary' => $this->parameterCategory('boundary', fn(): array => $this->parameterTargets->boundaryMismatch($operation), fn(): ArbitraryInterface => $this->boundaryMismatchForOperation($operation)),
+            'length' => $this->parameterCategory('length', fn(): array => $this->parameterTargets->lengthMismatch($operation), fn(): ArbitraryInterface => $this->lengthMismatchForOperation($operation)),
+            'format' => $this->parameterCategory('format', fn(): array => $this->parameterTargets->formatMismatch($operation), fn(): ArbitraryInterface => $this->formatMismatchForOperation($operation)),
+            'pattern' => $this->parameterCategory('pattern', fn(): array => $this->parameterTargets->patternMismatch($operation), fn(): ArbitraryInterface => $this->patternMismatchForOperation($operation)),
+            'additional-properties' => [
+                'kind' => 'additional-properties',
+                'side' => 'body',
+                'find' => fn(): array => $body($this->bodyTargets->additionalProperty($operation)['name']),
+                'build' => fn(): ArbitraryInterface => $this->additionalPropertyForOperation($operation),
+            ],
+            'media-type' => [
+                'kind' => 'media-type',
+                'side' => 'body',
+                'find' => function () use ($operation, $body): array {
+                    $this->bodyTargets->mediaTypeMismatch($operation);
 
-                return $body('body');
-            }],
-            ['part-content-type', 'body', fn(): array => $body($this->bodyTargets->partContentTypeMismatch($operation)['property'])],
-            ['json-syntax', 'body', function () use ($operation, $body): array {
-                if ($this->bodyTargets->jsonBody($operation) === null) {
-                    throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body for a malformed JSON case', $operation->key));
-                }
+                    return $body('body');
+                },
+                'build' => fn(): ArbitraryInterface => $this->mediaTypeMismatchForOperation($operation),
+            ],
+            'part-content-type' => [
+                'kind' => 'part-content-type',
+                'side' => 'body',
+                'find' => fn(): array => $body($this->bodyTargets->partContentTypeMismatch($operation)['property']),
+                'build' => fn(): ArbitraryInterface => $this->partContentTypeMismatchForOperation($operation),
+            ],
+            'json-syntax' => [
+                'kind' => 'json-syntax',
+                'side' => 'body',
+                'find' => function () use ($operation, $body): array {
+                    if ($this->bodyTargets->jsonBody($operation) === null) {
+                        throw new UnsupportedGeneration(sprintf('Operation "%s" has no required JSON body for a malformed JSON case', $operation->key));
+                    }
 
-                return $body('body');
-            }],
-            ...array_map(
-                fn(string $kind): array => [$kind, 'body', function () use ($operation, $kind): array {
-                    /** @var Kind $kind */
-                    $found = $this->bodyTargets->bodyWitness($operation, $kind);
+                    return $body('body');
+                },
+                'build' => fn(): ArbitraryInterface => $this->malformedJsonForOperation($operation),
+            ],
+            'body-type' => $this->bodyValueCategory($operation, 'type', fn(): ArbitraryInterface => $this->bodyTypeMismatchForOperation($operation)),
+            'body-enum' => $this->bodyValueCategory($operation, 'enum', fn(): ArbitraryInterface => $this->bodyEnumMismatchForOperation($operation)),
+            'body-const' => $this->bodyValueCategory($operation, 'const', fn(): ArbitraryInterface => $this->bodyConstMismatchForOperation($operation)),
+            'body-boundary' => $this->bodyValueCategory($operation, 'boundary', fn(): ArbitraryInterface => $this->bodyBoundaryMismatchForOperation($operation)),
+            'body-length' => $this->bodyValueCategory($operation, 'length', fn(): ArbitraryInterface => $this->bodyLengthMismatchForOperation($operation)),
+            'body-format' => $this->bodyValueCategory($operation, 'format', fn(): ArbitraryInterface => $this->bodyFormatMismatchForOperation($operation)),
+            'body-pattern' => $this->bodyValueCategory($operation, 'pattern', fn(): ArbitraryInterface => $this->bodyPatternMismatchForOperation($operation)),
+        ];
+    }
 
-                    return array_map(
-                        static fn(array $target): array => ['location' => 'body', 'name' => $target['name']],
-                        $found['targets'],
-                    );
-                }],
-                ['type', 'enum', 'const', 'boundary', 'length', 'format', 'pattern'],
+    /**
+     * @param non-empty-string $kind
+     * @param \Closure(): list<array{location: string, name: string, invalid?: mixed}> $find
+     * @param \Closure(): ArbitraryInterface<CaseData> $build
+     * @return array{kind: non-empty-string, side: 'parameter', find: \Closure(): list<array{location: string, name: string}>, build: \Closure(): ArbitraryInterface<CaseData>}
+     */
+    private function parameterCategory(string $kind, \Closure $find, \Closure $build): array
+    {
+        return ['kind' => $kind, 'side' => 'parameter', 'find' => fn(): array => $this->located($find()), 'build' => $build];
+    }
+
+    /**
+     * @param Kind $kind
+     * @param \Closure(): ArbitraryInterface<CaseData> $build
+     * @return array{kind: non-empty-string, side: 'body', find: \Closure(): list<array{location: string, name: string}>, build: \Closure(): ArbitraryInterface<CaseData>}
+     */
+    private function bodyValueCategory(Operation $operation, string $kind, \Closure $build): array
+    {
+        return [
+            'kind' => $kind,
+            'side' => 'body',
+            'find' => fn(): array => array_map(
+                static fn(array $target): array => ['location' => 'body', 'name' => $target['name']],
+                $this->bodyTargets->bodyWitness($operation, $kind)['targets'],
             ),
+            'build' => $build,
         ];
     }
 

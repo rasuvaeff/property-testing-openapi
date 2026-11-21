@@ -17,7 +17,8 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  *
  * @internal
  *
- * @psalm-type Target = array{name: string, invalid: mixed}
+ * @psalm-import-type Witness from JsonBodyWitness
+ * @psalm-type Target = array{name: string, invalid: Witness}
  */
 final readonly class ResponseTargets
 {
@@ -128,7 +129,7 @@ final readonly class ResponseTargets
     }
 
     /**
-     * @param 'type'|'enum'|'const'|'boundary'|'length'|'pattern' $kind
+     * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
      * @return non-empty-list<Target>
      */
     public function bodyWitness(Operation $operation, int $status, string $kind): array

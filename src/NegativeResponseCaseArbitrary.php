@@ -35,28 +35,158 @@ final readonly class NegativeResponseCaseArbitrary
 
     /**
      * Weighted choice among every category the response supports
-     * constructively; a response with no constructible category fails closed.
+     * constructively ({@see categoriesForOperation()}), each with the same
+     * weight; a response with no constructible category fails closed.
      *
      * @return ArbitraryInterface<ResponseCaseData>
      */
     public function forOperation(Operation $operation, int $status): ArbitraryInterface
     {
-        $factories = [
-            fn(): ArbitraryInterface => $this->undeclaredStatusForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->missingRequiredHeaderForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->missingRequiredForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->typeMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->enumMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->constMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->boundaryMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->lengthMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->patternMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->additionalPropertyForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->mediaTypeMismatchForOperation($operation, $status),
-            fn(): ArbitraryInterface => $this->malformedJsonForOperation($operation, $status),
-        ];
+        return ConstructibleCategories::union(
+            $this->categoriesForOperation($operation, $status),
+            sprintf('Response for status %d of operation "%s" supports no constructible negative case category', $status, $operation->key),
+        );
+    }
 
-        return ConstructibleCategories::anyOf($factories, sprintf('Response for status %d of operation "%s" supports no constructible negative case category', $status, $operation->key));
+    /**
+     * The same union as {@see forOperation()}, under the name the request
+     * side uses for it ({@see NegativeRequestCaseArbitrary::anyForOperation()}).
+     *
+     * @return ArbitraryInterface<ResponseCaseData>
+     */
+    public function anyForOperation(Operation $operation, int $status): ArbitraryInterface
+    {
+        return $this->forOperation($operation, $status);
+    }
+
+    /**
+     * Every category the response supports constructively, keyed by its
+     * misuse kind, in weighting order; a category the response gives no
+     * target is absent, and {@see coverageForOperation()} says why (#164).
+     *
+     * @return array<non-empty-string, ArbitraryInterface<ResponseCaseData>>
+     */
+    public function categoriesForOperation(Operation $operation, int $status): array
+    {
+        return ConstructibleCategories::built(array_map(
+            static fn(array $category): \Closure => $category['build'],
+            $this->categories($operation, $status),
+        ));
+    }
+
+    /**
+     * What the negative phase covers for one response, and why it covers
+     * nothing where it does not — computed from the document, without
+     * drawing a case. The response-side twin of
+     * {@see NegativeRequestCaseArbitrary::coverageForOperation()}: `covered`
+     * lists one entry per `(kind, location, name)` a category can reach,
+     * `skipped` the refusal each unreachable category would have raised
+     * (#171).
+     *
+     * @return array{
+     *     covered: list<array{kind: non-empty-string, location: 'status'|'header'|'body', name: string}>,
+     *     skipped: list<array{kind: non-empty-string, location: 'status'|'header'|'body', reason: string}>,
+     * }
+     */
+    public function coverageForOperation(Operation $operation, int $status): array
+    {
+        $covered = [];
+        $skipped = [];
+        foreach ($this->categories($operation, $status) as ['kind' => $kind, 'location' => $location, 'find' => $find]) {
+            try {
+                foreach ($find() as $name) {
+                    $covered[] = ['kind' => $kind, 'location' => $location, 'name' => $name];
+                }
+            } catch (UnsupportedGeneration $refusal) {
+                $skipped[] = ['kind' => $kind, 'location' => $location, 'reason' => $refusal->getMessage()];
+            }
+        }
+
+        return ['covered' => $covered, 'skipped' => $skipped];
+    }
+
+    /**
+     * The one registry of response categories, in weighting order: draws
+     * depend on it, so a new category is appended, never inserted. `format`
+     * is the last one (#171).
+     *
+     * @return array<non-empty-string, array{
+     *     kind: non-empty-string,
+     *     location: 'status'|'header'|'body',
+     *     find: \Closure(): list<string>,
+     *     build: \Closure(): ArbitraryInterface<ResponseCaseData>,
+     * }>
+     */
+    private function categories(Operation $operation, int $status): array
+    {
+        return [
+            'undeclared-status' => [
+                'kind' => 'undeclared-status',
+                'location' => 'status',
+                'find' => fn(): array => [(string) $this->targets->undeclaredStatus($operation)],
+                'build' => fn(): ArbitraryInterface => $this->undeclaredStatusForOperation($operation, $status),
+            ],
+            'missing-required-header' => [
+                'kind' => 'missing-required',
+                'location' => 'header',
+                'find' => fn(): array => [$this->targets->requiredHeader($operation, $status)],
+                'build' => fn(): ArbitraryInterface => $this->missingRequiredHeaderForOperation($operation, $status),
+            ],
+            'missing-required' => [
+                'kind' => 'missing-required',
+                'location' => 'body',
+                'find' => fn(): array => [$this->targets->missingRequired($operation, $status)],
+                'build' => fn(): ArbitraryInterface => $this->missingRequiredForOperation($operation, $status),
+            ],
+            'type' => $this->witnessCategory($operation, $status, 'type', fn(): ArbitraryInterface => $this->typeMismatchForOperation($operation, $status)),
+            'enum' => $this->witnessCategory($operation, $status, 'enum', fn(): ArbitraryInterface => $this->enumMismatchForOperation($operation, $status)),
+            'const' => $this->witnessCategory($operation, $status, 'const', fn(): ArbitraryInterface => $this->constMismatchForOperation($operation, $status)),
+            'boundary' => $this->witnessCategory($operation, $status, 'boundary', fn(): ArbitraryInterface => $this->boundaryMismatchForOperation($operation, $status)),
+            'length' => $this->witnessCategory($operation, $status, 'length', fn(): ArbitraryInterface => $this->lengthMismatchForOperation($operation, $status)),
+            'pattern' => $this->witnessCategory($operation, $status, 'pattern', fn(): ArbitraryInterface => $this->patternMismatchForOperation($operation, $status)),
+            'additional-properties' => [
+                'kind' => 'additional-properties',
+                'location' => 'body',
+                'find' => fn(): array => [$this->targets->additionalProperty($operation, $status)],
+                'build' => fn(): ArbitraryInterface => $this->additionalPropertyForOperation($operation, $status),
+            ],
+            'media-type' => [
+                'kind' => 'media-type',
+                'location' => 'body',
+                'find' => function () use ($operation, $status): array {
+                    $this->targets->mediaTypeMismatch($operation, $status);
+
+                    return ['body'];
+                },
+                'build' => fn(): ArbitraryInterface => $this->mediaTypeMismatchForOperation($operation, $status),
+            ],
+            'json-syntax' => [
+                'kind' => 'json-syntax',
+                'location' => 'body',
+                'find' => function () use ($operation, $status): array {
+                    $this->targets->requireJsonBody($operation, $status, 'malformed JSON case');
+
+                    return ['body'];
+                },
+                'build' => fn(): ArbitraryInterface => $this->malformedJsonForOperation($operation, $status),
+            ],
+            'format' => $this->witnessCategory($operation, $status, 'format', fn(): ArbitraryInterface => $this->formatMismatchForOperation($operation, $status)),
+        ];
+    }
+
+    /**
+     * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
+     * @param \Closure(): ArbitraryInterface<ResponseCaseData> $build
+     * @return array{kind: non-empty-string, location: 'body', find: \Closure(): list<string>, build: \Closure(): ArbitraryInterface<ResponseCaseData>}
+     */
+    private function witnessCategory(Operation $operation, int $status, string $kind, \Closure $build): array
+    {
+        return [
+            'kind' => $kind,
+            'location' => 'body',
+            'find' => fn(): array => array_map(static fn(array $target): string => $target['name'], $this->targets->bodyWitness($operation, $status, $kind)),
+            'build' => $build,
+        ];
     }
 
     /**
@@ -132,6 +262,16 @@ final readonly class NegativeResponseCaseArbitrary
         return $this->witness($operation, $status, 'length');
     }
 
+    /**
+     * The body value its `format` provably rejects (#171).
+     *
+     * @return ArbitraryInterface<ResponseCaseData>
+     */
+    public function formatMismatchForOperation(Operation $operation, int $status): ArbitraryInterface
+    {
+        return $this->witness($operation, $status, 'format');
+    }
+
     /** @return ArbitraryInterface<ResponseCaseData> */
     public function patternMismatchForOperation(Operation $operation, int $status): ArbitraryInterface
     {
@@ -182,7 +322,7 @@ final readonly class NegativeResponseCaseArbitrary
     }
 
     /**
-     * @param 'type'|'enum'|'const'|'boundary'|'length'|'pattern' $kind
+     * @param 'type'|'enum'|'const'|'boundary'|'length'|'format'|'pattern' $kind
      * @return ArbitraryInterface<ResponseCaseData>
      */
     private function witness(Operation $operation, int $status, string $kind): ArbitraryInterface

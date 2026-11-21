@@ -9,18 +9,26 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
  * or by the keyword that implies it. Three classes carried this pair
  * verbatim; one place decides it now.
  *
+ * It is also where the shape of a Schema Object is named, once, for every
+ * compiler section to import (#165): `Schema` is a decoded JSON object,
+ * `Subschema` the boolean-or-object form JSON Schema allows wherever a
+ * subschema stands (`additionalProperties`, `items`, `not`, `if`, …).
+ *
+ * @psalm-type Schema = array<string, mixed>
+ * @psalm-type Subschema = bool|Schema
+ *
  * @internal
  */
 final readonly class SchemaShape
 {
-    /** @param array<string, mixed> $schema */
+    /** @param Schema $schema */
     public static function isArray(array $schema): bool
     {
         return self::declares($schema, 'array') || array_key_exists('items', $schema)
             || array_key_exists('prefixItems', $schema) || array_key_exists('contains', $schema);
     }
 
-    /** @param array<string, mixed> $schema */
+    /** @param Schema $schema */
     public static function isObject(array $schema): bool
     {
         return self::declares($schema, 'object') || array_key_exists('properties', $schema);
@@ -33,7 +41,7 @@ final readonly class SchemaShape
      * generator produced a map and the wire conversion then rejected it as a
      * non-scalar.
      *
-     * @param array<string, mixed> $schema
+     * @param Schema $schema
      */
     private static function declares(array $schema, string $type): bool
     {

@@ -213,7 +213,7 @@ final class SchemaArbitraryCompilerBranchesTest
             'type' => 'object',
             'properties' => ['a' => ['type' => 'integer']],
             'dependentRequired' => ['a' => []],
-            'exclusiveMinimum' => 3,
+            'additionalProperties' => ['x'],
         ]);
     }
 

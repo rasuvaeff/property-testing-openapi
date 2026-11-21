@@ -12,7 +12,6 @@ use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
-use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 
 /**
  * Framework-neutral suite model: explicit operation selection, transport,
@@ -262,30 +261,7 @@ final class ContractSuite
      */
     public function negativeCases(string $operationKey): ArbitraryInterface
     {
-        $operation = $this->requireSelected($operationKey);
-        $factories = [
-            fn(): ArbitraryInterface => $this->negative->forOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->typeMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->enumMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->constMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->boundaryMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->lengthMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->formatMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->patternMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->additionalPropertyForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->mediaTypeMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->partContentTypeMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->malformedJsonForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyTypeMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyEnumMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyConstMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyBoundaryMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyLengthMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyFormatMismatchForOperation($operation),
-            fn(): ArbitraryInterface => $this->negative->bodyPatternMismatchForOperation($operation),
-        ];
-
-        return ConstructibleCategories::anyOf($factories, sprintf('Operation "%s" supports no constructible negative case category', $operation->key));
+        return $this->negative->anyForOperation($this->requireSelected($operationKey));
     }
 
     /**
@@ -323,6 +299,34 @@ final class ContractSuite
         $coverage = [];
         foreach ($this->operationKeys() as $key) {
             $coverage[$key] = $this->negative->coverageForOperation($this->contract->operation($key));
+        }
+
+        return $coverage;
+    }
+
+    /**
+     * Whether the valid phase can generate each selected operation, decided
+     * from the document without drawing a case: `supported: true`, or
+     * `supported: false` with the refusal {@see OperationProperty::check()} would raise
+     * for it. A forty-operation document no longer has to be run operation by
+     * operation to learn which ones the generator cannot reach (#171).
+     *
+     * ```php
+     * Assert::same(array_filter($suite->generationCoverage(), static fn(array $o): bool => !$o['supported']), []);
+     * ```
+     *
+     * @return array<string, array{supported: true, reason: null}|array{supported: false, reason: string}>
+     */
+    public function generationCoverage(): array
+    {
+        $coverage = [];
+        foreach ($this->operationKeys() as $key) {
+            try {
+                $this->valid->forOperation($this->contract->operation($key));
+                $coverage[$key] = ['supported' => true, 'reason' => null];
+            } catch (UnsupportedGeneration $refusal) {
+                $coverage[$key] = ['supported' => false, 'reason' => $refusal->getMessage()];
+            }
         }
 
         return $coverage;

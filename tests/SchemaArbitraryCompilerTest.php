@@ -1129,11 +1129,11 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
-    public function rejectsUnsupportedNumericExclusiveBounds(): void
+    public function acceptsTheNumericExclusiveBoundsOfOas31(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
-
-        (new SchemaArbitraryCompiler())->compile(['type' => 'number', 'exclusiveMinimum' => 0]);
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'number', 'exclusiveMinimum' => 0]), count: 50, seed: 3) as $value) {
+            Assert::true(is_float($value) && $value > 0.0);
+        }
     }
 
     public function rejectsRequiredPropertiesWithoutASchema(): void
@@ -2125,11 +2125,11 @@ final class SchemaArbitraryCompilerTest
         }
     }
 
-    public function rejectsNumericExclusiveMaximum(): void
+    public function acceptsANumericExclusiveMaximum(): void
     {
-        Expect::exception(UnsupportedGeneration::class);
-
-        (new SchemaArbitraryCompiler())->compile(['type' => 'integer', 'exclusiveMaximum' => 5]);
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'integer', 'exclusiveMaximum' => 5]), count: 50, seed: 3) as $value) {
+            Assert::true(is_int($value) && $value < 5);
+        }
     }
 
     public function checksAdditionalPropertiesShapeOnEveryType(): void
