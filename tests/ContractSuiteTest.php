@@ -764,7 +764,9 @@ final class ContractSuiteTest
     // zoo too: 900 runs over 32 operations became 1100 over the 39 the zoo
     // has since #152, and the half-an-operation gates went from 0.5% to 0.4%
     // to stay as many standard deviations under their mean as they were.
-    #[Property(runs: 1100, generators: [ZooContracts::class, 'taggedCase'])]
+    // 0.21.0 brought the zoo to 45 operations, and the runs to 1300 with it,
+    // so each operation is still drawn about as often as at 1100 over 39.
+    #[Property(runs: 1300, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
