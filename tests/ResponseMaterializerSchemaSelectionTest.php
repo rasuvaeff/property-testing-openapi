@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\ResponseMaterializer;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -18,6 +19,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(ResponseMaterializer::class)]
+#[Covers(CaseMaps::class)]
 final class ResponseMaterializerSchemaSelectionTest
 {
     private const array META = ['schema' => ['type' => 'object', 'properties' => ['meta' => ['type' => 'object']]]];

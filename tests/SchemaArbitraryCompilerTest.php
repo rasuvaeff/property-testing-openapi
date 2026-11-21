@@ -19,6 +19,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\CoverageReport;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
 use Rasuvaeff\PropertyTesting\OpenApi\DocumentExamples;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
@@ -42,6 +43,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
@@ -80,6 +82,8 @@ use Testo\Test;
 
 #[Test]
 #[Covers(SchemaArbitraryCompiler::class)]
+#[Covers(UndeclaredMediaType::class)]
+#[Covers(CaseMaps::class)]
 #[Covers(CompositionArbitraries::class)]
 #[Covers(ContainerArbitraries::class)]
 #[Covers(Definitions::class)]

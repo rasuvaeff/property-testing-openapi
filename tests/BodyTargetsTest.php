@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -18,6 +19,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(BodyTargets::class)]
+#[Covers(UndeclaredMediaType::class)]
 final class BodyTargetsTest
 {
     /**

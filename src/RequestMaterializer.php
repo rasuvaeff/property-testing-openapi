@@ -8,6 +8,7 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
@@ -240,13 +241,13 @@ final readonly class RequestMaterializer
             throw new InvalidCase('Form request body value must be an object');
         }
         /** @var array<array-key, mixed> $value */
-        $properties = $this->schemaObject($schema['properties'] ?? [], 'Form object properties must be an object');
+        $properties = CaseMaps::schemaObject($schema['properties'] ?? [], 'Form object properties must be an object');
         $parts = [];
         foreach (array_keys($value) as $name) {
             if (!is_string($name)) {
                 throw new InvalidCase('Form object keys must be strings');
             }
-            $property = $this->schemaObject($properties[$name] ?? [], 'Form object property must be a schema object');
+            $property = CaseMaps::schemaObject($properties[$name] ?? [], 'Form object property must be a schema object');
             $configuration = $this->formConfiguration($encoding[$name] ?? null);
             /** @var array<string, mixed> $configuration */
             $style = $configuration['style'] ?? 'form';
@@ -290,7 +291,7 @@ final readonly class RequestMaterializer
             if (!is_array($value) || !array_is_list($value)) {
                 throw new InvalidCase('Form array value must be a list');
             }
-            $items = $this->schemaObject($schema['items'] ?? null, 'Form array items must be a schema object');
+            $items = CaseMaps::schemaObject($schema['items'] ?? null, 'Form array items must be a schema object');
 
             return array_map($this->scalarValue(...), $value);
         }
@@ -299,11 +300,11 @@ final readonly class RequestMaterializer
                 throw new InvalidCase('Form object value must be an object');
             }
             /** @var array<array-key, mixed> $value */
-            $properties = $this->memberMap($schema['properties'] ?? [], 'Form object properties must be an object');
+            $properties = CaseMaps::memberMap($schema['properties'] ?? [], 'Form object properties must be an object');
             /** @var array<array-key, string> $result */
             $result = [];
             foreach (array_keys($value) as $key) {
-                $property = $this->schemaObject($properties[$key] ?? [], 'Form object property must be a schema object');
+                $property = CaseMaps::schemaObject($properties[$key] ?? [], 'Form object property must be a schema object');
                 $result = array_replace($result, [$key => $this->scalarValue($value[$key])]);
             }
 
@@ -402,48 +403,5 @@ final readonly class RequestMaterializer
         }
 
         return null;
-    }
-
-
-    /**
-     * A Schema Object: keyed by JSON Schema keywords, which are never numeric.
-     *
-     * @return array<string, mixed>
-     */
-    private function schemaObject(mixed $value, string $message): array
-    {
-        /** @var array<string, mixed> $map */
-        $map = $this->memberMap($value, $message);
-
-        return $map;
-    }
-
-    /**
-     * A map keyed by member name. The key type is `array-key` because PHP
-     * normalizes a numeric-string key to an integer — see
-     * {@see JsonBodyEncoder} for the same split.
-     *
-     * `array_replace`, not `array_merge`: both quiet the psalm
-     * `MixedAssignment` that a direct `$result[$key] =` raises, but only one
-     * of them keeps an integer-like key where it was put.
-     *
-     * @return array<array-key, mixed>
-     */
-    private function memberMap(mixed $value, string $message): array
-    {
-        if (!is_array($value)) {
-            throw new InvalidCase($message);
-        }
-        if ($value !== [] && array_is_list($value)) {
-            throw new InvalidCase($message);
-        }
-
-        /** @var array<array-key, mixed> $result */
-        $result = [];
-        foreach (array_keys($value) as $key) {
-            $result = array_replace($result, [$key => $value[$key]]);
-        }
-
-        return $result;
     }
 }

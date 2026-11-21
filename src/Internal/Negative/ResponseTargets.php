@@ -71,17 +71,8 @@ final readonly class ResponseTargets
         if (!is_array($content)) {
             throw new UnsupportedGeneration('Response content must be an object');
         }
-        foreach (array_keys($content) as $declared) {
-            if (is_string($declared) && str_contains($declared, '*')) {
-                throw new UnsupportedGeneration(sprintf('Operation "%s" declares wildcard media type "%s"; an undeclared media type cannot be promised', $operation->key, $declared));
-            }
-        }
-        $invalid = 'application/x-openapi-misuse';
-        while (array_key_exists($invalid, $content)) {
-            $invalid .= '-x';
-        }
 
-        return ['invalid' => $invalid];
+        return ['invalid' => UndeclaredMediaType::beside($content, $operation->key)];
     }
 
     /** @return array{mediaType: non-empty-string, schema: array<string, mixed>} */

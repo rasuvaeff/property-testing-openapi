@@ -82,17 +82,8 @@ final readonly class BodyTargets
         if (!is_array($content)) {
             throw new UnsupportedGeneration('Request body content must be an object');
         }
-        foreach (array_keys($content) as $declared) {
-            if (str_contains($declared, '*')) {
-                throw new UnsupportedGeneration(sprintf('Operation "%s" declares wildcard media type "%s"; an undeclared media type cannot be promised', $operation->key, $declared));
-            }
-        }
-        $invalid = 'application/x-openapi-misuse';
-        while (array_key_exists($invalid, $content)) {
-            $invalid .= '-x';
-        }
 
-        return ['mediaType' => $body['mediaType'], 'invalid' => $invalid];
+        return ['mediaType' => $body['mediaType'], 'invalid' => UndeclaredMediaType::beside($content, $operation->key)];
     }
 
     /**

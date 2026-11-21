@@ -22,6 +22,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
 use Rasuvaeff\PropertyTesting\OpenApi\DocumentExamples;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
@@ -45,6 +46,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
@@ -90,6 +92,8 @@ use function Rasuvaeff\Understudy\verify;
 
 #[Test]
 #[Covers(ContractSuite::class)]
+#[Covers(UndeclaredMediaType::class)]
+#[Covers(CaseMaps::class)]
 #[Covers(CheckFailed::class)]
 #[Covers(SuiteConfigurationError::class)]
 #[Covers(NegativeRequestCaseArbitrary::class)]

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -16,6 +17,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(JsonBodyEncoder::class)]
+#[Covers(CaseMaps::class)]
 final class JsonBodyEncoderTest
 {
     #[DataProvider('encodingProvider')]

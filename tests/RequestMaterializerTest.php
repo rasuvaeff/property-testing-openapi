@@ -8,6 +8,7 @@ use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
 use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -22,6 +23,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(RequestMaterializer::class)]
+#[Covers(CaseMaps::class)]
 #[Covers(ParameterSerializer::class)]
 final class RequestMaterializerTest
 {

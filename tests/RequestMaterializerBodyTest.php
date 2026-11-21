@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Testo\Assert;
@@ -20,6 +21,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(RequestMaterializer::class)]
+#[Covers(CaseMaps::class)]
 final class RequestMaterializerBodyTest
 {
     public function refusesAHeaderValueWithTrailingWhitespaceByName(): void
