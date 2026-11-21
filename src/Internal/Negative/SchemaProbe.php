@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
+use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 
 /**
@@ -67,6 +68,70 @@ final readonly class SchemaProbe
         }
 
         return true;
+    }
+
+    /**
+     * The witness a single declared type is contradicted by, from the
+     * caller's table: a parameter travels as text and a JSON body does not,
+     * so the two sides spell their witnesses differently. A union admits
+     * every type it lists, so a witness built for one member stays valid
+     * under the others: `["string", "null"]` accepts the string `"not-null"`.
+     * Only a single declared type can be contradicted.
+     *
+     * @param array<string, mixed> $schema
+     * @param array<string, string|int> $witnesses keyed by JSON type
+     * @return list<string|int>
+     */
+    public function typeWitnesses(array $schema, array $witnesses): array
+    {
+        $types = array_values($this->declaredTypes($schema));
+        if (count($types) !== 1) {
+            return [];
+        }
+        $witness = is_string($types[0]) ? ($witnesses[$types[0]] ?? null) : null;
+
+        return $witness === null ? [] : [$witness];
+    }
+
+    /**
+     * The marker the side has always produced first, then typed
+     * alternatives: a marker string cannot contradict an `enum` of integers
+     * without also contradicting the type, and one longer than `maxLength`
+     * cannot contradict a string enum without also breaking the length
+     * (#102). The marker is the caller's — the parameter and the body sides
+     * keep theirs, so their cases stay what they were — lengthened past any
+     * value it collides with. `$constMarker` answers `null` for a `const` the
+     * side cannot contradict.
+     *
+     * @param array<string, mixed> $schema
+     * @param 'enum'|'const' $keyword
+     * @param \Closure(mixed): ?string $constMarker
+     * @return list<int|float|bool|string>
+     */
+    public function finiteCandidates(array $schema, string $keyword, string $enumMarker, \Closure $constMarker): array
+    {
+        if (!array_key_exists($keyword, $schema)) {
+            return [];
+        }
+        if ($keyword === 'enum') {
+            $enum = $schema['enum'] ?? null;
+            if (!is_array($enum) || $enum === [] || !$this->isScalarEnum($enum)) {
+                return [];
+            }
+            $forbidden = array_values($enum);
+            $marker = $enumMarker;
+        } else {
+            $marker = $constMarker($schema['const'] ?? null);
+            if ($marker === null) {
+                return [];
+            }
+            $forbidden = [$schema['const'] ?? null];
+        }
+        while (in_array($marker, $forbidden, strict: true)) {
+            $marker .= '_';
+        }
+
+        return [$marker, ...$this->alternatives($schema, $forbidden)];
     }
 
     /**
@@ -196,7 +261,7 @@ final readonly class SchemaProbe
     public function unsupportedFormat(array $schema): ?string
     {
         $format = $schema['format'] ?? null;
-        if (!is_string($format) || $format === '' || array_key_exists($format, self::FORMAT_WITNESSES)) {
+        if (!is_string($format) || $format === '' || array_key_exists($format, self::FORMAT_WITNESSES) || $this->isAnnotation($schema, $format)) {
             return null;
         }
 
@@ -204,9 +269,31 @@ final readonly class SchemaProbe
     }
 
     /**
+     * Whether the contract reads the format as an annotation on every type
+     * the schema declares — a string when it declares none — so that no
+     * value contradicts it and its absence of a witness is no gap (#168).
+     *
+     * @param array<string, mixed> $schema
+     */
+    public function isAnnotation(array $schema, string $format): bool
+    {
+        $types = $this->declaredTypes($schema);
+        if ($types === []) {
+            $types = ['string'];
+        }
+        foreach (array_keys($types) as $index) {
+            if (is_string($types[$index]) && SchemaCheck::assertsFormat($types[$index], $format)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Why no `format` witness is offered, or `null` when one is.
      *
-     * The three causes are opposite situations for a document owner. A schema
+     * The causes are opposite situations for a document owner. A schema
      * that declares no format is not a gap. One that declares a format this
      * package holds no witness for is a gap, and the right response to it is
      * to say so here rather than to edit the schema — which a bare `null`
@@ -220,7 +307,7 @@ final readonly class SchemaProbe
             return FormatRefusal::NotDeclared;
         }
         if (!array_key_exists($schema['format'], self::FORMAT_WITNESSES)) {
-            return FormatRefusal::Unsupported;
+            return $this->isAnnotation($schema, $schema['format']) ? FormatRefusal::Annotation : FormatRefusal::Unsupported;
         }
         if (!in_array('string', $this->declaredTypes($schema), strict: true)) {
             return FormatRefusal::NotAString;

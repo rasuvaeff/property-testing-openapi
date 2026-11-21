@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\FormBodies;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartBodies;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Presence;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Random;
@@ -21,6 +24,9 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(RequestCaseArbitrary::class)]
+#[Covers(FormBodies::class)]
+#[Covers(MultipartBodies::class)]
+#[Covers(Presence::class)]
 final class RequestCaseArbitraryPartsTest
 {
     /**

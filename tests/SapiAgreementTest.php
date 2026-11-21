@@ -20,6 +20,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\CoverageReport;
 use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
 use Rasuvaeff\PropertyTesting\OpenApi\DocumentExamples;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
@@ -30,9 +31,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\DirectionalSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\FormBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\LazyPhpRedisCorpusClient;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\FormatRefusal;
@@ -41,9 +44,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Presence;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RedisDsn;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
@@ -105,8 +110,13 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(Psr15Transport::class)]
+#[Covers(UndeclaredMediaType::class)]
+#[Covers(CaseMaps::class)]
 #[Covers(RequestMaterializer::class)]
 #[Covers(RequestCaseArbitrary::class)]
+#[Covers(FormBodies::class)]
+#[Covers(MultipartBodies::class)]
+#[Covers(Presence::class)]
 #[Covers(BodyTargets::class)]
 #[Covers(CallableTransport::class)]
 #[Covers(CaseShape::class)]

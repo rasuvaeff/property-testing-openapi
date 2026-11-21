@@ -229,45 +229,12 @@ final readonly class ContainerArbitraries
     {
         $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
         $patterns = $this->facts->schemaObject($schema['patternProperties'] ?? [], 'patternProperties must be an object of schemas');
-        $propertyNames = array_key_exists('propertyNames', $schema)
-            ? $this->facts->schemaObject($schema['propertyNames'], 'propertyNames must be a schema object')
-            : null;
-        if ($propertyNames !== null) {
-            foreach (array_keys($propertyNames) as $keyword) {
-                if ($keyword !== 'pattern') {
-                    throw UnsupportedGeneration::forSchema(sprintf('propertyNames keyword "%s" is outside the supported generator subset', $keyword));
-                }
-            }
-            if (!$this->isRegex($propertyNames['pattern'] ?? null)) {
-                throw UnsupportedGeneration::forSchema('propertyNames pattern is not supported');
-            }
-        }
-        $patternArbitraries = [];
-        /** @var array<string, Schema> $typedPatterns */
-        $typedPatterns = [];
-        foreach ($patterns as $pattern => $patternSchema) {
-            if (!is_array($patternSchema) || array_is_list($patternSchema)) {
-                throw UnsupportedGeneration::forSchema('patternProperties must contain named schema objects');
-            }
-            /** @var Schema $patternSchema */
-            $typedPatterns[$pattern] = $patternSchema;
-            if (!$this->isRegex($pattern)) {
-                throw UnsupportedGeneration::forSchema(sprintf('patternProperties key is not supported: %s', $pattern));
-            }
-
-            try {
-                $key = Gen::stringMatching($pattern);
-            } catch (\InvalidArgumentException $exception) {
-                throw UnsupportedGeneration::forSchema(sprintf('patternProperties key is not supported: %s', $exception->getMessage()));
-            }
-            $patternArbitraries[] = [$pattern, $key];
-        }
-        $patterns = $typedPatterns;
+        $propertyNames = $this->propertyNames($schema);
+        [$patterns, $patternArbitraries] = $this->patternKeys($patterns);
         $required = $schema['required'] ?? [];
         if (!is_array($required) || !array_is_list($required)) {
             throw UnsupportedGeneration::forSchema('required must be a list of property names');
         }
-        $shape = [];
         $minProperties = $this->facts->nonNegativeInt($schema, 'minProperties', 0);
         $maxProperties = $this->facts->budgeted($schema, 'maxProperties', $minProperties, self::MAX_COLLECTION_SIZE);
         if ($minProperties > $maxProperties) {
@@ -281,60 +248,8 @@ final readonly class ContainerArbitraries
             }
             $requiredNames[$name] = true;
         }
-        $omitted = $this->direction?->foreignFlag();
-        /** @var array<array-key, true> $reserved */
-        $reserved = [];
-        foreach ($excluded as $name) {
-            $reserved[$name] = true;
-            if (isset($requiredNames[$name])) {
-                throw UnsupportedGeneration::forSchema('dependent schema requires an inactive trigger');
-            }
-            unset($properties[$name]);
-        }
-        /** @var array<string, true> $requiredNames */
-        foreach ($properties as $name => $property) {
-            if ($propertyNames !== null && !$this->matchesSchema($name, $propertyNames)) {
-                throw UnsupportedGeneration::forSchema('propertyNames excludes a declared property');
-            }
-            if (!is_array($property) || array_is_list($property)) {
-                throw UnsupportedGeneration::forSchema('object properties must contain named schema objects');
-            }
-            /** @var Schema $property */
-            if ($omitted !== null && ($property[$omitted] ?? false) === true) {
-                // Owned by the other direction: never sent, still declared.
-                $reserved[$name] = true;
-                unset($requiredNames[$name]);
-
-                continue;
-            }
-
-            $applicable = [$property];
-            foreach ($patterns as $pattern => $patternSchema) {
-                if ($this->regexMatches($pattern, $name)) {
-                    /** @var Schema $patternSchema */
-                    $applicable[] = $patternSchema;
-                }
-            }
-            $compiled = $this->producible(count($applicable) === 1 ? $property : ['allOf' => $applicable]);
-            if (!$compiled instanceof \Rasuvaeff\PropertyTesting\ArbitraryInterface) {
-                // The leaf of a recursive def: an optional member that would
-                // hold more of it is left out, a required one gives it up.
-                if (isset($requiredNames[$name])) {
-                    throw new Unproducible($name);
-                }
-                $reserved[$name] = true;
-
-                continue;
-            }
-            $shape[$name] = isset($requiredNames[$name]) ? $compiled : $this->optionalProperty($compiled);
-        }
-        foreach (array_keys($requiredNames) as $name) {
-            if (!array_key_exists($name, $shape)) {
-                throw UnsupportedGeneration::forSchema('required properties without a schema are not supported');
-            }
-        }
-        $requiredCount = count($requiredNames);
-        if ($requiredCount > $maxProperties) {
+        [$shape, $reserved, $requiredNames] = $this->declaredMembers($properties, $patterns, $propertyNames, $requiredNames, $excluded);
+        if (count($requiredNames) > $maxProperties) {
             throw UnsupportedGeneration::forSchema('required properties exceed maxProperties');
         }
 
@@ -371,62 +286,233 @@ final readonly class ContainerArbitraries
         if (($additional === false && $patternArbitraries === []) || ($minProperties <= 0 && $shape !== [] && $patternArbitraries === [])) {
             return $base;
         }
+        $entry = $this->extraEntry($this->extraName($patternArbitraries, $shape, $reserved, $propertyNames, $patterns), $patterns, $additional);
 
-        $keyAlphabet = 'abcdefghijklmnopqrstuvwxyz';
-        /** @var ArbitraryInterface<string> $name */
-        if ($patternArbitraries !== []) {
-            $name = Gen::map(Gen::frequency(array_map(
-                function (array $entry) use ($shape, $reserved, $propertyNames, $patterns): array {
-                    /** @var string $pattern */
-                    [$pattern, $source] = $entry;
-                    $filtered = Gen::filter($source, function (mixed $name) use ($pattern, $shape, $reserved, $propertyNames, $patterns): bool {
-                        if (!is_string($name) || array_key_exists($name, $shape) || isset($reserved[$name])) {
-                            return false;
-                        }
-                        if ($propertyNames !== null && !$this->matchesSchema($name, $propertyNames)) {
-                            return false;
-                        }
-                        $matches = [];
-                        foreach (array_keys($patterns) as $candidate) {
-                            if ($this->regexMatches($candidate, $name)) {
-                                $matches[] = $candidate;
-                            }
-                        }
+        return Gen::flatMap($base, fn(array $values): ArbitraryInterface => $this->additionalProperties(
+            $values,
+            $minProperties,
+            $maxProperties,
+            $entry,
+        ));
+    }
 
-                        return in_array($pattern, $matches, strict: true);
-                    });
+    /**
+     * The `propertyNames` schema, when there is one: only a `pattern` is
+     * generated, anything else is refused.
+     *
+     * @param Schema $schema
+     * @return null|Schema
+     */
+    private function propertyNames(array $schema): ?array
+    {
+        if (!array_key_exists('propertyNames', $schema)) {
+            return null;
+        }
+        $propertyNames = $this->facts->schemaObject($schema['propertyNames'], 'propertyNames must be a schema object');
+        foreach (array_keys($propertyNames) as $keyword) {
+            if ($keyword !== 'pattern') {
+                throw UnsupportedGeneration::forSchema(sprintf('propertyNames keyword "%s" is outside the supported generator subset', $keyword));
+            }
+        }
+        if (!$this->isRegex($propertyNames['pattern'] ?? null)) {
+            throw UnsupportedGeneration::forSchema('propertyNames pattern is not supported');
+        }
 
-                    return [1, $filtered];
-                },
-                $patternArbitraries,
-            )), static fn(string $name): string => $name);
-        } else {
-            $name = Gen::map(
+        return $propertyNames;
+    }
+
+    /**
+     * The `patternProperties` schemas, typed, and a name arbitrary per
+     * pattern, in declaration order.
+     *
+     * @param Schema $patterns
+     * @return array{array<string, Schema>, list<array{string, ArbitraryInterface}>}
+     */
+    private function patternKeys(array $patterns): array
+    {
+        $patternArbitraries = [];
+        /** @var array<string, Schema> $typedPatterns */
+        $typedPatterns = [];
+        foreach ($patterns as $pattern => $patternSchema) {
+            if (!is_array($patternSchema) || array_is_list($patternSchema)) {
+                throw UnsupportedGeneration::forSchema('patternProperties must contain named schema objects');
+            }
+            /** @var Schema $patternSchema */
+            $typedPatterns[$pattern] = $patternSchema;
+            if (!$this->isRegex($pattern)) {
+                throw UnsupportedGeneration::forSchema(sprintf('patternProperties key is not supported: %s', $pattern));
+            }
+
+            try {
+                $key = Gen::stringMatching($pattern);
+            } catch (\InvalidArgumentException $exception) {
+                throw UnsupportedGeneration::forSchema(sprintf('patternProperties key is not supported: %s', $exception->getMessage()));
+            }
+            $patternArbitraries[] = [$pattern, $key];
+        }
+
+        return [$typedPatterns, $patternArbitraries];
+    }
+
+    /**
+     * The arbitrary of every declared property this direction sends, each
+     * under its own schema and the `patternProperties` its name matches, an
+     * optional one behind a presence choice; the names no extra member may
+     * take; and the required names left once the other direction's are
+     * dropped.
+     *
+     * @param Schema $properties
+     * @param array<string, Schema> $patterns
+     * @param null|Schema $propertyNames
+     * @param array<string, true> $requiredNames
+     * @param list<string> $excluded
+     * @return array{array<string, ArbitraryInterface>, array<array-key, true>, array<string, true>}
+     */
+    private function declaredMembers(array $properties, array $patterns, ?array $propertyNames, array $requiredNames, array $excluded): array
+    {
+        $omitted = $this->direction?->foreignFlag();
+        /** @var array<array-key, true> $reserved */
+        $reserved = [];
+        foreach ($excluded as $name) {
+            $reserved[$name] = true;
+            if (isset($requiredNames[$name])) {
+                throw UnsupportedGeneration::forSchema('dependent schema requires an inactive trigger');
+            }
+            unset($properties[$name]);
+        }
+        $shape = [];
+        foreach ($properties as $name => $property) {
+            if ($propertyNames !== null && !$this->matchesSchema($name, $propertyNames)) {
+                throw UnsupportedGeneration::forSchema('propertyNames excludes a declared property');
+            }
+            if (!is_array($property) || array_is_list($property)) {
+                throw UnsupportedGeneration::forSchema('object properties must contain named schema objects');
+            }
+            /** @var Schema $property */
+            if ($omitted !== null && ($property[$omitted] ?? false) === true) {
+                // Owned by the other direction: never sent, still declared.
+                $reserved[$name] = true;
+                unset($requiredNames[$name]);
+
+                continue;
+            }
+
+            $applicable = [$property];
+            foreach ($patterns as $pattern => $patternSchema) {
+                if ($this->regexMatches($pattern, $name)) {
+                    $applicable[] = $patternSchema;
+                }
+            }
+            $compiled = $this->producible(count($applicable) === 1 ? $property : ['allOf' => $applicable]);
+            if (!$compiled instanceof ArbitraryInterface) {
+                // The leaf of a recursive def: an optional member that would
+                // hold more of it is left out, a required one gives it up.
+                if (isset($requiredNames[$name])) {
+                    throw new Unproducible($name);
+                }
+                $reserved[$name] = true;
+
+                continue;
+            }
+            $shape[$name] = isset($requiredNames[$name]) ? $compiled : $this->optionalProperty($compiled);
+        }
+        foreach (array_keys($requiredNames) as $name) {
+            if (!array_key_exists($name, $shape)) {
+                throw UnsupportedGeneration::forSchema('required properties without a schema are not supported');
+            }
+        }
+
+        return [$shape, $reserved, $requiredNames];
+    }
+
+    /**
+     * The name of a member the document does not declare: one a pattern
+     * admits and claims, or — without patterns — a short lowercase name.
+     * Never a declared or reserved one, never one `propertyNames` refuses.
+     *
+     * @param list<array{string, ArbitraryInterface}> $patternArbitraries
+     * @param array<string, ArbitraryInterface> $shape
+     * @param array<array-key, true> $reserved
+     * @param null|Schema $propertyNames
+     * @param array<string, Schema> $patterns
+     * @return ArbitraryInterface<string>
+     */
+    private function extraName(array $patternArbitraries, array $shape, array $reserved, ?array $propertyNames, array $patterns): ArbitraryInterface
+    {
+        if ($patternArbitraries === []) {
+            /** @var ArbitraryInterface<string> $plain */
+            $plain = Gen::map(
                 Gen::filter(
-                    Gen::stringFrom($keyAlphabet, minLength: 1, maxLength: 8),
+                    Gen::stringFrom('abcdefghijklmnopqrstuvwxyz', minLength: 1, maxLength: 8),
                     fn(string $name): bool => !array_key_exists($name, $shape) && !isset($reserved[$name])
                         && ($propertyNames === null || $this->matchesSchema($name, $propertyNames)),
                 ),
                 static fn(string $name): string => $name,
             );
+
+            return $plain;
         }
+
+        /** @var ArbitraryInterface<string> $claimed */
+        $claimed = Gen::frequency(array_map(
+            function (array $entry) use ($shape, $reserved, $propertyNames, $patterns): array {
+                /** @var string $pattern */
+                [$pattern, $source] = $entry;
+                $filtered = Gen::filter($source, function (mixed $name) use ($pattern, $shape, $reserved, $propertyNames, $patterns): bool {
+                    if (!is_string($name) || array_key_exists($name, $shape) || isset($reserved[$name])) {
+                        return false;
+                    }
+                    if ($propertyNames !== null && !$this->matchesSchema($name, $propertyNames)) {
+                        return false;
+                    }
+                    $matches = [];
+                    foreach (array_keys($patterns) as $candidate) {
+                        if ($this->regexMatches($candidate, $name)) {
+                            $matches[] = $candidate;
+                        }
+                    }
+
+                    return in_array($pattern, $matches, strict: true);
+                });
+
+                return [1, $filtered];
+            },
+            $patternArbitraries,
+        ));
+        /** @var ArbitraryInterface<string> $patterned */
+        $patterned = Gen::map($claimed, static fn(string $name): string => $name);
+
+        return $patterned;
+    }
+
+    /**
+     * An undeclared member: its name, and a value of the schema the name
+     * answers to.
+     *
+     * The schema a member answers can depend on the name it lands under —
+     * that is what `patternProperties` means — so the name and its value are
+     * drawn together. A value arbitrary picked once for the whole map hands
+     * every name the value compiled for whichever name came first, and an
+     * object where `a` carries the boolean and `z` the string is exactly what
+     * then reaches the contract and fails validation.
+     *
+     * @param ArbitraryInterface<string> $name
+     * @param array<string, Schema> $patterns
+     * @param Subschema $additional
+     * @return ArbitraryInterface<array{0: string, 1: mixed}>
+     */
+    private function extraEntry(ArbitraryInterface $name, array $patterns, bool|array $additional): ArbitraryInterface
+    {
         $value = is_array($additional) && $additional !== []
             ? $this->compiler->compile($additional)
             : $this->additionalValue();
-        // The schema a member answers can depend on the name it lands under —
-        // that is what `patternProperties` means — so the name and its value
-        // are drawn together. A value arbitrary picked once for the whole map
-        // hands every name the value compiled for whichever name came first,
-        // and an object where `a` carries the boolean and `z` the string is
-        // exactly what then reaches the contract and fails validation.
+
         /** @var ArbitraryInterface<array{0: string, 1: mixed}> $entry */
         $entry = Gen::flatMap($name, function (mixed $drawn) use ($patterns, $value): ArbitraryInterface {
             $matching = [];
             if (is_string($drawn)) {
-                /** @var list<Schema> $matching */
                 foreach ($patterns as $pattern => $patternSchema) {
                     if ($this->regexMatches($pattern, $drawn)) {
-                        /** @var Schema $patternSchema */
                         $matching[] = $patternSchema;
                     }
                 }
@@ -442,12 +528,7 @@ final readonly class ContainerArbitraries
             );
         });
 
-        return Gen::flatMap($base, fn(array $values): ArbitraryInterface => $this->additionalProperties(
-            $values,
-            $minProperties,
-            $maxProperties,
-            $entry,
-        ));
+        return $entry;
     }
 
     /** @param Schema $schema */

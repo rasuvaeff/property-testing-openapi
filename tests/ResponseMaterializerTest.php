@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseCaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\InvalidCase;
@@ -19,6 +20,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(ResponseMaterializer::class)]
+#[Covers(CaseMaps::class)]
 #[Covers(JsonBodyEncoder::class)]
 #[Covers(ResponseCaseShape::class)]
 final class ResponseMaterializerTest

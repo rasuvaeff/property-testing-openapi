@@ -27,18 +27,28 @@ final readonly class Probe
 
     public static function yields(ArbitraryInterface $arbitrary): bool
     {
+        return self::first($arbitrary) !== null;
+    }
+
+    /**
+     * The first value the probe draws, wrapped so that a drawn `null` is
+     * told apart from none: the deterministic value a compile-time decision
+     * keeps, such as the header a multipart part always carries.
+     *
+     * @return null|array{value: mixed}
+     */
+    public static function first(ArbitraryInterface $arbitrary): ?array
+    {
         $random = new Random(self::SEED);
         for ($probe = 0; $probe < self::PROBES; ++$probe) {
             try {
-                $arbitrary->generate($random);
-
-                return true;
+                return ['value' => $arbitrary->generate($random)->value];
             } catch (GenerationExhaustedException) {
                 continue;
             }
         }
 
-        return false;
+        return null;
     }
 
     /**

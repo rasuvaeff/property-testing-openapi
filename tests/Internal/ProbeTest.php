@@ -40,6 +40,19 @@ final class ProbeTest
         Assert::true(Probe::yields($arbitrary));
     }
 
+    public function firstWrapsTheDrawnValueSoNullIsAValue(): void
+    {
+        Assert::same(Probe::first(Gen::constant(null)), ['value' => null]);
+        Assert::null(Probe::first(Probe::impossible()));
+    }
+
+    public function firstDrawsFromTheFixedSeed(): void
+    {
+        $arbitrary = Gen::intBetween(0, 1_000_000);
+
+        Assert::same(Probe::first($arbitrary), ['value' => $arbitrary->generate(new Random(11))->value]);
+    }
+
     public function theImpossibleArbitraryExhausts(): void
     {
         Expect::exception(GenerationExhaustedException::class);

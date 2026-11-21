@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
 
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Rasuvaeff\PropertyTesting\Random;
@@ -29,6 +30,17 @@ use Rasuvaeff\PropertyTesting\Random;
 final readonly class JsonBodyWitness
 {
     public const string ROOT = '$';
+
+    /** A JSON value of another type: a marker string, or a number for a string. */
+    private const array TYPE_WITNESSES = [
+        'integer' => 'not-a-integer',
+        'number' => 'not-a-number',
+        'boolean' => 'not-a-boolean',
+        'null' => 'not-a-null',
+        'array' => 'not-a-array',
+        'object' => 'not-a-object',
+        'string' => 4096,
+    ];
 
     public function __construct(
         private SchemaProbe $probe = new SchemaProbe(),
@@ -89,7 +101,7 @@ final readonly class JsonBodyWitness
      */
     private function candidates(array $schema, SchemaDirection $direction): array
     {
-        if (!$this->isObject($schema)) {
+        if (!SchemaShape::isObject($schema)) {
             return [self::ROOT => $schema];
         }
         $candidates = [];
@@ -128,75 +140,29 @@ final readonly class JsonBodyWitness
         if (array_key_exists('not', $schema)) {
             return [];
         }
-        $types = array_values($this->probe->declaredTypes($schema));
 
         return match ($kind) {
-            'type' => $this->typeWitness($types),
-            'enum' => $this->finiteWitnesses($schema, 'enum'),
-            'const' => $this->finiteWitnesses($schema, 'const'),
+            'type' => $this->probe->typeWitnesses($schema, self::TYPE_WITNESSES),
+            'enum' => $this->probe->finiteCandidates($schema, 'enum', '__openapi_misuse__', $this->constMarker(...)),
+            'const' => $this->probe->finiteCandidates($schema, 'const', '__openapi_misuse__', $this->constMarker(...)),
             'boundary' => $this->probe->outOfRangeValues($schema),
-            'length' => $this->lengthWitness($schema, $types),
+            'length' => $this->lengthWitness($schema, array_values($this->probe->declaredTypes($schema))),
             'format' => $this->probe->formatWitnesses($schema),
             'pattern' => $this->patternWitness($schema),
         };
     }
 
     /**
-     * A union admits every type it lists, so a witness built for one member
-     * stays valid under the others.
-     *
-     * @param list<mixed> $types
-     * @return list<string|int>
+     * The JSON marker for a `const`, `null` included: a string const is
+     * contradicted by itself with a suffix, anything else by the marker.
      */
-    private function typeWitness(array $types): array
+    private function constMarker(mixed $const): ?string
     {
-        if (count($types) !== 1) {
-            return [];
+        if (!is_scalar($const) && $const !== null) {
+            return null;
         }
 
-        return match ($types[0]) {
-            'integer', 'number', 'boolean', 'null', 'array', 'object' => ['not-a-' . $types[0]],
-            'string' => [4096],
-            default => [],
-        };
-    }
-
-    /**
-     * The marker the category has always produced first, then typed
-     * alternatives: a marker string cannot contradict an `enum` of integers
-     * without also contradicting the type, and one longer than `maxLength`
-     * cannot contradict a string enum without also breaking the length
-     * (#102).
-     *
-     * @param array<string, mixed> $schema
-     * @param 'enum'|'const' $keyword
-     * @return list<int|float|bool|string>
-     */
-    private function finiteWitnesses(array $schema, string $keyword): array
-    {
-        if (!array_key_exists($keyword, $schema)) {
-            return [];
-        }
-        if ($keyword === 'enum') {
-            $enum = $schema['enum'] ?? null;
-            if (!is_array($enum) || $enum === [] || !$this->probe->isScalarEnum($enum)) {
-                return [];
-            }
-            $forbidden = array_values($enum);
-            $marker = '__openapi_misuse__';
-        } else {
-            $const = $schema['const'] ?? null;
-            if (!is_scalar($const) && $const !== null) {
-                return [];
-            }
-            $forbidden = [$const];
-            $marker = is_string($const) ? $const . '__openapi_misuse__' : '__openapi_misuse__';
-        }
-        while (in_array($marker, $forbidden, strict: true)) {
-            $marker .= '_';
-        }
-
-        return [$marker, ...$this->probe->alternatives($schema, $forbidden)];
+        return is_string($const) ? $const . '__openapi_misuse__' : '__openapi_misuse__';
     }
 
     /**
@@ -271,12 +237,6 @@ final readonly class JsonBodyWitness
         $witness = $this->patterns->search($constraints['pattern'], $constraints['minLength'], $constraints['maxLength']);
 
         return $witness === null ? [] : [$witness];
-    }
-
-    /** @param array<string, mixed> $schema */
-    private function isObject(array $schema): bool
-    {
-        return ($schema['type'] ?? null) === 'object' || array_key_exists('properties', $schema);
     }
 
     /** @return array<array-key, mixed> */

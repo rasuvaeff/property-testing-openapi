@@ -131,6 +131,70 @@ final class ScalarArbitrariesTest
     }
 
     /**
+     * A format the contract reads as an annotation (#168) is generated as a
+     * plain string — with its length window and its `pattern` — and every
+     * value is one the contract accepts. A format the contract asserts and
+     * this package has no generator for keeps refusing: a plain string would
+     * be a guess at a rule this package does not hold.
+     *
+     * @param array{schema: array<string, mixed>, value: mixed} $drawn
+     */
+    #[Property(runs: 300)]
+    public function anAnnotationFormatIsAPlainString(array $drawn): void
+    {
+        $schema = $drawn['schema'];
+        $value = $drawn['value'];
+
+        Classify::cover(array_key_exists('pattern', $schema), 'with a pattern', 20.0);
+        Classify::cover(!array_key_exists('pattern', $schema), 'without a pattern', 20.0);
+        Assert::true(is_string($value) && mb_strlen($value) >= 2 && mb_strlen($value) <= 12);
+        Assert::true((new SchemaCheck())->accepts($value, $schema, SchemaDialect::OpenApi31), json_encode($drawn, JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function anAnnotationFormatIsAPlainStringGenerators(): array
+    {
+        return ['drawn' => Gen::flatMap(
+            Gen::tuple(Gen::elements(['phone', 'byte', 'binary', 'x-sku']), Gen::bool()),
+            static function (mixed $pair): ArbitraryInterface {
+                /** @var array{string, bool} $pair */
+                $schema = ['type' => 'string', 'format' => $pair[0], 'minLength' => 2, 'maxLength' => 12];
+                if ($pair[1]) {
+                    $schema['pattern'] = '^\+[0-9]{3,8}$';
+                }
+
+                return Gen::map(
+                    (new SchemaArbitraryCompiler())->compile($schema),
+                    static fn(mixed $value): array => ['schema' => $schema, 'value' => $value],
+                );
+            },
+        )];
+    }
+
+    #[DataProvider('assertedWithoutGeneratorProvider')]
+    public function anAssertedFormatWithoutAGeneratorIsRefused(string $format): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage(sprintf('Unsupported OpenAPI schema generation: format "%s" is outside the supported format subset', $format));
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format]);
+    }
+
+    public static function assertedWithoutGeneratorProvider(): iterable
+    {
+        yield 'iri' => ['iri'];
+        yield 'idn-email' => ['idn-email'];
+        yield 'json-pointer' => ['json-pointer'];
+        yield 'regex' => ['regex'];
+    }
+
+    public function aPatternBesideAnAssertedFormatIsStillRefused(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: pattern combined with format "email" is outside the supported subset');
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'email', 'pattern' => '^a']);
+    }
+
+    /**
      * The length band each new format is generated in: a window inside it
      * keeps the format, one outside it is refused at compile time.
      */

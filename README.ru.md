@@ -24,7 +24,7 @@ styles и JSON, form-urlencoded или multipart request body, после чег
 
 - PHP 8.3 – 8.5
 - `ext-mbstring`
-- `rasuvaeff/openapi-contract` ^0.16 и `rasuvaeff/property-testing-core` ^1.0
+- `rasuvaeff/openapi-contract` ^0.18 и `rasuvaeff/property-testing-core` ^1.0
 - реализации `psr/http-message`, `psr/http-factory` и
   `psr/http-server-handler`: PSR-17 factory материализует запросы, а
   `ContractSuite` гоняет PSR-15 handler в процессе
@@ -135,6 +135,7 @@ request-направлению схемы — `readOnly`-свойства ухо
 | `minimum`, `maximum`, `exclusiveMinimum`/`exclusiveMaximum` (boolean из OAS 3.0 и число из OAS 3.1), `multipleOf` | поддержано; числовая исключающая граница рядом с включающей выполняется более тесной из двух, а integer над дробной исключающей границей начинается со следующего целого (`exclusiveMinimum: 0.5` даёт от 1); необъявленная граница — ±1000, а граница, объявленная только с одной стороны и лежащая за этим окном, берёт другую сторону в 2000 от себя (`minimum: 1900` даёт 1900–3900); дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1; граница настолько широкая, что кратным нужно больше 15 значащих цифр, которые double передаёт точно, падает fail-closed |
 | `minLength`, `maxLength` (не более 64, или не более `minLength`, если он больше), `pattern` (подмножество PCRE) | поддержано |
 | `format`: `uuid`, `email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `time`, `duration`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
+| любой другой `format`, который контракт считает аннотацией (`phone`, `byte`, `binary`, собственный формат документа) | поддержано как обычная строка, в том числе с `pattern` — ответ даёт `SchemaCheck::assertsFormat()` из `openapi-contract`, а не список здесь; формат, который контракт проверяет, а генератора для него в пакете нет (`iri`, `idn-email`, `json-pointer`, `regex`, …), падает fail-closed |
 | `items`, `minItems`, `maxItems` (не более 16, или не более `minItems`, если он больше), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
 | `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (не более 16, или не более `minProperties`, если он больше), `additionalProperties` (boolean или схема) | поддержано; ключи pattern генерируются из объявленных regex, значения удовлетворяют всем совпавшим схемам, кардинальность выполняется по построению |
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
@@ -207,11 +208,13 @@ $credentials = new Credentials(
 `misuse.kind = 'format'`. Witness есть для одиннадцати форматов — `uuid`,
 `email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `date`,
 `date-time`, `time`, `duration`; `url` среди них сознательно нет, потому что
-validation backend его не ассертит. Любой другой формат (`phone`, `byte`,
-собственный) witness'а не имеет и
-случая не даёт: отказ называет его по имени, так что ограничение, оставшееся
-непроверенным из-за отсутствия witness'а, видно, а не молчит, — и правильный
-ответ на это issue в этом репозитории, а не правка документа.
+validation backend его не ассертит. Формат, который контракт считает
+аннотацией (`phone`, `byte`, собственный), опровергать нечем, и он не
+называется. Формат, который контракт проверяет, но witness'а для него нет
+(`iri`, `idn-email`, …), случая не даёт: отказ называет его по имени, так что
+ограничение, оставшееся непроверенным из-за отсутствия witness'а, видно, а не
+молчит, — и правильный ответ на это issue в этом репозитории, а не правка
+документа.
 `patternMismatchForOperation()` заменяет один string-параметр
 найденным поиском значением, доказуемо нарушающим его `pattern`, и записывает
 `misuse.kind = 'pattern'`. Оракул — сам pattern: ограниченные кандидаты
@@ -287,9 +290,12 @@ JSON-варианте. Вложенные свойства пока не
 объявляет схему, иначе как строковое значение string-схемы (`format: binary`
 читается как аннотация, которой он и является), а под любой другой схемой —
 отказ: контракт не может судить по ней недекодированный payload. Такой body
-генерируется, когда у операции нет JSON-, form- или multipart-медиатипа —
-рядом с ними он не берётся, так что операция, которая генерировалась раньше,
-даёт те же cases, что и раньше.
+выбирается наравне с любым другим медиатипом операции, так что операция,
+принимающая JSON и `text/plain`, проверяется через оба (0.22.0; раньше raw
+body генерировался, только если у операции не было JSON-, form- или
+multipart-медиатипа). Raw-медиатип, схема которого отвергнута, рядом с другим
+body пропускается, как нераспознанный медиатип, и отвергает операцию, только
+если он единственный.
 Отказ по схеме называет операцию и параметр или body, которые компилировал
 (`Unsupported OpenAPI schema generation for operation "pets.list", query
 parameter "limit": minLength exceeds maxLength`). Отказ бросает
@@ -548,7 +554,7 @@ $any = $negative->anyForOperation($operation); // то, что берёт Contra
 $suite->generationCoverage();
 // [
 //   'pets.list' => ['supported' => true, 'reason' => null],
-//   'pets.scan' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "pets.scan", query parameter "n": format "phone" is outside the supported format subset'],
+//   'pets.scan' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "pets.scan", query parameter "n": format "iri" is outside the supported format subset'],
 // ]
 ```
 
@@ -583,9 +589,10 @@ request-заголовки, — как отправлено, список чер
 не пускает в них управляющий символ и запятую внутри элемента, так что до
 PSR-7-фабрики не доходит ни то, ни другое.
 `ResponseCaseData` JSON-compatible и corpus-safe, как и request-аналог.
-Ответ, который не объявляет JSON media type, но объявляет `text/plain` или
-`application/octet-stream`, получает raw body по тем же правилам, что и
-request body. Необъявленный статус, required header без схемы и body без
+Медиатип `text/plain` или `application/octet-stream` в ответе получает raw
+body по тем же правилам, что и request body, и выбирается наравне с первым
+JSON-медиатипом, если ответ объявляет оба; misuse тела по-прежнему пишется
+только поверх JSON-значения. Необъявленный статус, required header без схемы и body без
 того и другого падают как `UnsupportedGeneration`. `ResponseMaterializer`
 отвергает рукописный case без ключа или с ключом неверного типа через
 `InvalidCase`, называя его.

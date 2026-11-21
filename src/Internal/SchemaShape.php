@@ -35,6 +35,30 @@ final readonly class SchemaShape
     }
 
     /**
+     * RFC 6570 treats an empty list or map as undefined, so the materializer
+     * omits it, and a multipart entity with no parts is not one: a required
+     * container has to be generated non-empty.
+     *
+     * @param Schema $schema
+     * @return Schema
+     */
+    public static function nonEmpty(array $schema): array
+    {
+        if (self::isArray($schema)) {
+            $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
+
+            return array_merge($schema, ['minItems' => max(1, $min)]);
+        }
+        if (self::isObject($schema)) {
+            $min = is_int($schema['minProperties'] ?? null) ? (int) $schema['minProperties'] : 0;
+
+            return array_merge($schema, ['minProperties' => max(1, $min)]);
+        }
+
+        return $schema;
+    }
+
+    /**
      * OAS 3.1 spells a type as a union, so membership decides and not
      * identity. Reading only the scalar form made a free-form
      * `type: ['object', 'null']` look like neither an object nor an array: the

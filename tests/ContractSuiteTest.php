@@ -22,6 +22,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Credentials;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsProviderInterface;
 use Rasuvaeff\PropertyTesting\OpenApi\CredentialsUnavailable;
 use Rasuvaeff\PropertyTesting\OpenApi\DocumentExamples;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
@@ -32,9 +33,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\DirectionalSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\FormBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\LazyPhpRedisCorpusClient;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\FormatRefusal;
@@ -43,9 +46,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ParameterTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\PatternWitness;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\ResponseTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Presence;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RedisDsn;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
@@ -87,6 +92,8 @@ use function Rasuvaeff\Understudy\verify;
 
 #[Test]
 #[Covers(ContractSuite::class)]
+#[Covers(UndeclaredMediaType::class)]
+#[Covers(CaseMaps::class)]
 #[Covers(CheckFailed::class)]
 #[Covers(SuiteConfigurationError::class)]
 #[Covers(NegativeRequestCaseArbitrary::class)]
@@ -125,6 +132,9 @@ use function Rasuvaeff\Understudy\verify;
 #[Covers(RedisDsn::class)]
 #[Covers(RejectionPolicy::class)]
 #[Covers(RequestCaseArbitrary::class)]
+#[Covers(FormBodies::class)]
+#[Covers(MultipartBodies::class)]
+#[Covers(Presence::class)]
 #[Covers(RequestMaterializer::class)]
 #[Covers(RequestReproducer::class)]
 #[Covers(RequestSchemas::class)]
@@ -729,7 +739,7 @@ final class ContractSuiteTest
             'info' => ['title' => 'Hosts', 'version' => '1.0.0'],
             'paths' => ['/hosts' => ['get' => [
                 'operationId' => 'hosts.get',
-                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'phone']]],
+                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'iri']]],
                 'responses' => ['204' => ['description' => 'ok']],
             ]]],
         ]);
@@ -739,7 +749,7 @@ final class ContractSuiteTest
         $format = array_values(array_filter($coverage['hosts.get']['skipped'], static fn(array $entry): bool => $entry['kind'] === 'format' && $entry['side'] === 'parameter'));
 
         Assert::same(count($format), 1);
-        Assert::string($format[0]['reason'])->contains('no witness is held for format "phone"');
+        Assert::string($format[0]['reason'])->contains('no witness is held for format "iri"');
     }
 
     /**
@@ -765,8 +775,13 @@ final class ContractSuiteTest
     // has since #152, and the half-an-operation gates went from 0.5% to 0.4%
     // to stay as many standard deviations under their mean as they were.
     // 0.21.0 brought the zoo to 45 operations, and the runs to 1300 with it,
-    // so each operation is still drawn about as often as at 1100 over 39.
-    #[Property(runs: 1300, generators: [ZooContracts::class, 'taggedCase'])]
+    // so each operation is still drawn about as often as at 1100 over 39;
+    // 0.22.0 to 47 and 1400. Operations are not drawn evenly — the element
+    // generator biases toward the ends of the list — and at 1400 runs the
+    // half-an-operation gates at 0.4% landed on 4 and 5 cases in two local
+    // runs out of five, so they are 0.2% (3 cases) now: still red on a
+    // branch reached zero times, no longer red on an unlucky seed.
+    #[Property(runs: 1400, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
@@ -798,8 +813,17 @@ final class ContractSuiteTest
         if ($key === 'dual.create') {
             $mediaType = $case['body']['mediaType'] ?? null;
             Assert::true($mediaType === 'application/json' || $mediaType === 'application/x-www-form-urlencoded');
-            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.4);
-            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.4);
+            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.2);
+            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.2);
+        }
+        if ($key === 'memos.create') {
+            $encoding = $case['body']['encoding'] ?? null;
+            Assert::true($encoding === 'json' || $encoding === 'raw');
+            Classify::cover(condition: $encoding === 'json', label: 'memo body as json', minPercent: 0.2);
+            Classify::cover(condition: $encoding === 'raw', label: 'memo body as text', minPercent: 0.2);
+        }
+        if ($key === 'contacts.create') {
+            Assert::same(preg_match('/^[A-Z]{2}-[0-9]{3}$/', (string) ($case['query']['sku'] ?? '')), 1);
         }
         if ($key === 'enum.get') {
             Assert::same($case['path']['mode'], 'ok');
@@ -811,13 +835,13 @@ final class ContractSuiteTest
             foreach (is_array($value) && is_array($value['history'] ?? null) ? $value['history'] : [] as $entry) {
                 Assert::true(is_array($entry) && !array_key_exists('at', $entry));
             }
-            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 0.4);
+            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 0.2);
         }
         if ($key === 'search.get') {
             Assert::true(in_array($case['path']['scope'], ['all', 'mine'], strict: true));
             Assert::true($case['query']['limit'] !== 'null');
-            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 0.4);
-            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 0.4);
+            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 0.2);
+            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 0.2);
         }
     }
 

@@ -362,7 +362,8 @@ final readonly class CompositionArbitraries
         };
     }
 
-    /** @param list<array<string, mixed>> $branches
+    /**
+     * @param list<array<string, mixed>> $branches
      * @return array<string, mixed>
      */
     public function mergeAllOf(array $branches): array
@@ -381,56 +382,9 @@ final readonly class CompositionArbitraries
             if (($branch['nullable'] ?? false) !== true) {
                 $nullable = false;
             }
-            foreach (array_keys($branch) as $key) {
-                if (in_array($key, ['required', 'properties', 'nullable'], strict: true)) {
-                    continue;
-                }
-                if (array_key_exists($key, $merged) && $merged[$key] !== $branch[$key]) {
-                    if (Annotations::is($key)) {
-                        // An annotation describes; two that differ do not
-                        // conflict, and the first one stays (#153).
-                        continue;
-                    }
-                    $merged[$key] = $this->intersectBound($key, $merged[$key], $branch[$key], $merged, $branch);
-                    continue;
-                }
-                $merged = array_merge($merged, [$key => $branch[$key]]);
-            }
-            if (isset($branch['required'])) {
-                if (!is_array($branch['required']) || !array_is_list($branch['required'])) {
-                    throw UnsupportedGeneration::forSchema('allOf required must be a list');
-                }
-                foreach (array_keys($branch['required']) as $index) {
-                    /** @var mixed $name */
-                    $name = $branch['required'][$index];
-                    if (!is_string($name)) {
-                        throw UnsupportedGeneration::forSchema('allOf required must contain property names');
-                    }
-                    $required[$name] = true;
-                }
-            }
-            if (isset($branch['properties'])) {
-                if (!is_array($branch['properties']) || ($branch['properties'] !== [] && array_is_list($branch['properties']))) {
-                    throw UnsupportedGeneration::forSchema('allOf properties must be an object');
-                }
-                /** @var array<string, mixed> $propertyMap */
-                $propertyMap = $this->facts->schemaObject($branch['properties'], 'allOf properties must be an object');
-                foreach (array_keys($propertyMap) as $name) {
-                    if (!is_array($propertyMap[$name]) || ($propertyMap[$name] !== [] && array_is_list($propertyMap[$name]))) {
-                        throw UnsupportedGeneration::forSchema('allOf properties must contain schema objects');
-                    }
-                    /** @var array<string, mixed> $property */
-                    $property = $propertyMap[$name];
-                    if (isset($properties[$name])) {
-                        /** @var array<string, mixed> $existing */
-                        $existing = $properties[$name];
-                        $properties[$name] = $this->mergeAllOf([$existing, $property]);
-                    } else {
-                        /** @var array<string, mixed> $property */
-                        $properties[$name] = $property;
-                    }
-                }
-            }
+            $merged = $this->mergeKeywords($merged, $branch);
+            $required = array_replace($required, $this->requiredOf($branch));
+            $properties = $this->mergeProperties($properties, $branch);
         }
         if ($nullable) {
             $merged['nullable'] = true;
@@ -451,6 +405,99 @@ final readonly class CompositionArbitraries
         }
 
         return $merged;
+    }
+
+    /**
+     * Every keyword of the branch but `required`, `properties` and
+     * `nullable`, which merge by their own rules: a keyword the merged schema
+     * lacks is taken, an equal one kept, a differing annotation left as the
+     * first one, and a differing bound intersected.
+     *
+     * @param array<string, mixed> $merged
+     * @param array<string, mixed> $branch
+     * @return array<string, mixed>
+     */
+    private function mergeKeywords(array $merged, array $branch): array
+    {
+        foreach (array_keys($branch) as $key) {
+            if (in_array($key, ['required', 'properties', 'nullable'], strict: true)) {
+                continue;
+            }
+            if (array_key_exists($key, $merged) && $merged[$key] !== $branch[$key]) {
+                if (Annotations::is($key)) {
+                    // An annotation describes; two that differ do not
+                    // conflict, and the first one stays (#153).
+                    continue;
+                }
+                $merged[$key] = $this->intersectBound($key, $merged[$key], $branch[$key], $merged, $branch);
+
+                continue;
+            }
+            $merged = array_merge($merged, [$key => $branch[$key]]);
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param array<string, mixed> $branch
+     * @return array<string, true> the branch's required names as keys
+     */
+    private function requiredOf(array $branch): array
+    {
+        if (!isset($branch['required'])) {
+            return [];
+        }
+        if (!is_array($branch['required']) || !array_is_list($branch['required'])) {
+            throw UnsupportedGeneration::forSchema('allOf required must be a list');
+        }
+        $required = [];
+        foreach (array_keys($branch['required']) as $index) {
+            /** @var mixed $name */
+            $name = $branch['required'][$index];
+            if (!is_string($name)) {
+                throw UnsupportedGeneration::forSchema('allOf required must contain property names');
+            }
+            $required[$name] = true;
+        }
+
+        return $required;
+    }
+
+    /**
+     * The branch's properties merged into those of the branches before it: a
+     * property both declare is the `allOf` of the two.
+     *
+     * @param array<string, mixed> $properties
+     * @param array<string, mixed> $branch
+     * @return array<string, mixed>
+     */
+    private function mergeProperties(array $properties, array $branch): array
+    {
+        if (!isset($branch['properties'])) {
+            return $properties;
+        }
+        if (!is_array($branch['properties']) || ($branch['properties'] !== [] && array_is_list($branch['properties']))) {
+            throw UnsupportedGeneration::forSchema('allOf properties must be an object');
+        }
+        /** @var array<string, mixed> $propertyMap */
+        $propertyMap = $this->facts->schemaObject($branch['properties'], 'allOf properties must be an object');
+        foreach (array_keys($propertyMap) as $name) {
+            if (!is_array($propertyMap[$name]) || ($propertyMap[$name] !== [] && array_is_list($propertyMap[$name]))) {
+                throw UnsupportedGeneration::forSchema('allOf properties must contain schema objects');
+            }
+            /** @var array<string, mixed> $property */
+            $property = $propertyMap[$name];
+            if (isset($properties[$name])) {
+                /** @var array<string, mixed> $existing */
+                $existing = $properties[$name];
+                $properties[$name] = $this->mergeAllOf([$existing, $property]);
+            } else {
+                $properties[$name] = $property;
+            }
+        }
+
+        return $properties;
     }
 
     /**

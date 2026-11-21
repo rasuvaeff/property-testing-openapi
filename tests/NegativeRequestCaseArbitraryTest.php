@@ -9,6 +9,8 @@ use Nyholm\Psr7\Response;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\UndeclaredMediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeRequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\NegativeResponseCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -22,6 +24,8 @@ use Testo\Test;
 
 #[Test]
 #[Covers(NegativeRequestCaseArbitrary::class)]
+#[Covers(SchemaShape::class)]
+#[Covers(UndeclaredMediaType::class)]
 #[Covers(BodyTargets::class)]
 #[Covers(JsonBodyWitness::class)]
 final class NegativeRequestCaseArbitraryTest

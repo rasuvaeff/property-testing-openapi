@@ -40,6 +40,17 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  */
 final readonly class ParameterTargets
 {
+    /**
+     * A parameter travels as text, so the witness of a type is a string
+     * that type does not read; a `string` parameter has none.
+     */
+    private const array TYPE_WITNESSES = [
+        'integer' => 'not-an-integer',
+        'number' => 'not-a-number',
+        'boolean' => 'not-a-boolean',
+        'null' => 'not-null',
+    ];
+
     public function __construct(
         private SchemaProbe $probe = new SchemaProbe(),
         private PatternWitness $witness = new PatternWitness(),
@@ -193,9 +204,9 @@ final readonly class ParameterTargets
         $schema = $parameter['schema'];
 
         return match ($kind) {
-            'type' => $this->typeCandidates($schema),
-            'enum' => $this->finiteCandidates($schema, 'enum'),
-            'const' => $this->finiteCandidates($schema, 'const'),
+            'type' => $this->probe->typeWitnesses($schema, self::TYPE_WITNESSES),
+            'enum' => $this->probe->finiteCandidates($schema, 'enum', '__openapi_invalid_enum__', $this->constMarker(...)),
+            'const' => $this->probe->finiteCandidates($schema, 'const', '__openapi_invalid_enum__', $this->constMarker(...)),
             'boundary' => $this->probe->outOfRangeValues($schema),
             'length' => $this->probe->outOfLengthValues($schema),
             'format' => $this->probe->formatWitnesses($schema),
@@ -204,60 +215,15 @@ final readonly class ParameterTargets
     }
 
     /**
-     * A union admits every type it lists, so a witness built for one member
-     * stays valid under the others: `["string", "null"]` accepts the string
-     * `"not-null"`. Only a single declared type can be contradicted.
-     *
-     * @param array<string, mixed> $schema
-     * @return list<string>
+     * A wire string for a scalar `const`; a parameter cannot carry `null`.
      */
-    private function typeCandidates(array $schema): array
+    private function constMarker(mixed $const): ?string
     {
-        $types = $this->probe->declaredTypes($schema);
-        if (count($types) !== 1) {
-            return [];
-        }
-        $witness = match (reset($types)) {
-            'integer' => 'not-an-integer',
-            'number' => 'not-a-number',
-            'boolean' => 'not-a-boolean',
-            'null' => 'not-null',
-            default => null,
-        };
-
-        return $witness === null ? [] : [$witness];
-    }
-
-    /**
-     * @param array<string, mixed> $schema
-     * @param 'enum'|'const' $keyword
-     * @return list<int|float|bool|string>
-     */
-    private function finiteCandidates(array $schema, string $keyword): array
-    {
-        if (!array_key_exists($keyword, $schema)) {
-            return [];
-        }
-        if ($keyword === 'enum') {
-            $enum = $schema['enum'] ?? null;
-            if (!is_array($enum) || $enum === [] || !$this->probe->isScalarEnum($enum)) {
-                return [];
-            }
-            $forbidden = array_values($enum);
-            $marker = '__openapi_invalid_enum__';
-        } else {
-            $const = $schema['const'] ?? null;
-            if (!is_scalar($const)) {
-                return [];
-            }
-            $forbidden = [$const];
-            $marker = is_bool($const) ? 'not-a-const-boolean' : (is_string($const) ? '__openapi_invalid_const__' : 'not-a-const-number');
-        }
-        while (in_array($marker, $forbidden, strict: true)) {
-            $marker .= '_';
+        if (!is_scalar($const)) {
+            return null;
         }
 
-        return [$marker, ...$this->probe->alternatives($schema, $forbidden)];
+        return is_bool($const) ? 'not-a-const-boolean' : (is_string($const) ? '__openapi_invalid_const__' : 'not-a-const-number');
     }
 
     /**

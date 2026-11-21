@@ -8,6 +8,7 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\CaseMaps;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
@@ -99,7 +100,7 @@ final readonly class ResponseMaterializer
             return [];
         }
 
-        return $this->json->schemaObject($definition['schema'] ?? [], 'Response JSON schema must be an object');
+        return CaseMaps::schemaObject($definition['schema'] ?? [], 'Response JSON schema must be an object');
     }
 
     /**

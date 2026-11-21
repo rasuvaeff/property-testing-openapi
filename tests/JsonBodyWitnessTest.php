@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\JsonBodyWitness;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -19,6 +20,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(JsonBodyWitness::class)]
+#[Covers(SchemaShape::class)]
 final class JsonBodyWitnessTest
 {
     private JsonBodyWitness $witnesses;

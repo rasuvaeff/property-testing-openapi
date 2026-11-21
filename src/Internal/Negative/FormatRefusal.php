@@ -15,8 +15,10 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
  * (#103).
  *
  * `Unsupported` is the case worth surfacing. Someone who writes
- * `format: phone` and sees the operation's negative phase running has no
- * way to learn that this particular constraint contributes nothing.
+ * `format: iri` and sees the operation's negative phase running has no way
+ * to learn that this particular constraint contributes nothing. A format the
+ * contract does not check at all, such as `format: phone`, is `Annotation`:
+ * no value contradicts it, so it is not a gap either.
  *
  * @internal
  */
@@ -30,4 +32,11 @@ enum FormatRefusal
 
     /** The declared `format` is one this package holds no witness for. */
     case Unsupported;
+
+    /**
+     * The declared `format` is an annotation the contract does not check
+     * (`phone`, `byte`, a format of the document's own): every value
+     * satisfies it, so there is nothing to contradict and no gap (#168).
+     */
+    case Annotation;
 }

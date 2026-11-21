@@ -34,7 +34,7 @@ final class ZooContracts
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
         'prices.create', 'batches.create', 'hosts.create', 'notes.create', 'blobs.put',
-        'animals.create',
+        'animals.create', 'contacts.create', 'memos.create',
     ];
 
     /**
@@ -647,6 +647,40 @@ final class ZooContracts
                 '/blobs' => ['put' => [
                     'operationId' => 'blobs.put',
                     'requestBody' => ['content' => ['application/octet-stream' => ['schema' => ['type' => 'string', 'format' => 'binary']]]],
+                    'responses' => ['204' => []],
+                ]],
+                // Formats the contract reads as annotations (#168): a plain
+                // string on every wire, beside a `pattern` too.
+                '/contacts/{phone}' => ['post' => [
+                    'operationId' => 'contacts.create',
+                    'parameters' => [
+                        ['name' => 'phone', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'phone']],
+                        ['name' => 'sku', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'x-sku', 'pattern' => '^[A-Z]{2}-[0-9]{3}$']],
+                        ['name' => 'X-Token', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'byte', 'maxLength' => 12]],
+                        ['name' => 'locale', 'in' => 'cookie', 'schema' => ['type' => 'string', 'format' => 'x-locale']],
+                    ],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['phone', 'avatar'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'phone' => ['type' => 'string', 'format' => 'phone', 'pattern' => '^\\+[0-9]{6,12}$'],
+                            'avatar' => ['type' => 'string', 'format' => 'byte'],
+                            'notes' => ['type' => 'string', 'format' => 'binary', 'maxLength' => 10],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A body sent as it is beside a JSON one (#170): both are drawn.
+                '/memos' => ['post' => [
+                    'operationId' => 'memos.create',
+                    'requestBody' => ['required' => true, 'content' => [
+                        'application/json' => ['schema' => [
+                            'type' => 'object', 'required' => ['text'], 'additionalProperties' => false,
+                            'properties' => ['text' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 12]],
+                        ]],
+                        'text/plain' => ['schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 12]],
+                    ]],
                     'responses' => ['204' => []],
                 ]],
                 // `oneOf` over objects told apart by a required `const`

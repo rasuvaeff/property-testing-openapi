@@ -225,7 +225,14 @@ final readonly class SchemaArbitraryCompiler
         return Gen::frequency($pairs);
     }
 
-    /** @param array<string, mixed> $schema */
+    /**
+     * `dependentRequired` and `dependentSchemas` by construction: one object
+     * arbitrary per presence combination of the triggers, each merged with
+     * what that combination requires, and the impossible combinations left
+     * out.
+     *
+     * @param array<string, mixed> $schema
+     */
     private function dependencies(array $schema): ArbitraryInterface
     {
         if (($schema['type'] ?? 'object') !== 'object' || array_key_exists('patternProperties', $schema)
@@ -235,9 +242,41 @@ final readonly class SchemaArbitraryCompiler
         }
         $requiredMap = $this->facts->schemaObject($schema['dependentRequired'] ?? [], 'dependentRequired must be an object of lists');
         $schemaMap = $this->facts->schemaObject($schema['dependentSchemas'] ?? [], 'dependentSchemas must be an object of schemas');
-        /** @var array<string, mixed> $requiredMap */
-        /** @var array<string, mixed> $schemaMap */
         $properties = $this->facts->schemaObject($schema['properties'] ?? [], 'object properties must be an object');
+        $triggers = $this->dependencyTriggers($requiredMap, $schemaMap, $properties);
+        $this->assertDependents($requiredMap, $schemaMap, $properties);
+        unset($schema['dependentRequired'], $schema['dependentSchemas']);
+        $pairs = [];
+        for ($mask = 0; $mask < (1 << count($triggers)); ++$mask) {
+            [$branches, $absent] = $this->presenceBranches($schema, $triggers, $mask, $requiredMap, $schemaMap);
+
+            try {
+                $merged = $this->composition->mergeAllOf($branches);
+                $this->assertSupported($merged);
+                $pairs[] = [1, $this->containers->object($merged, $absent)];
+            } catch (UnsupportedGeneration|Unproducible) {
+                // A presence combination can be impossible: a required
+                // trigger is absent, or its dependency exceeds cardinality.
+            }
+        }
+        if ($pairs === []) {
+            throw UnsupportedGeneration::forSchema('dependent keywords admit no constructible presence combination');
+        }
+
+        return Gen::frequency($pairs);
+    }
+
+    /**
+     * Every property whose presence changes the schema, in declaration order,
+     * at most eight of them, each a declared property.
+     *
+     * @param array<string, mixed> $requiredMap
+     * @param array<string, mixed> $schemaMap
+     * @param array<string, mixed> $properties
+     * @return list<string>
+     */
+    private function dependencyTriggers(array $requiredMap, array $schemaMap, array $properties): array
+    {
         /** @var list<string> $triggers */
         $triggers = array_values(array_unique([...array_keys($requiredMap), ...array_keys($schemaMap)]));
         if (count($triggers) > 8) {
@@ -248,6 +287,20 @@ final readonly class SchemaArbitraryCompiler
                 throw UnsupportedGeneration::forSchema('dependent trigger must have a declared property schema');
             }
         }
+
+        return $triggers;
+    }
+
+    /**
+     * The constructive subset: lists of names, dependent schemas of object
+     * keywords only, and no property the other direction owns.
+     *
+     * @param array<string, mixed> $requiredMap
+     * @param array<string, mixed> $schemaMap
+     * @param array<string, mixed> $properties
+     */
+    private function assertDependents(array $requiredMap, array $schemaMap, array $properties): void
+    {
         foreach ($requiredMap as $members) {
             if (!is_array($members) || !array_is_list($members)) {
                 throw UnsupportedGeneration::forSchema('dependentRequired values must be lists of names');
@@ -280,47 +333,45 @@ final readonly class SchemaArbitraryCompiler
                 }
             }
         }
-        unset($schema['dependentRequired'], $schema['dependentSchemas']);
-        $pairs = [];
-        for ($mask = 0; $mask < (1 << count($triggers)); ++$mask) {
-            $present = [];
-            $absent = [];
-            $branches = [$schema];
-            foreach ($triggers as $index => $trigger) {
-                $triggerName = $trigger;
-                if (($mask & (1 << $index)) === 0) {
-                    $absent[] = $triggerName;
+    }
 
-                    continue;
-                }
-                $present[] = $triggerName;
-                if (isset($requiredMap[$triggerName])) {
-                    /** @var list<string> $members */
-                    $members = $requiredMap[$triggerName];
-                    $branches[] = ['required' => $members];
-                }
-                if (isset($schemaMap[$triggerName])) {
-                    /** @var array<string, mixed> $dependent */
-                    $dependent = $schemaMap[$triggerName];
-                    $branches[] = $dependent;
-                }
+    /**
+     * The `allOf` branches of one presence combination — the triggers whose
+     * bit is set in `$mask` are present and bring their dependencies — and
+     * the absent triggers, which the object may not draw.
+     *
+     * @param array<string, mixed> $schema
+     * @param list<string> $triggers
+     * @param array<string, mixed> $requiredMap
+     * @param array<string, mixed> $schemaMap
+     * @return array{list<array<string, mixed>>, list<string>}
+     */
+    private function presenceBranches(array $schema, array $triggers, int $mask, array $requiredMap, array $schemaMap): array
+    {
+        $present = [];
+        $absent = [];
+        $branches = [$schema];
+        foreach ($triggers as $index => $trigger) {
+            if (($mask & (1 << $index)) === 0) {
+                $absent[] = $trigger;
+
+                continue;
             }
-            $branches[] = ['required' => $present];
-
-            try {
-                $merged = $this->composition->mergeAllOf($branches);
-                $this->assertSupported($merged);
-                $pairs[] = [1, $this->containers->object($merged, $absent)];
-            } catch (UnsupportedGeneration|Unproducible) {
-                // A presence combination can be impossible: a required
-                // trigger is absent, or its dependency exceeds cardinality.
+            $present[] = $trigger;
+            if (isset($requiredMap[$trigger])) {
+                /** @var list<string> $members */
+                $members = $requiredMap[$trigger];
+                $branches[] = ['required' => $members];
+            }
+            if (isset($schemaMap[$trigger])) {
+                /** @var array<string, mixed> $dependent */
+                $dependent = $schemaMap[$trigger];
+                $branches[] = $dependent;
             }
         }
-        if ($pairs === []) {
-            throw UnsupportedGeneration::forSchema('dependent keywords admit no constructible presence combination');
-        }
+        $branches[] = ['required' => $present];
 
-        return Gen::frequency($pairs);
+        return [$branches, $absent];
     }
 
     /** @return bool|array<string, mixed> */
