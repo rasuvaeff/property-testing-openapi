@@ -402,7 +402,9 @@ final readonly class RequestCaseArbitrary
             }
             $item = $this->multipartProperty($items);
             $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
-            $max = min(is_int($schema['maxItems'] ?? null) ? (int) $schema['maxItems'] : 16, 16);
+            // The budget yields to a declared minimum above it (#169).
+            $budget = max(16, $min);
+            $max = min(is_int($schema['maxItems'] ?? null) ? (int) $schema['maxItems'] : $budget, $budget);
 
             return ($schema['uniqueItems'] ?? false) === true
                 ? Gen::uniqueArrayOf($item, $min, $max)

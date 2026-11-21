@@ -23,6 +23,34 @@ use Testo\Test;
 #[Covers(RequestCaseArbitrary::class)]
 final class RequestCaseArbitraryPartsTest
 {
+    /**
+     * A repeated part's 16-item budget yields to a declared `minItems` above
+     * it (#169).
+     */
+    #[DataProvider('partBudgetProvider')]
+    public function aRepeatedPartReachesItsDeclaredMinimum(array $items, int $shortest, int $longest): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'POST', path: '/op', requestBody: ['required' => true, 'content' => ['multipart/form-data' => ['schema' => [
+            'type' => 'object',
+            'required' => ['ids'],
+            'properties' => ['ids' => ['type' => 'array', 'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 99]] + $items],
+        ]]]]);
+        $arbitrary = (new RequestCaseArbitrary())->forOperation($operation);
+        $counts = [];
+        foreach (range(1, 60) as $seed) {
+            $counts[] = count($arbitrary->generate(new Random($seed))->value['body']['parts'] ?? []);
+        }
+
+        Assert::same([min($counts), max($counts)], [$shortest, $longest]);
+    }
+
+    public static function partBudgetProvider(): iterable
+    {
+        yield 'under the budget' => [['minItems' => 15], 15, 16];
+        yield 'past the budget' => [['minItems' => 17], 17, 17];
+        yield 'past the budget with room declared' => [['minItems' => 18, 'maxItems' => 30], 18, 18];
+    }
+
     public function anObjectParameterKeepsEveryMember(): void
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [[

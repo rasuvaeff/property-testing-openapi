@@ -102,8 +102,7 @@ final readonly class ScalarArbitraries
     public function string(array $schema): ArbitraryInterface
     {
         $min = $this->facts->nonNegativeInt($schema, 'minLength', 0);
-        $max = $this->facts->nonNegativeInt($schema, 'maxLength', self::MAX_STRING_LENGTH);
-        $max = min($max, self::MAX_STRING_LENGTH);
+        $max = $this->facts->budgeted($schema, 'maxLength', $min, self::MAX_STRING_LENGTH);
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('minLength exceeds maxLength or the generation budget');
         }

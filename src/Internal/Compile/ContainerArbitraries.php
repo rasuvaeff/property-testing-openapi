@@ -48,7 +48,7 @@ final readonly class ContainerArbitraries
         }
         /** @var Schema $items */
         $min = $this->facts->nonNegativeInt($schema, 'minItems', 0);
-        $max = min($this->facts->nonNegativeInt($schema, 'maxItems', self::MAX_COLLECTION_SIZE), self::MAX_COLLECTION_SIZE);
+        $max = $this->facts->budgeted($schema, 'maxItems', $min, self::MAX_COLLECTION_SIZE);
         if ($min > $max) {
             throw UnsupportedGeneration::forSchema('minItems exceeds maxItems or the generation budget');
         }
@@ -86,7 +86,7 @@ final readonly class ContainerArbitraries
             throw UnsupportedGeneration::forSchema('prefixItems must be a list of schemas');
         }
         $min = $this->facts->nonNegativeInt($schema, 'minItems', 0);
-        $max = min($this->facts->nonNegativeInt($schema, 'maxItems', self::MAX_COLLECTION_SIZE), self::MAX_COLLECTION_SIZE);
+        $max = $this->facts->budgeted($schema, 'maxItems', $min, self::MAX_COLLECTION_SIZE);
         $tail = $this->subschema($schema['items'] ?? true, 'items');
         $contains = array_key_exists('contains', $schema) ? $this->subschema($schema['contains'], 'contains') : null;
         $unevaluated = array_key_exists('unevaluatedItems', $schema) ? $this->subschema($schema['unevaluatedItems'], 'unevaluatedItems') : true;
@@ -269,7 +269,7 @@ final readonly class ContainerArbitraries
         }
         $shape = [];
         $minProperties = $this->facts->nonNegativeInt($schema, 'minProperties', 0);
-        $maxProperties = min($this->facts->nonNegativeInt($schema, 'maxProperties', self::MAX_COLLECTION_SIZE), self::MAX_COLLECTION_SIZE);
+        $maxProperties = $this->facts->budgeted($schema, 'maxProperties', $minProperties, self::MAX_COLLECTION_SIZE);
         if ($minProperties > $maxProperties) {
             throw UnsupportedGeneration::forSchema('minProperties exceeds maxProperties or the generation budget');
         }

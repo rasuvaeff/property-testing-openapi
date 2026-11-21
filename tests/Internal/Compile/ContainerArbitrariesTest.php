@@ -7,17 +7,57 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests\Internal\Compile;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
 #[Test]
 #[Covers(ContainerArbitraries::class)]
+#[Covers(SchemaFacts::class)]
 final class ContainerArbitrariesTest
 {
+    /**
+     * The 16-member budget yields to a declared minimum above it (#169):
+     * the minimum is reached exactly, and a minimum at or under the budget
+     * keeps the budget as the ceiling.
+     */
+    #[DataProvider('budgetProvider')]
+    public function theCollectionBudgetYieldsToADeclaredMinimum(array $schema, int $shortest, int $longest): void
+    {
+        $sizes = [];
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 120, seed: 2) as $value) {
+            Assert::true(is_array($value));
+            $sizes[] = count($value);
+        }
+
+        Assert::same([min($sizes), max($sizes)], [$shortest, $longest]);
+    }
+
+    public static function budgetProvider(): iterable
+    {
+        $integer = ['type' => 'integer', 'minimum' => 0, 'maximum' => 1000];
+        yield 'minItems under the budget' => [['type' => 'array', 'items' => $integer, 'minItems' => 15], 15, 16];
+        yield 'minItems at the budget' => [['type' => 'array', 'items' => $integer, 'minItems' => 16], 16, 16];
+        yield 'minItems past the budget' => [['type' => 'array', 'items' => $integer, 'minItems' => 17], 17, 17];
+        yield 'minItems past the budget with room declared' => [['type' => 'array', 'items' => $integer, 'minItems' => 20, 'maxItems' => 30], 20, 20];
+        yield 'unique minItems past the budget' => [['type' => 'array', 'items' => $integer, 'minItems' => 20, 'uniqueItems' => true], 20, 20];
+        yield 'prefixItems with minItems past the budget' => [['type' => 'array', 'prefixItems' => [$integer], 'items' => $integer, 'minItems' => 18], 18, 18];
+        yield 'minProperties past the budget' => [['type' => 'object', 'additionalProperties' => $integer, 'minProperties' => 17], 17, 17];
+        yield 'minProperties at the budget' => [['type' => 'object', 'additionalProperties' => $integer, 'minProperties' => 16], 16, 16];
+    }
+
+    public function aDeclaredMaximumUnderTheMinimumIsStillRefused(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: minItems exceeds maxItems or the generation budget');
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'array', 'items' => ['type' => 'integer'], 'minItems' => 20, 'maxItems' => 18]);
+    }
+
     public function aPrefixWithoutItemsLeavesTheTailOpen(): void
     {
         $longest = 0;

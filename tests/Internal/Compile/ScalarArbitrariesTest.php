@@ -73,6 +73,27 @@ final class ScalarArbitrariesTest
         Assert::same(SchemaFacts::exclusiveBounds(['type' => 'integer', 'maximum' => 1, 'exclusiveMaximum' => 3], integer: true), ['type' => 'integer', 'maximum' => 1]);
     }
 
+    /**
+     * The 64-character budget yields to a declared `minLength` above it
+     * (#169); under it the cap is what it was.
+     */
+    #[DataProvider('stringBudgetProvider')]
+    public function theStringBudgetYieldsToADeclaredMinimum(array $schema, int $shortest, int $longest): void
+    {
+        $lengths = array_map(static fn(mixed $value): int => is_string($value) ? mb_strlen($value) : -1, Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 200, seed: 4));
+
+        Assert::same([min($lengths), max($lengths)], [$shortest, $longest]);
+    }
+
+    public static function stringBudgetProvider(): iterable
+    {
+        yield 'minLength under the budget' => [['type' => 'string', 'minLength' => 63], 63, 64];
+        yield 'minLength at the budget' => [['type' => 'string', 'minLength' => 64], 64, 64];
+        yield 'minLength past the budget' => [['type' => 'string', 'minLength' => 65], 65, 65];
+        yield 'minLength past the budget with room declared' => [['type' => 'string', 'minLength' => 100, 'maxLength' => 120], 100, 100];
+        yield 'a maximum past the budget is still capped' => [['type' => 'string', 'minLength' => 60, 'maxLength' => 120], 60, 64];
+    }
+
     public function aFormatStringHonoursItsLengthWindow(): void
     {
         foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'email', 'minLength' => 14, 'maxLength' => 20]), count: 50, seed: 1) as $value) {

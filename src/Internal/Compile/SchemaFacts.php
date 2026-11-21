@@ -55,6 +55,26 @@ final readonly class SchemaFacts
     }
 
     /**
+     * The upper bound a generator draws up to: the declared maximum, capped
+     * by the generation budget — unless the declared minimum is above the
+     * budget, in which case the minimum is the budget. `minLength: 100` is a
+     * fact of the document, not a schema the generator cannot reach (#169);
+     * under the budget the cap is what it always was, so nothing that
+     * generated before draws differently.
+     *
+     * @param Schema $schema
+     * @param int<0, max> $minimum
+     * @param int<0, max> $budget
+     * @return int<0, max>
+     */
+    public function budgeted(array $schema, string $keyword, int $minimum, int $budget): int
+    {
+        $ceiling = max($budget, $minimum);
+
+        return min($this->nonNegativeInt($schema, $keyword, $ceiling), $ceiling);
+    }
+
+    /**
      * The OAS 3.1 (JSON Schema 2020-12) spelling of an exclusive bound — a
      * number of its own, `exclusiveMinimum: 0` — in the OAS 3.0 spelling the
      * compiler reads: the bound in `minimum`/`maximum` and a `true` flag

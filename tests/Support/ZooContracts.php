@@ -33,7 +33,7 @@ final class ZooContracts
         'tree.create', 'shipments.create',
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
-        'prices.create',
+        'prices.create', 'batches.create',
     ];
 
     /**
@@ -592,6 +592,23 @@ final class ZooContracts
                             'price' => ['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 1000],
                             'quantity' => ['type' => 'integer', 'exclusiveMinimum' => 0.5, 'maximum' => 5],
                             'discount' => ['type' => 'number', 'minimum' => 0, 'maximum' => 50, 'exclusiveMaximum' => 1],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A declared minimum above the generation budget raises it
+                // instead of refusing the operation (#169).
+                '/batches' => ['post' => [
+                    'operationId' => 'batches.create',
+                    'parameters' => [['name' => 'ref', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 66, 'maxLength' => 80]]],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['note', 'ids', 'flags'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'note' => ['type' => 'string', 'minLength' => 70],
+                            'ids' => ['type' => 'array', 'minItems' => 18, 'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
+                            'flags' => ['type' => 'object', 'minProperties' => 17, 'additionalProperties' => ['type' => 'boolean']],
                         ],
                     ]]]],
                     'responses' => ['204' => []],
