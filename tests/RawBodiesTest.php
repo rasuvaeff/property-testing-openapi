@@ -6,6 +6,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RawBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -106,6 +107,20 @@ final class RawBodiesTest
         foreach (range(1, 20) as $seed) {
             Assert::same($arbitrary->generate(new Random($seed))->value['body']['encoding'] ?? null, 'json');
         }
+    }
+
+    /**
+     * A malformed text schema beside a JSON media type does not refuse the
+     * response: the JSON one is generated, as it was before raw bodies were.
+     */
+    public function aMalformedRawResponseBesideJsonIsLeftOut(): void
+    {
+        $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', responses: ['200' => ['content' => [
+            'text/plain' => ['schema' => ['x']],
+            'application/json' => ['schema' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
+        ]]]);
+
+        Assert::same((new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random(1))->value['body']['encoding'] ?? null, 'json');
     }
 
     public function anOptionalRawBodyMayBeAbsent(): void

@@ -227,13 +227,13 @@ final readonly class ResponseCaseArbitrary
     /** @param array<string, mixed> $definition */
     private function body(array $definition, string $operationKey, int $status): ArbitraryInterface
     {
-        $raw = $this->rawMedia($definition);
-        if ($raw !== null) {
-            try {
+        try {
+            $raw = $this->rawMedia($definition);
+            if ($raw !== null) {
                 return RawBodies::arbitrary($raw['mediaType'], $raw['schema'], $this->schemas);
-            } catch (UnsupportedGeneration $refusal) {
-                throw $refusal->inOperation($operationKey, sprintf('response "%d" body "%s"', $status, $raw['mediaType']));
             }
+        } catch (UnsupportedGeneration $refusal) {
+            throw $refusal->inOperation($operationKey, sprintf('response "%d" body', $status));
         }
         $media = $this->jsonMedia($definition, 'Response content declares no JSON media type');
         if ($media === null) {
@@ -269,28 +269,28 @@ final readonly class ResponseCaseArbitrary
         if (!is_array($content)) {
             return null;
         }
-        $raw = null;
-        foreach ($content as $mediaType => $mediaDefinition) {
-            if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition)) {
-                continue;
-            }
-            if (MediaType::isJson($mediaType)) {
+        foreach (array_keys($content) as $mediaType) {
+            if (is_string($mediaType) && MediaType::isJson($mediaType)) {
                 return null;
             }
-            if ($raw === null && RawBodies::carries($mediaType)) {
-                $schema = $mediaDefinition['schema'] ?? [];
-                if ($schema === true) {
-                    $schema = [];
-                }
-                if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
-                    throw new UnsupportedGeneration(sprintf('Response "%s" schema must be an object', $mediaType));
-                }
-                /** @var array<string, mixed> $schema */
-                $raw = ['mediaType' => $mediaType, 'schema' => $this->responseSchemas->effective($schema)];
+        }
+        foreach ($content as $mediaType => $mediaDefinition) {
+            if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition) || !RawBodies::carries($mediaType)) {
+                continue;
             }
+            $schema = $mediaDefinition['schema'] ?? [];
+            if ($schema === true) {
+                $schema = [];
+            }
+            if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
+                throw UnsupportedGeneration::forSchema(sprintf('Response "%s" schema must be an object', $mediaType));
+            }
+            /** @var array<string, mixed> $schema */
+
+            return ['mediaType' => $mediaType, 'schema' => $this->responseSchemas->effective($schema)];
         }
 
-        return $raw;
+        return null;
     }
 
     /**

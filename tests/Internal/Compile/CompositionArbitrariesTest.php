@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests\Internal\Compile;
 
+use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
+use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
+use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
+use Rasuvaeff\PropertyTesting\Random;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -61,6 +66,40 @@ final class CompositionArbitrariesTest
             ['type' => 'object', 'required' => ['v', 't'], 'properties' => ['v' => ['const' => 1], 't' => ['const' => 'y']]],
         ]], 't', 2];
         yield 'references into $defs' => [['$defs' => ['Cat' => $cat, 'Dog' => $dog], 'oneOf' => [['$ref' => '#/$defs/Cat'], ['$ref' => '#/$defs/Dog']]], 'kind', 2];
+    }
+
+    /**
+     * A `discriminator` beside the tagged union is an annotation to the
+     * contract's verdict: it picks the branch whose errors are reported, and
+     * a value `oneOf` accepts stays valid whatever the mapping says.
+     */
+    #[DataProvider('discriminatorProvider')]
+    public function aDiscriminatorBesideATaggedOneOfKeepsEveryCaseValid(array $discriminator): void
+    {
+        $object = static fn(string $kind): array => ['type' => 'object', 'required' => ['kind'], 'properties' => ['kind' => ['type' => 'string', 'const' => $kind]]];
+        $contract = Contract::fromArray(['openapi' => '3.1.0', 'paths' => ['/a' => ['post' => [
+            'operationId' => 'a',
+            'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                'oneOf' => [['$ref' => '#/components/schemas/Cat'], ['$ref' => '#/components/schemas/Dog']],
+                'discriminator' => $discriminator,
+            ]]]],
+            'responses' => ['204' => ['description' => 'none']],
+        ]]], 'components' => ['schemas' => ['Cat' => $object('cat'), 'Dog' => $object('dog')]]]);
+        $operation = $contract->operation('a');
+        $factory = new Psr17Factory();
+        $materializer = new RequestMaterializer($factory, $factory);
+        $arbitrary = (new RequestCaseArbitrary())->forOperation($operation);
+
+        foreach (range(1, 30) as $seed) {
+            Assert::true($contract->validateRequest($materializer->materialize($operation, $arbitrary->generate(new Random($seed))->value))->isValid());
+        }
+    }
+
+    public static function discriminatorProvider(): iterable
+    {
+        yield 'implicit mapping' => [['propertyName' => 'kind']];
+        yield 'a mapping that agrees' => [['propertyName' => 'kind', 'mapping' => ['cat' => '#/components/schemas/Cat', 'dog' => '#/components/schemas/Dog']]];
+        yield 'a mapping that contradicts the consts' => [['propertyName' => 'kind', 'mapping' => ['cat' => '#/components/schemas/Dog', 'dog' => '#/components/schemas/Cat']]];
     }
 
     #[DataProvider('untaggedOneOfProvider')]
