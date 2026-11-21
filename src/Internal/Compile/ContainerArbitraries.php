@@ -8,6 +8,7 @@ use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
@@ -15,6 +16,9 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  * Compiles the array and object schema sections.
  *
  * @internal
+ *
+ * @psalm-import-type Schema from SchemaShape
+ * @psalm-import-type Subschema from SchemaShape
  */
 final readonly class ContainerArbitraries
 {
@@ -32,7 +36,7 @@ final readonly class ContainerArbitraries
         private ?SchemaDirection $direction = null,
     ) {}
 
-    /** @param array<string, mixed> $schema */
+    /** @param Schema $schema */
     public function array(array $schema): ArbitraryInterface
     {
         if (array_key_exists('prefixItems', $schema) || array_key_exists('contains', $schema) || array_key_exists('unevaluatedItems', $schema)) {
@@ -42,7 +46,7 @@ final readonly class ContainerArbitraries
         if (!is_array($items) || array_is_list($items)) {
             throw UnsupportedGeneration::forSchema('array items must be a schema object');
         }
-        /** @var array<string, mixed> $items */
+        /** @var Schema $items */
         $min = $this->facts->nonNegativeInt($schema, 'minItems', 0);
         $max = min($this->facts->nonNegativeInt($schema, 'maxItems', self::MAX_COLLECTION_SIZE), self::MAX_COLLECTION_SIZE);
         if ($min > $max) {
@@ -71,7 +75,7 @@ final readonly class ContainerArbitraries
         return Gen::uniqueArrayOf($element, $min, $max);
     }
 
-    /** @param array<string, mixed> $schema */
+    /** @param Schema $schema */
     private function extendedArray(array $schema): ArbitraryInterface
     {
         if (($schema['uniqueItems'] ?? false) === true) {
@@ -137,13 +141,13 @@ final readonly class ContainerArbitraries
         return Gen::frequency($pairs);
     }
 
-    /** @return bool|array<string, mixed> */
+    /** @return Subschema */
     private function subschema(mixed $value, string $keyword): bool|array
     {
         return is_bool($value) ? $value : $this->facts->schemaObject($value, sprintf('%s must be a boolean or schema object', $keyword));
     }
 
-    /** @param bool|array<string, mixed> $schema */
+    /** @param Subschema $schema */
     private function compileSubschema(bool|array $schema): ArbitraryInterface
     {
         if ($schema === false) {
@@ -157,9 +161,9 @@ final readonly class ContainerArbitraries
     }
 
     /**
-     * @param bool|array<string, mixed> $left
-     * @param bool|array<string, mixed> $right
-     * @return bool|array<string, mixed>
+     * @param Subschema $left
+     * @param Subschema $right
+     * @return Subschema
      */
     private function intersection(bool|array $left, bool|array $right): bool|array
     {
@@ -180,7 +184,7 @@ final readonly class ContainerArbitraries
      * The number of distinct values an item schema can take when that number
      * is knowable from its shape alone.
      *
-     * @param array<string, mixed> $items
+     * @param Schema $items
      */
     private function finiteDomain(array $items): ?int
     {
@@ -215,7 +219,7 @@ final readonly class ContainerArbitraries
     }
 
     /**
-     * @param array<string, mixed> $schema
+     * @param Schema $schema
      * @param list<string> $excluded
      */
     public function object(array $schema, array $excluded = []): ArbitraryInterface
@@ -236,13 +240,13 @@ final readonly class ContainerArbitraries
             }
         }
         $patternArbitraries = [];
-        /** @var array<string, array<string, mixed>> $typedPatterns */
+        /** @var array<string, Schema> $typedPatterns */
         $typedPatterns = [];
         foreach ($patterns as $pattern => $patternSchema) {
             if (!is_array($patternSchema) || array_is_list($patternSchema)) {
                 throw UnsupportedGeneration::forSchema('patternProperties must contain named schema objects');
             }
-            /** @var array<string, mixed> $patternSchema */
+            /** @var Schema $patternSchema */
             $typedPatterns[$pattern] = $patternSchema;
             if (!$this->isRegex($pattern)) {
                 throw UnsupportedGeneration::forSchema(sprintf('patternProperties key is not supported: %s', $pattern));
@@ -292,7 +296,7 @@ final readonly class ContainerArbitraries
             if (!is_array($property) || array_is_list($property)) {
                 throw UnsupportedGeneration::forSchema('object properties must contain named schema objects');
             }
-            /** @var array<string, mixed> $property */
+            /** @var Schema $property */
             if ($omitted !== null && ($property[$omitted] ?? false) === true) {
                 // Owned by the other direction: never sent, still declared.
                 $reserved[$name] = true;
@@ -304,7 +308,7 @@ final readonly class ContainerArbitraries
             $applicable = [$property];
             foreach ($patterns as $pattern => $patternSchema) {
                 if ($this->regexMatches($pattern, $name)) {
-                    /** @var array<string, mixed> $patternSchema */
+                    /** @var Schema $patternSchema */
                     $applicable[] = $patternSchema;
                 }
             }
@@ -416,10 +420,10 @@ final readonly class ContainerArbitraries
         $entry = Gen::flatMap($name, function (mixed $drawn) use ($patterns, $value): ArbitraryInterface {
             $matching = [];
             if (is_string($drawn)) {
-                /** @var list<array<string, mixed>> $matching */
+                /** @var list<Schema> $matching */
                 foreach ($patterns as $pattern => $patternSchema) {
                     if ($this->regexMatches($pattern, $drawn)) {
-                        /** @var array<string, mixed> $patternSchema */
+                        /** @var Schema $patternSchema */
                         $matching[] = $patternSchema;
                     }
                 }
@@ -443,7 +447,7 @@ final readonly class ContainerArbitraries
         ));
     }
 
-    /** @param array<string, mixed> $schema */
+    /** @param Schema $schema */
     private function matchesSchema(string $value, array $schema): bool
     {
         $pattern = $schema['pattern'] ?? null;
@@ -562,7 +566,7 @@ final readonly class ContainerArbitraries
      * The member's arbitrary, or `null` where the member is the leaf of a
      * recursive def and has no value at this depth.
      *
-     * @param array<string, mixed> $schema
+     * @param Schema $schema
      */
     private function producible(array $schema): ?ArbitraryInterface
     {

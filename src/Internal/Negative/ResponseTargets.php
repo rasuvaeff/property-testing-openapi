@@ -17,7 +17,8 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  *
  * @internal
  *
- * @psalm-type Target = array{name: string, invalid: mixed}
+ * @psalm-import-type Witness from JsonBodyWitness
+ * @psalm-type Target = array{name: string, invalid: Witness}
  */
 final readonly class ResponseTargets
 {

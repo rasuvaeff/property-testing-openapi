@@ -35,6 +35,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
  * @internal
  *
  * @psalm-import-type Kind from JsonBodyWitness
+ * @psalm-import-type CompiledParameter from \Rasuvaeff\OpenApiContract\Operation
  * @psalm-type ValueTarget = array{location: 'path'|'query'|'header'|'cookie', name: string, invalid: string}
  */
 final readonly class ParameterTargets
@@ -183,7 +184,7 @@ final readonly class ParameterTargets
      * alternatives that keep `enum` and `const` constructible where it cannot
      * discriminate.
      *
-     * @param array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, style: string, explode: bool, allowReserved: bool, schema: array<string, mixed>, specPointer: non-empty-string, example?: mixed, examples?: array<string, mixed>} $parameter
+     * @param CompiledParameter $parameter
      * @param Kind $kind
      * @return list<int|float|bool|string>
      */

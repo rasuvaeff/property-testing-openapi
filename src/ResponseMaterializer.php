@@ -11,6 +11,7 @@ use Rasuvaeff\OpenApiContract\Operation;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseCaseShape;
 
 /**
  * Materializes a data-only response case as a PSR-7 response immediately
@@ -40,6 +41,7 @@ final readonly class ResponseMaterializer
     /** @param ResponseCaseData $case */
     public function materialize(Operation $operation, array $case): ResponseInterface
     {
+        ResponseCaseShape::assert($case);
         if ($case['operationKey'] !== $operation->key) {
             throw new InvalidCase(sprintf('Response case targets "%s", not "%s"', $case['operationKey'], $operation->key));
         }

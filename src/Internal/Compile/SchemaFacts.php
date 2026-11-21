@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
 /**
  * Shared schema-shape probes for the compiler sections.
  *
  * @internal
+ *
+ * @psalm-import-type Schema from SchemaShape
+ * @psalm-import-type Subschema from SchemaShape
  */
 final readonly class SchemaFacts
 {
@@ -81,8 +85,8 @@ final readonly class SchemaFacts
     }
 
     /**
-     * @param array<string, mixed> $schema
-     * @return bool|array<string, mixed>
+     * @param Schema $schema
+     * @return Subschema
      */
     public function additionalPropertiesSchema(array $schema): bool|array
     {
@@ -102,7 +106,7 @@ final readonly class SchemaFacts
      * Anything that puts such a name back on the wire casts it there, where
      * the value has passed through a generator and the cast is not redundant.
      *
-     * @return array<string, mixed>
+     * @return Schema
      */
     public function schemaObject(mixed $value, string $error): array
     {
@@ -110,11 +114,11 @@ final readonly class SchemaFacts
             throw UnsupportedGeneration::forSchema($error);
         }
 
-        /** @var array<string, mixed> $value */
+        /** @var Schema $value */
         return $value;
     }
 
-    /** @return bool|array<string, mixed> */
+    /** @return Subschema */
     private function booleanOrSchema(mixed $value): bool|array
     {
         if (is_bool($value)) {
