@@ -279,7 +279,9 @@ final readonly class ResponseCaseArbitrary
             }
             if ($raw === null && RawBodies::carries($mediaType)) {
                 $schema = $mediaDefinition['schema'] ?? [];
-                $schema = $schema === true ? [] : $schema;
+                if ($schema === true) {
+                    $schema = [];
+                }
                 if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
                     throw new UnsupportedGeneration(sprintf('Response "%s" schema must be an object', $mediaType));
                 }

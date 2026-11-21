@@ -626,27 +626,25 @@ final readonly class CompositionArbitraries
      */
     private function pinnedProperties(array $schema): array
     {
-        if (!SchemaShape::isObject($schema) || !is_array($schema['required'] ?? null) || !is_array($schema['properties'] ?? null)) {
+        $required = $schema['required'] ?? null;
+        $properties = $schema['properties'] ?? null;
+        if (!SchemaShape::isObject($schema) || !is_array($required) || !is_array($properties)) {
             return [];
         }
-        $properties = $schema['properties'];
         $pinned = [];
         /** @var mixed $name */
-        foreach ($schema['required'] as $name) {
+        foreach ($required as $name) {
             if (!is_string($name) || !is_array($properties[$name] ?? null)) {
                 continue;
             }
             /** @var array<array-key, mixed> $property */
             $property = $properties[$name];
-            $values = match (true) {
-                array_key_exists('const', $property) => [$property['const']],
-                is_array($property['enum'] ?? null) && $property['enum'] !== [] => array_values($property['enum']),
-                default => null,
-            };
+            $values = array_key_exists('const', $property) ? [$property['const']] : $this->members($property['enum'] ?? null);
             if ($values === null) {
                 continue;
             }
             $keys = [];
+            /** @var mixed $value */
             foreach ($values as $value) {
                 $key = $this->tagKey($value);
                 if ($key === null) {
@@ -658,6 +656,12 @@ final readonly class CompositionArbitraries
         }
 
         return $pinned;
+    }
+
+    /** @return null|non-empty-list<mixed> */
+    private function members(mixed $enum): ?array
+    {
+        return is_array($enum) && $enum !== [] ? array_values($enum) : null;
     }
 
     /**

@@ -38,12 +38,12 @@ final readonly class RawBodies
 
     /**
      * @param Schema $schema the media type's schema, already narrowed to its direction
-     * @return ArbitraryInterface<array{mediaType: string, encoding: 'raw', value: string}>
+     * @return ArbitraryInterface<mixed> a `BodyData` of `encoding: 'raw'`
      */
     public static function arbitrary(string $mediaType, array $schema, SchemaArbitraryCompiler $compiler): ArbitraryInterface
     {
         if ($schema === []) {
-            $payload = Gen::stringOf(1, self::OPAQUE_LENGTH);
+            $schema = ['type' => 'string', 'minLength' => 1, 'maxLength' => self::OPAQUE_LENGTH];
         } else {
             if (($schema['type'] ?? null) !== 'string') {
                 throw UnsupportedGeneration::forSchema(sprintf('a "%s" body is sent as it is, so its schema must be a string schema', MediaType::normalize($mediaType)));
@@ -54,11 +54,10 @@ final readonly class RawBodies
             if (($schema['minLength'] ?? 0) === 0) {
                 $schema['minLength'] = 1;
             }
-            $payload = $compiler->compile($schema);
         }
 
-        /** @var ArbitraryInterface<array{mediaType: string, encoding: 'raw', value: string}> $raw */
-        $raw = Gen::map($payload, static function (mixed $value) use ($mediaType): array {
+        /** @var ArbitraryInterface<mixed> $raw */
+        $raw = Gen::map($compiler->compile($schema), static function (mixed $value) use ($mediaType): array {
             if (!is_string($value)) {
                 throw new \LogicException('A string schema produced a non-string body');
             }

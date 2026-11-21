@@ -133,13 +133,13 @@ the same way.
 |---|---|
 | `type` (single or list), `const`, `enum`, `nullable` (OAS 3.0) | supported; a type list is a weighted union; an `enum` member or a `const` is checked against the keywords beside it (`{integer, maximum: 5, enum: [1, 100]}` draws only `1`), and a `const` or an `enum` they leave nothing of fails closed |
 | annotations: `description`, `title`, `$comment`, `deprecated`, `example`, `examples`, `default`, `externalDocs`, `xml`, `discriminator`, `x-*` | constrain nothing: a schema made of annotations only admits any value, like `{}` |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | supported; an undeclared bound is ±1000, and a bound declared on one side only that lies past that window takes the other side 2000 away from itself (`minimum: 1900` draws from 1900–3900); a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1; a bound so wide that the multiples need more than the 15 significant digits a double spells back exactly fails closed |
-| `minLength`, `maxLength` (capped at 64), `pattern` (PCRE subset) | supported |
-| `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
-| `items`, `minItems`, `maxItems` (capped at 16), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
-| `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (capped at 16), `additionalProperties` (boolean or schema) | supported; pattern keys are generated from the declared regexes and values satisfy every matching pattern schema; the cardinality is met by construction |
+| `minimum`, `maximum`, `exclusiveMinimum`/`exclusiveMaximum` (the OAS 3.0 boolean and the OAS 3.1 number), `multipleOf` | supported; a numeric exclusive bound beside an inclusive one is met by the tighter of the two, and an integer above a fractional exclusive bound starts at the next integer (`exclusiveMinimum: 0.5` draws from 1); an undeclared bound is ±1000, and a bound declared on one side only that lies past that window takes the other side 2000 away from itself (`minimum: 1900` draws from 1900–3900); a fractional bound on an integer rounds inward, an open bound steps to the adjacent double; a float is spelled on the wire as `json_encode` spells it, and a decimal multiple as the decimal it means (`64.1`, never `64.10000000000001`), which is how the contract judges it since 0.12.1; a bound so wide that the multiples need more than the 15 significant digits a double spells back exactly fails closed |
+| `minLength`, `maxLength` (capped at 64, or at `minLength` when it is larger), `pattern` (PCRE subset) | supported |
+| `format`: `uuid`, `email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `time`, `duration`, `password` (annotation) | supported; a length window the format cannot satisfy, or `pattern` combined with an asserted format, fails closed |
+| `items`, `minItems`, `maxItems` (capped at 16, or at `minItems` when it is larger), `uniqueItems` | supported; `uniqueItems` over a finite item domain smaller than `minItems` fails closed |
+| `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (capped at 16, or at `minProperties` when it is larger), `additionalProperties` (boolean or schema) | supported; pattern keys are generated from the declared regexes and values satisfy every matching pattern schema; the cardinality is met by construction |
 | `readOnly` (requests), `writeOnly` (responses) | dropped per direction |
-| `anyOf`, `oneOf` (provably disjoint branches, or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches: annotations are carried, not merged; an assertion beside `allOf` — an OAS 3.0 `nullable`, or the hoisted `type` of the contract's form for a 3.1 `$ref` with siblings — joins the conjunction; the same `minimum`/`maximum`/length/count bound in two branches is met by the tighter one; a branch bounding `additionalProperties` must declare every sibling property) | supported; the empty value of an `anyOf`/`oneOf`/`if` whose branches declare an object and no array is encoded as `{}` |
+| `anyOf`, `oneOf` (provably disjoint branches — by declared type, or objects that all require one property and pin it with a `const` or an `enum` no two branches share, read through a `$ref` into `$defs`; or one `integer` beside one `number` branch: a value is kept only when exactly one admits it, the number branch's `multipleOf` judged by the contract's own `SchemaCheck::isMultipleOf()`), `allOf` (mergeable branches: annotations are carried, not merged; an assertion beside `allOf` — an OAS 3.0 `nullable`, or the hoisted `type` of the contract's form for a 3.1 `$ref` with siblings — joins the conjunction; the same `minimum`/`maximum`/length/count bound in two branches is met by the tighter one; a branch bounding `additionalProperties` must declare every sibling property) | supported; the empty value of an `anyOf`/`oneOf`/`if` whose branches declare an object and no array is encoded as `{}` |
 | `not` with `const`, `enum`, or `type` | supported; a `not` that excludes every declared type fails closed; an empty `[]` takes its type (array or object) from the schema, so `not: {type: object}` never lets `{}` through |
 | `$defs` + local `$ref` (`#/$defs/…`) — the contract's compiled form of a schema that refers to itself, a tree whose `children` are trees | supported; the def unfolds three levels below the root and ends at a leaf that leaves the recursive member out (an optional property omitted, an array that may be empty left empty, a branch of a choice skipped); a def whose only way down is a required member that is the def itself has no finite instance and fails closed; a `$ref` to anything but the schema's own `$defs` fails closed |
 | `if`/`then`/`else` (including boolean schemas and nested conditionals) | supported; values are constructed for both reachable branches and checked with the contract's `SchemaCheck`; an unsatisfiable branch is skipped, and a conditional with no producible branch fails closed |
@@ -197,16 +197,17 @@ and `constMismatchForOperation()` uses a value different from a scalar
 `const` and records `misuse.kind = 'const'`.
 `boundaryMismatchForOperation()` replaces one `integer`/`number`
 parameter with a wire value just outside its `minimum`/`maximum` bound
-(honouring boolean exclusive bounds) and records `misuse.kind = 'boundary'`.
+(honouring exclusive bounds, boolean or numeric) and records `misuse.kind = 'boundary'`.
 `lengthMismatchForOperation()` replaces one `string` parameter with a
 value whose length falls just outside its `minLength`/`maxLength` bound and
 records `misuse.kind = 'length'`.
 `formatMismatchForOperation()` replaces one `string` parameter with a
 fixed witness that provably violates its `format` and records
-`misuse.kind = 'format'`. A witness is held for seven formats — `uuid`,
-`email`, `ipv4`, `uri`, `uri-reference`, `date`, `date-time` — and `url` is
-deliberately not among them, because the validation backend does not assert
-it. Any other format (`hostname`, `ipv6`, `duration`, a custom one) has no
+`misuse.kind = 'format'`. A witness is held for eleven formats — `uuid`,
+`email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `date`,
+`date-time`, `time`, `duration` — and `url` is deliberately not among them,
+because the validation backend does not assert it. Any other format (`phone`,
+`byte`, a custom one) has no
 witness and contributes no case: the refusal names it, so a constraint going
 untested for want of a witness here is visible rather than silent, and the
 right response is an issue on this repository rather than an edit to the
@@ -272,8 +273,16 @@ Resulting requests are expected to
 fail contract validation before a transport is called; other negative
 categories remain unsupported until they have their own invalidation oracle.
 
-Unsupported schema assertions and non-JSON request bodies throw
-`UnsupportedGeneration`; they are never silently widened to arbitrary strings.
+Unsupported schema assertions and request bodies of any other media type
+throw `UnsupportedGeneration`; they are never silently widened to arbitrary
+strings. A `text/plain` or `application/octet-stream` body is sent as it is
+(`encoding: 'raw'`, a non-empty UTF-8 string): opaque when the media type
+declares no schema, the string value of a string schema otherwise
+(`format: binary` is read as the annotation it is), and refused under any
+other schema, which the contract cannot judge an undecoded payload against.
+It is generated where the operation offers no JSON, form or multipart media
+type — beside one it is left out, so an operation that generated before
+draws the cases it always drew.
 A refusal over a schema names the operation and the parameter or body it was
 compiling (`Unsupported OpenAPI schema generation for operation "pets.list",
 query parameter "limit": minLength exceeds maxLength`). The refusal is raised
@@ -510,6 +519,37 @@ premise stops being invisible:
 Assert::same($suite->negativeCoverage(), $expected);
 ```
 
+Each category can also be drawn on its own:
+`NegativeRequestCaseArbitrary::categoriesForOperation()` returns every
+constructible category keyed by name, in the order
+`anyForOperation()` — the union `negativeCases()` draws from — weights them.
+The key is the misuse kind, and `body-` plus the kind for the seven body value
+categories (`body-type` … `body-pattern`), whose `misuse.kind` is the same as
+their parameter twins'.
+
+```php
+$negative = new NegativeRequestCaseArbitrary();
+array_keys($negative->categoriesForOperation($operation));
+// ['missing-required', 'type', 'additional-properties', 'media-type', 'json-syntax', 'body-type']
+$any = $negative->anyForOperation($operation); // what ContractSuite::negativeCases() draws
+```
+
+### Generation coverage
+
+`generationCoverage()` is the valid-phase twin of `negativeCoverage()`: for
+each selected operation, `supported: true`, or `supported: false` with the
+refusal `OperationProperty::check()` would raise — known from the document
+without drawing a case, so an unsupported operation is found before the run
+rather than by it.
+
+```php
+$suite->generationCoverage();
+// [
+//   'pets.list' => ['supported' => true, 'reason' => null],
+//   'pets.scan' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "pets.scan", query parameter "n": format "phone" is outside the supported format subset'],
+// ]
+```
+
 Sampling `negativeCases()` and tallying `misuse` recovers part of the same
 answer, but it cannot prove a negative — a category absent from 300 draws
 might appear at 10 000 — and it cannot say why one is missing. The `skipped`
@@ -540,17 +580,26 @@ optional ones take both branches, and the JSON body is generated with
 values with the `simple` style like request headers — as sent, a list joined
 with commas — and the generator keeps a control character or a comma inside
 an item out of them, so neither reaches the PSR-7 factory. `ResponseCaseData` is JSON-compatible and
-corpus-safe like its request counterpart. An undeclared status, a required
-header without a schema, or a body without a JSON media type fail closed as
-`UnsupportedGeneration`.
+corpus-safe like its request counterpart. A response that declares no JSON
+media type but a `text/plain` or `application/octet-stream` one gets a raw
+body under the same rules as a request body. An undeclared status, a required
+header without a schema, or a body with neither fail closed as
+`UnsupportedGeneration`. `ResponseMaterializer` refuses a hand-written case
+that lacks a key, or carries one of the wrong type, with `InvalidCase` naming
+it.
 
 `NegativeResponseCaseArbitrary` mutates a valid case constructively:
 `undeclared-status`, a `missing-required` header, and the body categories
 `missing-required`, `type`, `enum`, `const`, `boundary`, `length`, `pattern`
 (through the same bounded `preg_match()` oracle as request generation),
-`additional-properties`, `media-type`, and `json-syntax` — on top-level
-object properties, or on a scalar/array body root (`misuse.name` is `$`).
-`forOperation()` is the weighted union of every constructible category.
+`additional-properties`, `media-type`, `json-syntax`, and `format` — on
+top-level object properties, or on a scalar/array body root (`misuse.name` is
+`$`). `forOperation()` (also named `anyForOperation()`, as on the request
+side) is the weighted union of every constructible category;
+`categoriesForOperation()` returns them keyed by name (the header
+`missing-required` is `missing-required-header`), and
+`coverageForOperation()` lists what each one reaches and why the others
+reach nothing, as `negativeCoverage()` does for requests.
 Every case is provably invalid under `Contract::validateResponse()`, the
 `misuse` metadata survives shrinking, and a category without a constructible
 witness fails closed. Feed the valid cases through your client's decoder to

@@ -132,13 +132,13 @@ request-направлению схемы — `readOnly`-свойства ухо
 |---|---|
 | `type` (один или список), `const`, `enum`, `nullable` (OAS 3.0) | поддержано; список типов — взвешенное объединение; член `enum` и `const` проверяются по соседним keywords (`{integer, maximum: 5, enum: [1, 100]}` даёт только `1`), а `const` или `enum`, от которых они ничего не оставляют, падают fail-closed |
 | аннотации: `description`, `title`, `$comment`, `deprecated`, `example`, `examples`, `default`, `externalDocs`, `xml`, `discriminator`, `x-*` | ничего не ограничивают: схема из одних аннотаций допускает любое значение, как `{}` |
-| `minimum`, `maximum`, boolean `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf` | поддержано; необъявленная граница — ±1000, а граница, объявленная только с одной стороны и лежащая за этим окном, берёт другую сторону в 2000 от себя (`minimum: 1900` даёт 1900–3900); дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1; граница настолько широкая, что кратным нужно больше 15 значащих цифр, которые double передаёт точно, падает fail-closed |
-| `minLength`, `maxLength` (не более 64), `pattern` (подмножество PCRE) | поддержано |
-| `format`: `uuid`, `email`, `ipv4`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
-| `items`, `minItems`, `maxItems` (не более 16), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
-| `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (не более 16), `additionalProperties` (boolean или схема) | поддержано; ключи pattern генерируются из объявленных regex, значения удовлетворяют всем совпавшим схемам, кардинальность выполняется по построению |
+| `minimum`, `maximum`, `exclusiveMinimum`/`exclusiveMaximum` (boolean из OAS 3.0 и число из OAS 3.1), `multipleOf` | поддержано; числовая исключающая граница рядом с включающей выполняется более тесной из двух, а integer над дробной исключающей границей начинается со следующего целого (`exclusiveMinimum: 0.5` даёт от 1); необъявленная граница — ±1000, а граница, объявленная только с одной стороны и лежащая за этим окном, берёт другую сторону в 2000 от себя (`minimum: 1900` даёт 1900–3900); дробная граница у integer округляется внутрь, открытая граница отступает на соседний double; float пишется на провод так, как его пишет `json_encode`, а десятичное кратное — как десятичное число, которое оно означает (`64.1`, никогда `64.10000000000001`), — так его судит контракт с 0.12.1; граница настолько широкая, что кратным нужно больше 15 значащих цифр, которые double передаёт точно, падает fail-closed |
+| `minLength`, `maxLength` (не более 64, или не более `minLength`, если он больше), `pattern` (подмножество PCRE) | поддержано |
+| `format`: `uuid`, `email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `url`, `date`, `date-time`, `time`, `duration`, `password` (аннотация) | поддержано; окно длины, которое format не может удовлетворить, или `pattern` вместе с проверяемым format падают fail-closed |
+| `items`, `minItems`, `maxItems` (не более 16, или не более `minItems`, если он больше), `uniqueItems` | поддержано; `uniqueItems` над конечным доменом элементов меньше `minItems` падает fail-closed |
+| `properties`, `patternProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties` (не более 16, или не более `minProperties`, если он больше), `additionalProperties` (boolean или схема) | поддержано; ключи pattern генерируются из объявленных regex, значения удовлетворяют всем совпавшим схемам, кардинальность выполняется по построению |
 | `readOnly` (requests), `writeOnly` (responses) | отбрасываются по направлению |
-| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви, либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви: аннотации переносятся, а не сливаются; утверждение рядом с `allOf` — `nullable` OAS 3.0 или поднятый `type` в форме, в которую контракт компилирует 3.1 `$ref` с соседями, — входит в конъюнкцию; одна и та же граница `minimum`/`maximum`/длины/количества в двух ветвях выполняется более строгой; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано; пустое значение `anyOf`/`oneOf`/`if`, ветви которого объявляют object и не объявляют array, кодируется как `{}` |
+| `anyOf`, `oneOf` (доказуемо непересекающиеся ветви — по объявленному типу, или объекты, которые все требуют одно свойство и фиксируют его `const` или `enum` без общих значений у двух ветвей, в том числе через `$ref` в `$defs`; либо одна ветвь `integer` рядом с одной `number`: значение остаётся, только если его допускает ровно одна, а `multipleOf` number-ветви судит собственный `SchemaCheck::isMultipleOf()` контракта), `allOf` (сливаемые ветви: аннотации переносятся, а не сливаются; утверждение рядом с `allOf` — `nullable` OAS 3.0 или поднятый `type` в форме, в которую контракт компилирует 3.1 `$ref` с соседями, — входит в конъюнкцию; одна и та же граница `minimum`/`maximum`/длины/количества в двух ветвях выполняется более строгой; ветвь, ограничивающая `additionalProperties`, обязана объявлять все свойства соседей) | поддержано; пустое значение `anyOf`/`oneOf`/`if`, ветви которого объявляют object и не объявляют array, кодируется как `{}` |
 | `not` с `const`, `enum` или `type` | поддержано; `not`, исключающий каждый объявленный тип, падает fail-closed; пустой `[]` берёт тип (array или object) из схемы, поэтому `not: {type: object}` никогда не пропускает `{}` |
 | `$defs` + локальный `$ref` (`#/$defs/…`) — скомпилированная контрактом форма схемы, ссылающейся на саму себя: дерево, чьи `children` тоже деревья | поддерживается; def разворачивается на три уровня под корнем и заканчивается листом, который опускает рекурсивный член (необязательное свойство пропущено, массив, которому можно быть пустым, пуст, ветка выбора пропущена); def, единственный путь вниз которого — обязательный член, равный самому def, не имеет конечного экземпляра и fail-closed; `$ref` куда-либо кроме собственных `$defs` схемы — fail-closed |
 | `if`/`then`/`else` (включая boolean schemas и вложенные conditionals) | поддержано; значения конструктивно строятся для обеих достижимых веток и проверяются собственным `SchemaCheck` контракта; невыполнимая ветка пропускается, а conditional без единой производимой ветки падает fail-closed |
@@ -197,17 +197,18 @@ $credentials = new Credentials(
 `const`, с `misuse.kind = 'const'`.
 `boundaryMismatchForOperation()` заменяет один
 `integer`/`number`-параметр wire-значением сразу за границей
-`minimum`/`maximum` (с учётом boolean exclusive границ) и записывает
+`minimum`/`maximum` (с учётом exclusive границ, boolean или числовых) и записывает
 `misuse.kind = 'boundary'`.
 `lengthMismatchForOperation()` заменяет один string-параметр
 значением с длиной сразу за границей `minLength`/`maxLength` и записывает
 `misuse.kind = 'length'`.
 `formatMismatchForOperation()` заменяет один string-параметр
 фиксированным значением, доказуемо нарушающим его `format`, и записывает
-`misuse.kind = 'format'`. Witness есть для семи форматов — `uuid`, `email`,
-`ipv4`, `uri`, `uri-reference`, `date`, `date-time`; `url` среди них
-сознательно нет, потому что validation backend его не ассертит. Любой другой
-формат (`hostname`, `ipv6`, `duration`, собственный) witness'а не имеет и
+`misuse.kind = 'format'`. Witness есть для одиннадцати форматов — `uuid`,
+`email`, `ipv4`, `ipv6`, `hostname`, `uri`, `uri-reference`, `date`,
+`date-time`, `time`, `duration`; `url` среди них сознательно нет, потому что
+validation backend его не ассертит. Любой другой формат (`phone`, `byte`,
+собственный) witness'а не имеет и
 случая не даёт: отказ называет его по имени, так что ограничение, оставшееся
 непроверенным из-за отсутствия witness'а, видно, а не молчит, — и правильный
 ответ на это issue в этом репозитории, а не правка документа.
@@ -279,8 +280,16 @@ JSON-варианте. Вложенные свойства пока не
 вызова transport; остальные negative-категории появятся только вместе с
 отдельным invalidation oracle.
 
-Неподдерживаемые schema assertions и non-JSON request bodies бросают
-`UnsupportedGeneration`; они не расширяются молча до произвольных строк.
+Неподдерживаемые schema assertions и request bodies любого другого media type
+бросают `UnsupportedGeneration`; они не расширяются молча до произвольных
+строк. Body `text/plain` или `application/octet-stream` отправляется как есть
+(`encoding: 'raw'`, непустая UTF-8 строка): непрозрачно, если media type не
+объявляет схему, иначе как строковое значение string-схемы (`format: binary`
+читается как аннотация, которой он и является), а под любой другой схемой —
+отказ: контракт не может судить по ней недекодированный payload. Такой body
+генерируется, когда у операции нет JSON-, form- или multipart-медиатипа —
+рядом с ними он не берётся, так что операция, которая генерировалась раньше,
+даёт те же cases, что и раньше.
 Отказ по схеме называет операцию и параметр или body, которые компилировал
 (`Unsupported OpenAPI schema generation for operation "pets.list", query
 parameter "limit": minLength exceeds maxLength`). Отказ бросает
@@ -512,6 +521,37 @@ $suite->negativeCoverage();
 Assert::same($suite->negativeCoverage(), $expected);
 ```
 
+Каждую категорию можно взять и отдельно:
+`NegativeRequestCaseArbitrary::categoriesForOperation()` возвращает все
+конструируемые категории по имени, в том порядке, в котором их взвешивает
+`anyForOperation()` — объединение, из которого берёт `negativeCases()`. Ключ —
+misuse kind, а для семи body-категорий значений — `body-` плюс kind
+(`body-type` … `body-pattern`): их `misuse.kind` совпадает с параметрическими
+двойниками.
+
+```php
+$negative = new NegativeRequestCaseArbitrary();
+array_keys($negative->categoriesForOperation($operation));
+// ['missing-required', 'type', 'additional-properties', 'media-type', 'json-syntax', 'body-type']
+$any = $negative->anyForOperation($operation); // то, что берёт ContractSuite::negativeCases()
+```
+
+### Покрытие генерации
+
+`generationCoverage()` — двойник `negativeCoverage()` для валидной фазы: для
+каждой выбранной операции `supported: true` или `supported: false` с отказом,
+который бросил бы `OperationProperty::check()`, — известно из документа без
+единого draw, так что неподдерживаемая операция находится до прогона, а не
+им.
+
+```php
+$suite->generationCoverage();
+// [
+//   'pets.list' => ['supported' => true, 'reason' => null],
+//   'pets.scan' => ['supported' => false, 'reason' => 'Unsupported OpenAPI schema generation for operation "pets.scan", query parameter "n": format "phone" is outside the supported format subset'],
+// ]
+```
+
 Сэмплирование `negativeCases()` с подсчётом `misuse` восстанавливает часть
 того же ответа, но не может доказать отрицание — категория, не встретившаяся
 за 300 прогонов, может появиться на 10 000, — и не говорит, почему её нет.
@@ -543,17 +583,25 @@ request-заголовки, — как отправлено, список чер
 не пускает в них управляющий символ и запятую внутри элемента, так что до
 PSR-7-фабрики не доходит ни то, ни другое.
 `ResponseCaseData` JSON-compatible и corpus-safe, как и request-аналог.
-Необъявленный статус, required header без схемы и body без JSON media type
-падают как `UnsupportedGeneration`.
+Ответ, который не объявляет JSON media type, но объявляет `text/plain` или
+`application/octet-stream`, получает raw body по тем же правилам, что и
+request body. Необъявленный статус, required header без схемы и body без
+того и другого падают как `UnsupportedGeneration`. `ResponseMaterializer`
+отвергает рукописный case без ключа или с ключом неверного типа через
+`InvalidCase`, называя его.
 
 `NegativeResponseCaseArbitrary` конструктивно мутирует валидный case:
 `undeclared-status`, `missing-required` header и body-категории
 `missing-required`, `type`, `enum`, `const`, `boundary`, `length`, `pattern`
 (через тот же bounded `preg_match()`-оракул, что и у requests),
-`additional-properties`, `media-type`, `json-syntax` — на top-level
-свойствах объекта или на скалярном/массивном корне body (`misuse.name` =
-`$`). `forOperation()` — взвешенное объединение всех конструируемых
-категорий. Каждый case доказуемо невалиден по
+`additional-properties`, `media-type`, `json-syntax` и `format` — на
+top-level свойствах объекта или на скалярном/массивном корне body
+(`misuse.name` = `$`). `forOperation()` (он же `anyForOperation()`, как на
+стороне requests) — взвешенное объединение всех конструируемых категорий;
+`categoriesForOperation()` возвращает их по имени (header-вариант
+`missing-required` — `missing-required-header`), а `coverageForOperation()`
+перечисляет, что достигает каждая, и почему остальные не достигают ничего, —
+как `negativeCoverage()` для requests. Каждый case доказуемо невалиден по
 `Contract::validateResponse()`, `misuse` переживает shrinking, категория без
 конструируемого witness падает fail-closed. Валидные cases прогоняйте через
 decoder клиента (documented optional fields, enum states), невалидные —

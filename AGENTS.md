@@ -159,6 +159,24 @@ into the monorepo) plus `git config --global --add safe.directory "*"`.
   signature either. The test is what the docs tell a user to do:
   `SecuritySelector` was `@internal` while the README showed a snippet
   constructing it, and it is `@api` now because that snippet is the contract.
+- **The probe seed and budget are reproducibility, not tuning.**
+  `Internal\Probe` (seed 11, 8 probes) answers every compile-time "does this
+  filtered arbitrary yield" question; a change to either moves which branch
+  survives and therefore the draws of every case behind it. The recorded
+  corpus is the proof: `bin/record-openapi-corpus --check` must stay current
+  after any change that is not meant to move a case.
+- **Widening support must not move what already generated.** Where a refusal
+  becomes a success (a raw body, a raised budget, a tagged `oneOf`), check
+  every site that silently drops a refused alternative — the media-type skip
+  in `body()`, `ConstructibleCategories::built()`, the presence combinations
+  of `dependencies()` — for a document that generated before and now draws a
+  new alternative. Raw bodies are generated only where no JSON, form or
+  multipart media type is declared beside them for exactly this reason.
+- A `oneOf` over objects is disjoint only by proof: every branch requires one
+  property pinned by scalar `const`/`enum` values no two branches share
+  (`1` and `1.0` are one value). Never widen this to a filter that keeps
+  values `SchemaCheck` accepts in one branch without recording why it
+  terminates.
 - `examples/` is part of the public contract; every listed script must run.
 - CI actions stay SHA-pinned with read-only permissions and checkout
   credentials disabled.
@@ -324,10 +342,9 @@ the overflow observable as a `TypeError` instead.
 `ScalarArbitraries::multipleOf()` from the list below with the branch that
 carried them.
 
-The 1.0-readiness wave (2026-09-19, 0.15.0) adds: the probe loops of
-`RequestCaseArbitrary::yieldsSomething()` and
-`CompositionArbitraries::yieldsSomething()` (budget and bound variants answer
-the same question, as `fitsLengthWindow()`'s do); the `floor`/`ceil`/`round`
+The 1.0-readiness wave (2026-09-19, 0.15.0) adds: the probe loop now in
+`Internal\Probe::yields()` (0.21.0 folded the three copies into it; budget
+and bound variants answer the same question, as `fitsLengthWindow()`'s do); the `floor`/`ceil`/`round`
 choice in the non-integral test of the numeric `oneOf` (`f(v) !== v` detects
 a fractional part whichever `f` is) and in `numberBranchAdmits()` (the product
 equals the value only when the quotient is exact, whichever way it is

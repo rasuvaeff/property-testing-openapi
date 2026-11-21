@@ -229,7 +229,7 @@ final readonly class ScalarArbitraries
      * An ISO 8601 duration of days, hours and minutes (`P3DT4H5M`): the form
      * both RFC 3339 appendix A and the contract's check read the same way.
      *
-     * @return ArbitraryInterface<string>
+     * @return ArbitraryInterface<non-empty-string>
      */
     private function duration(): ArbitraryInterface
     {

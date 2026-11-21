@@ -91,12 +91,12 @@ final readonly class SchemaFacts
     public static function exclusiveBounds(array $schema, bool $integer): array
     {
         foreach (['exclusiveMinimum' => 'minimum', 'exclusiveMaximum' => 'maximum'] as $exclusive => $inclusive) {
-            $bound = $schema[$exclusive] ?? null;
-            if (!is_int($bound) && !is_float($bound)) {
+            $bound = self::numeric($schema[$exclusive] ?? null);
+            if ($bound === null) {
                 continue;
             }
-            $declared = $schema[$inclusive] ?? null;
-            $tighter = (!is_int($declared) && !is_float($declared))
+            $declared = self::numeric($schema[$inclusive] ?? null);
+            $tighter = $declared === null
                 || ($inclusive === 'minimum' ? $bound >= $declared : $bound <= $declared);
             unset($schema[$exclusive]);
             if (!$tighter) {
@@ -109,6 +109,11 @@ final readonly class SchemaFacts
         }
 
         return $schema;
+    }
+
+    private static function numeric(mixed $value): int|float|null
+    {
+        return is_int($value) || is_float($value) ? $value : null;
     }
 
     /**

@@ -54,7 +54,7 @@ final class RawBodiesTest
     }
 
     #[DataProvider('rawMediaProvider')]
-    public function aRawResponseBodyIsOneTheContractAccepts(string $mediaType, array $definition, ?int $maxLength): void
+    public function aRawResponseBodyIsOneTheContractAccepts(string $mediaType, array $definition): void
     {
         $contract = $this->contract([], ['200' => ['description' => 'raw', 'content' => [$mediaType => $definition]]], method: 'get');
         $operation = $contract->operation('op');

@@ -122,7 +122,7 @@ final readonly class NegativeRequestCaseArbitrary
 
     /**
      * Replaces one numeric parameter with a wire value just outside its
-     * `minimum`/`maximum` bound, honouring boolean exclusive bounds.
+     * `minimum`/`maximum` bound, honouring exclusive bounds, boolean or numeric.
      *
      * @return ArbitraryInterface<CaseData>
      */
@@ -312,8 +312,8 @@ final readonly class NegativeRequestCaseArbitrary
 
     /**
      * Replaces one top-level numeric value of the required JSON body with one
-     * just outside its `minimum`/`maximum` bound, honouring boolean exclusive
-     * bounds.
+     * just outside its `minimum`/`maximum` bound, honouring exclusive bounds,
+     * boolean or numeric.
      *
      * @return ArbitraryInterface<CaseData>
      */
@@ -538,6 +538,7 @@ final readonly class NegativeRequestCaseArbitrary
     private function categories(Operation $operation): array
     {
         $body = static fn(string $name): array => [['location' => 'body', 'name' => $name]];
+
         return [
             'missing-required' => [
                 'kind' => 'missing-required',
