@@ -189,14 +189,15 @@ final class ResponseCaseArbitraryTest
 
         Expect::exception(UnsupportedGeneration::class)->withMessage($message);
 
-        (new ResponseCaseArbitrary())->forOperation($operation, 200)->generate(new Random(1));
+        // Refused while the operation is compiled, before any draw (#156).
+        (new ResponseCaseArbitrary())->forOperation($operation, 200);
     }
 
     public static function handBuiltUnsupportedProvider(): iterable
     {
         yield 'required header without schema' => [['200' => ['headers' => ['X-Req' => ['required' => true]]]], 'Required response header "X-Req" has no schema object'];
-        yield 'list of objects header' => [['200' => ['headers' => ['X-List' => ['required' => true, 'schema' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string']]]]]]]], 'Response header "X-List" must carry scalar values'];
-        yield 'object header value' => [['200' => ['headers' => ['X-Obj' => ['required' => true, 'schema' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string']]]]]]], 'Response header "X-Obj" cannot carry an object value'];
+        yield 'list of objects header' => [['200' => ['headers' => ['X-List' => ['required' => true, 'schema' => ['type' => 'array', 'minItems' => 1, 'items' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string']]]]]]]], 'Unsupported OpenAPI schema generation for operation "op", response "200" header "X-List": Response header "X-List" must carry scalar values'];
+        yield 'object header value' => [['200' => ['headers' => ['X-Obj' => ['required' => true, 'schema' => ['type' => 'object', 'required' => ['a'], 'properties' => ['a' => ['type' => 'string']]]]]]], 'Unsupported OpenAPI schema generation for operation "op", response "200" header "X-Obj": Response header "X-Obj" cannot carry an object value'];
         yield 'headers not an object' => [['200' => ['headers' => 'oops']], 'Response headers must be an object'];
         yield 'JSON schema is a list' => [['200' => ['content' => ['application/json' => ['schema' => ['a']]]]], 'Response "application/json" JSON schema must be an object'];
     }

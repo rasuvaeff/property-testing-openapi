@@ -11,6 +11,7 @@ use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
 
 /**
@@ -134,6 +135,7 @@ final readonly class ResponseCaseArbitrary
             $separator = ParameterSchemas::separatorOf('header', 'simple', $schema);
 
             try {
+                $this->assertScalarHeader($schema, $name);
                 $compiled = (new SchemaArbitraryCompiler($separator ?? ''))
                     ->compile($this->parameterSchemas->forLocation($schema, 'header', 'simple'));
             } catch (UnsupportedGeneration $refusal) {
@@ -166,6 +168,37 @@ final readonly class ResponseCaseArbitrary
 
             return $result;
         });
+    }
+
+    /**
+     * A header carries a scalar or a list of scalars. An object or a nested
+     * list is a fact of the schema, refused when the operation is compiled
+     * rather than on the first draw that produces one (#156).
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function assertScalarHeader(array $schema, string $name): void
+    {
+        if (SchemaShape::isArray($schema)) {
+            if ($this->isContainer($schema['items'] ?? null)) {
+                throw UnsupportedGeneration::forSchema(sprintf('Response header "%s" must carry scalar values', $name));
+            }
+
+            return;
+        }
+        if (SchemaShape::isObject($schema)) {
+            throw UnsupportedGeneration::forSchema(sprintf('Response header "%s" cannot carry an object value', $name));
+        }
+    }
+
+    private function isContainer(mixed $schema): bool
+    {
+        if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
+            return false;
+        }
+        /** @var array<string, mixed> $schema */
+
+        return SchemaShape::isArray($schema) || SchemaShape::isObject($schema);
     }
 
     /** @return string|list<string> */

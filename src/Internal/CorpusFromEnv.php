@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidConfiguration;
 use Rasuvaeff\PropertyTesting\Runner\Corpus;
 use Rasuvaeff\PropertyTesting\Runner\FilesystemCorpus;
 use Rasuvaeff\PropertyTesting\Runner\Redis\CorpusClient;
@@ -40,7 +41,7 @@ final class CorpusFromEnv
             return new FilesystemCorpus($dsn);
         }
         if (strtolower($matches[1]) !== 'redis') {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidConfiguration(sprintf(
                 'PROPERTY_DB uses an unsupported scheme "%s://"; use redis:// for a shared corpus or a plain directory path for a local one',
                 $matches[1],
             ));
@@ -60,7 +61,7 @@ final class CorpusFromEnv
             return new PredisCorpusClient(new \Predis\Client($dsn->toPredisParameters()));
         }
 
-        throw new \InvalidArgumentException(sprintf(
+        throw new InvalidConfiguration(sprintf(
             'PROPERTY_DB="%s" needs a Redis client: install ext-redis or require predis/predis',
             $raw,
         ));

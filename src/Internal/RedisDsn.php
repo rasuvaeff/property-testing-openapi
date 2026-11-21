@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Internal;
 
+use Rasuvaeff\PropertyTesting\OpenApi\InvalidConfiguration;
+
 /**
  * Parsed `redis://host[:port][/key-prefix]` corpus DSN.
  *
@@ -34,14 +36,14 @@ final readonly class RedisDsn
     {
         $parts = parse_url($dsn);
         if (is_array($parts) && (isset($parts['user']) || isset($parts['pass']))) {
-            throw new \InvalidArgumentException(
+            throw new InvalidConfiguration(
                 'PROPERTY_DB carries credentials in its userinfo, which is not supported; configure Redis AUTH out of band',
             );
         }
 
         $host = is_array($parts) ? ($parts['host'] ?? null) : null;
         if (!is_string($host) || $host === '') {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidConfiguration(sprintf(
                 'PROPERTY_DB="%s" is not a usable Redis DSN; expected redis://host[:port][/key-prefix]',
                 $dsn,
             ));

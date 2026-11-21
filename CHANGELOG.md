@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.20.0 — 2026-11-20
+
+- **Changed.** Every refusal is raised by `forOperation()`, never by a later
+  draw: a multipart part under a media type the generator cannot write, a part
+  `Content-Type` or required part header no HTTP field can carry, a parameter
+  that nests an object or a list, and a response header declared as an object
+  or a list of containers. They used to surface on the draws that happened to
+  include them, without the operation name. The same `UnsupportedGeneration`
+  now arrives earlier and placed (`... for operation "op", request body
+  "multipart/form-data": ...`); a defect in a part's `Content-Type` or header
+  value, which raised `InvalidCase` during generation, is now an
+  `UnsupportedGeneration` from `forOperation()` (#156).
+- **Fixed.** `allOf` generates for the shapes real documents use: annotations
+  (`description`, `title`, `example`, `default`, `x-*`, …) are carried, not
+  merged as constraints, so two components with different descriptions
+  compose; an assertion beside `allOf` — an OAS 3.0 `nullable` or the hoisted
+  `type` of the contract's own form for a 3.1 `$ref` with siblings — joins the
+  conjunction instead of refusing it; the same `minimum`/`maximum`/length/count
+  bound in two branches is met by the tighter one (#153).
+- **Fixed.** The empty value of an `anyOf`/`oneOf`/`if` whose branches declare
+  an object and no array is encoded as `{}`, not `[]`; a non-empty value takes
+  the branch of its own shape (#154).
+- **Fixed.** A bound declared on one side only and lying past the default
+  ±1000 window (`minimum: 1900`) takes the other side 2000 away from itself
+  instead of refusing the schema; a bound inside the window keeps the window,
+  so what generated before generates the same values (#155).
+- **Fixed.** A required multipart part header carries its `example`, its
+  `default` or `x-openapi`, whichever its schema admits, and otherwise a value
+  drawn from the schema at compile time; it used to carry the first of them
+  whatever the schema said (#157).
+- **Fixed.** `uniqueItems` over an integer item domain wider than the integer
+  range no longer throws a `TypeError` (#158).
+- **Fixed.** Property names are matched with the contract's own regex wrapper
+  (`\x07…\x07uD`): a `~` in `patternProperties` is a character, a non-ASCII
+  name is measured in characters, and a pattern PCRE cannot compile is refused
+  at compile time (#159).
+- **Fixed.** A schema made of annotations only admits any value, like `{}`;
+  `enum` and `const` are checked against the keywords beside them, so
+  `{integer, maximum: 5, enum: [1, 100]}` draws only `1`, and a `const` or an
+  `enum` they leave nothing of is refused (#160).
+- **Fixed.** Every exception of the package implements
+  `OpenApiPropertyTestingException`, as the README says: a malformed
+  configuration argument (base URI, rejection or redaction policy,
+  credentials, security requirement, run count, `PROPERTY_*`) throws the new
+  `InvalidConfiguration` (an `InvalidArgumentException`), and a valid or
+  negative check handed a case of the other kind throws `InvalidCase` (#162).
+- **Docs.** `llms.txt` says response headers are written as sent, not
+  percent-encoded, and names the `openapi-contract` ^0.16 constraint (#172).
+- **Tests.** The zoo gained seven operations with shapes from real documents
+  (`composed.create`, `codes.create`, `nullableObjects.create`,
+  `years.create`, `annotated.create`, `parts.create`, `owners.create`), each
+  pinning one of the fixes above end to end; the `openapi-contract` corpus is
+  re-recorded with them (#152).
+
 ## 0.19.2 — 2026-11-04
 
 - **Changed.** No code changes. Re-release of 0.19.1: the `v0.19.1` tag

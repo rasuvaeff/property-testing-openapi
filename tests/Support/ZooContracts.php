@@ -31,6 +31,8 @@ final class ZooContracts
         'search.get', 'narrowed.create', 'bounded.create', 'pages.get', 'profiles.create',
         'labels.get', 'patternLabels.create', 'sparse.create', 'amounts.create', 'settings.create', 'precise.get',
         'tree.create', 'shipments.create',
+        'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
+        'parts.create', 'owners.create',
     ];
 
     /**
@@ -39,7 +41,7 @@ final class ZooContracts
      *
      * @var list<string>
      */
-    public const array LEGACY_OPERATIONS = ['search.get', 'narrowed.create', 'bounded.create'];
+    public const array LEGACY_OPERATIONS = ['search.get', 'narrowed.create', 'bounded.create', 'owners.create'];
 
     public static function contract(): Contract
     {
@@ -486,8 +488,110 @@ final class ZooContracts
                     ]]]],
                     'responses' => ['204' => []],
                 ]],
+                // The shapes below come from real documents, each one a
+                // generation defect the 2026-11-20 review found (#152).
+                //
+                // Components composed by `allOf`, each carrying its own
+                // `description`: annotations are not constraints, so two
+                // that differ do not make the conjunction unmergeable (#153).
+                // A 3.1 `$ref` beside an assertion is compiled by the contract
+                // into `allOf` plus the target's hoisted `type` and
+                // `description` — its own shape, which has to generate too.
+                '/composed' => ['post' => [
+                    'operationId' => 'composed.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'allOf' => [
+                            ['$ref' => '#/components/schemas/Named'],
+                            ['$ref' => '#/components/schemas/Tagged'],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                '/codes' => ['post' => [
+                    'operationId' => 'codes.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['code'],
+                        'properties' => ['code' => ['$ref' => '#/components/schemas/Code', 'maxLength' => 4]],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A nullable object spelled as a 3.1 union: an empty object
+                // under `anyOf`/`oneOf` is still an object on the wire (#154).
+                '/nullable-objects' => ['post' => [
+                    'operationId' => 'nullableObjects.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['any'],
+                        'properties' => [
+                            'any' => ['anyOf' => [['type' => 'object', 'properties' => ['k' => ['type' => 'string', 'maxLength' => 3]]], ['type' => 'null']]],
+                            'one' => ['oneOf' => [['type' => 'object', 'properties' => ['k' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]]], ['type' => 'null']]],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A bound declared on one side only, past the default window
+                // of ±1000 the other side is taken from (#155).
+                '/years' => ['post' => [
+                    'operationId' => 'years.create',
+                    'parameters' => [['name' => 'since', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'minimum' => 1900]]],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['year', 'ratio', 'depth'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'year' => ['type' => 'integer', 'minimum' => 1900],
+                            'ratio' => ['type' => 'number', 'minimum' => 2000.5],
+                            'depth' => ['type' => 'integer', 'maximum' => -5000],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A property described and nothing else admits any value;
+                // an enum is still bound by the keywords beside it (#160).
+                '/annotated' => ['post' => [
+                    'operationId' => 'annotated.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['meta', 'level'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'meta' => ['description' => 'free-form'],
+                            'level' => ['type' => 'integer', 'maximum' => 5, 'enum' => [1, 3, 100]],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // A required part header is checked against its schema, so
+                // its value has to satisfy it (#157).
+                '/parts' => ['post' => [
+                    'operationId' => 'parts.create',
+                    'requestBody' => ['required' => true, 'content' => ['multipart/form-data' => [
+                        'schema' => [
+                            'type' => 'object',
+                            'required' => ['note'],
+                            'additionalProperties' => false,
+                            'properties' => ['note' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+                        ],
+                        'encoding' => ['note' => ['headers' => ['X-Revision' => ['required' => true, 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9]]]]],
+                    ]]],
+                    'responses' => ['204' => []],
+                ]],
             ],
-            'components' => ['schemas' => ['Node' => [
+            'components' => ['schemas' => ['Named' => [
+                'type' => 'object',
+                'description' => 'Has a name',
+                'required' => ['name'],
+                'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 6]],
+            ], 'Tagged' => [
+                'type' => 'object',
+                'description' => 'Has tags',
+                'properties' => ['tags' => ['type' => 'array', 'maxItems' => 2, 'items' => ['type' => 'string', 'maxLength' => 3]]],
+            ], 'Code' => [
+                'type' => 'string',
+                'description' => 'A short code',
+                'minLength' => 1,
+            ], 'Node' => [
                 'type' => 'object',
                 'required' => ['id', 'name'],
                 'additionalProperties' => false,
@@ -545,7 +649,25 @@ final class ZooContracts
                         'properties' => ['name' => ['type' => 'string', 'nullable' => true, 'minLength' => 1, 'maxLength' => 6]],
                     ]]]],
                     'responses' => ['204' => []],
+                ]],
+                // The OAS 3.0 spelling of a nullable reference: `nullable`
+                // beside an `allOf` of one `$ref`, whose target carries a
+                // `description` (#153).
+                '/owners' => ['post' => [
+                    'operationId' => 'owners.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['owner'],
+                        'properties' => ['owner' => ['nullable' => true, 'allOf' => [['$ref' => '#/components/schemas/Owner']]]],
+                    ]]]],
+                    'responses' => ['204' => []],
                 ]]],
+            'components' => ['schemas' => ['Owner' => [
+                'type' => 'object',
+                'description' => 'An owner',
+                'required' => ['name'],
+                'properties' => ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 4]],
+            ]]],
         ];
     }
 

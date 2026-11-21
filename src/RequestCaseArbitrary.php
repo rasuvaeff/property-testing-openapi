@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
+use Rasuvaeff\OpenApiContract\InvalidContract;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
@@ -45,8 +48,11 @@ final readonly class RequestCaseArbitrary
 
     private RequestSchemas $requestSchemas;
 
+    private SchemaCheck $check;
+
     public function __construct()
     {
+        $this->check = new SchemaCheck();
         $this->schemas = new SchemaArbitraryCompiler();
         $this->bodySchemas = new SchemaArbitraryCompiler(direction: SchemaDirection::Request);
         $this->parameterSchemas = new ParameterSchemas();
@@ -91,6 +97,7 @@ final readonly class RequestCaseArbitrary
 
             try {
                 $schema = $this->parameterSchemas->forLocation($parameter['schema'], $location, $parameter['style']);
+                $this->assertFlatParameter($schema);
                 $compiled = $this->compilerFor($separator)->compile($parameter['required'] ? $this->nonEmptyContainer($schema) : $schema);
             } catch (UnsupportedGeneration $refusal) {
                 throw $refusal->inOperation($operation->key, sprintf('%s parameter "%s"', $location, $parameter['name']));
@@ -200,7 +207,7 @@ final readonly class RequestCaseArbitrary
 
             /** @var array<string, mixed> $definition */
             try {
-                $body = $this->bodyArbitrary($mediaType, $normalized, $schema, $definition);
+                $body = $this->bodyArbitrary($mediaType, $normalized, $schema, $definition, $operation->dialect);
             } catch (UnsupportedGeneration $refusal) {
                 throw $refusal->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
             }
@@ -234,7 +241,7 @@ final readonly class RequestCaseArbitrary
      * @return null|ArbitraryInterface<mixed> `null` for a media type this
      *         package does not generate
      */
-    private function bodyArbitrary(string $mediaType, string $normalized, array $schema, array $definition): ?ArbitraryInterface
+    private function bodyArbitrary(string $mediaType, string $normalized, array $schema, array $definition, SchemaDialect $dialect): ?ArbitraryInterface
     {
         if (MediaType::isJson($mediaType)) {
             /** @var ArbitraryInterface<mixed> $json */
@@ -261,8 +268,10 @@ final readonly class RequestCaseArbitrary
         if (str_starts_with($normalized, 'multipart/')) {
             $this->assertObjectSchema($schema, 'Multipart request body schema must be an object');
             $this->assertMultipartEncoding($definition['encoding'] ?? []);
+            $values = $this->multipartValues($schema);
+            $plans = $this->partPlans($schema, $definition, $dialect);
             /** @var ArbitraryInterface<mixed> $multipart */
-            $multipart = Gen::map($this->multipartValues($schema), fn(array $value): array => $this->multipartBody($mediaType, $schema, $definition, $value));
+            $multipart = Gen::map($values, fn(array $value): array => $this->multipartBody($mediaType, $plans, $value));
 
             return $multipart;
         }
@@ -438,18 +447,27 @@ final readonly class RequestCaseArbitrary
         );
     }
 
-    /** @param array<string, mixed> $definition
-     * @param array<array-key, mixed> $value
+    /**
+     * What every part of a property is written with, settled when the
+     * operation is compiled rather than when a case is drawn: the content
+     * type a part declares and the headers it requires are document facts,
+     * and a document this package cannot write is refused from
+     * `forOperation()`, by name, not on the draws that happen to include the
+     * part (#156).
+     *
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $definition
+     * @return array<array-key, array{contentType: string, headers: array<string, string>}>
      */
-    private function multipartBody(string $mediaType, array $schema, array $definition, array $value): array
+    private function partPlans(array $schema, array $definition, SchemaDialect $dialect): array
     {
-        $boundary = 'openapi-' . substr(hash('sha256', $mediaType . serialize($value)), 0, 16);
-        $parts = [];
         $properties = is_array($schema['properties'] ?? null) ? (array) $schema['properties'] : [];
         $encoding = is_array($definition['encoding'] ?? null) ? (array) $definition['encoding'] : [];
-        foreach (array_keys($value) as $name) {
-            $property = is_array($properties[$name] ?? null) ? (array) $properties[$name] : [];
-            /** @var array<string, mixed> $property */
+        $plans = [];
+        foreach ($properties as $name => $property) {
+            if (!is_array($property) || ($property['readOnly'] ?? false) === true) {
+                continue;
+            }
             $partSchema = is_array($property['items'] ?? null) ? (array) $property['items'] : $property;
             /** @var array<string, mixed> $partSchema */
             $configuration = is_array($encoding[$name] ?? null) ? (array) $encoding[$name] : [];
@@ -458,15 +476,40 @@ final readonly class RequestCaseArbitrary
             $contentType = is_string($configuredType) && $configuredType !== ''
                 ? $configuredType
                 : $this->multipartContentType($partSchema);
-            ParameterSerializer::assertTransmittableHeader('Content-Type', $contentType);
-            $headers = $this->multipartHeaders($configuration['headers'] ?? []);
+
+            try {
+                ParameterSerializer::assertTransmittableHeader('Content-Type', $contentType);
+            } catch (InvalidCase $defect) {
+                throw UnsupportedGeneration::forSchema(sprintf('multipart property "%s": %s', (string) $name, $defect->getMessage()));
+            }
+            if (!$this->isBinaryPart($partSchema) && !$this->isWritablePartType($contentType)) {
+                throw UnsupportedGeneration::forSchema(sprintf('Multipart property "%s" declares content type "%s", which this generator can write neither as text nor as JSON', (string) $name, $contentType));
+            }
+            $plans[$name] = ['contentType' => $contentType, 'headers' => $this->multipartHeaders((string) $name, $configuration['headers'] ?? [], $dialect)];
+        }
+
+        return $plans;
+    }
+
+    /**
+     * @param array<array-key, array{contentType: string, headers: array<string, string>}> $plans
+     * @param array<array-key, mixed> $value
+     */
+    private function multipartBody(string $mediaType, array $plans, array $value): array
+    {
+        $boundary = 'openapi-' . substr(hash('sha256', $mediaType . serialize($value)), 0, 16);
+        $parts = [];
+        foreach (array_keys($value) as $name) {
+            $plan = $plans[$name] ?? throw new \LogicException('Generated multipart property has no plan');
+            $contentType = $plan['contentType'];
+            $headers = $plan['headers'];
             $items = is_array($value[$name]) && array_is_list($value[$name]) ? $value[$name] : [$value[$name]];
             $parts = array_merge($parts, array_map(function (mixed $partValue) use ($name, $contentType, $headers): array {
                 $binary = is_array($partValue) && ($partValue['__openapi_encoding'] ?? null) === 'base64';
 
                 return [
                     'name' => $name,
-                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->partText((string) $name, $partValue, $contentType),
+                    'value' => $binary ? (string) ($partValue['value'] ?? '') : $this->partText($partValue, $contentType),
                     'encoding' => $binary ? 'base64' : 'text',
                     'contentType' => $contentType,
                     'headers' => $headers,
@@ -475,6 +518,24 @@ final readonly class RequestCaseArbitrary
         }
 
         return ['mediaType' => $mediaType, 'encoding' => 'multipart', 'boundary' => $boundary, 'parts' => $parts];
+    }
+
+    /**
+     * The same reading {@see multipartProperty()} generates by: a binary
+     * part carries bytes whatever its declared type says.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function isBinaryPart(array $schema): bool
+    {
+        return ($schema['format'] ?? null) === 'binary' && (($schema['type'] ?? null) === 'string' || !array_key_exists('type', $schema));
+    }
+
+    private function isWritablePartType(string $contentType): bool
+    {
+        $normalized = MediaType::normalize($contentType);
+
+        return MediaType::isJson($normalized) || str_starts_with($normalized, 'text/') || $normalized === 'application/octet-stream';
     }
 
     /**
@@ -494,20 +555,16 @@ final readonly class RequestCaseArbitrary
      * or `application/octet-stream` part is the value verbatim; a JSON part
      * carries the JSON encoding of the value — the validator decodes it as
      * JSON, so a bare `abc` under `application/json` is a decoding failure,
-     * not a string (#122). A media type this package can write neither way
-     * fails closed: a body it cannot vouch for is not a valid case.
+     * not a string (#122). Any other media type was refused when the
+     * operation was compiled ({@see partPlans()}).
      */
-    private function partText(string $name, mixed $value, string $contentType): string
+    private function partText(mixed $value, string $contentType): string
     {
-        $normalized = MediaType::normalize($contentType);
-        if (MediaType::isJson($normalized)) {
+        if (MediaType::isJson(MediaType::normalize($contentType))) {
             return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
-        if (str_starts_with($normalized, 'text/') || $normalized === 'application/octet-stream') {
-            return $this->scalar($value);
-        }
 
-        throw new UnsupportedGeneration(sprintf('Multipart property "%s" declares content type "%s", which this generator can write neither as text nor as JSON', $name, $contentType));
+        return $this->scalar($value);
     }
 
     /**
@@ -597,8 +654,19 @@ final readonly class RequestCaseArbitrary
         return array_merge($schema, ['properties' => $properties]);
     }
 
-    /** @return array<string, string> */
-    private function multipartHeaders(mixed $headers): array
+    /**
+     * The value of every header a part requires. The contract checks a
+     * present part header against its schema (openapi-contract reads it as a
+     * `simple` header parameter), so the value is one the schema admits: the
+     * document's `example`, then its `default`, then the literal `x-openapi`,
+     * whichever the contract accepts first; past those, a value drawn from
+     * the schema itself at compile time. A header with no value either way
+     * is refused (#157). A header without a schema is not checked, and keeps
+     * the first candidate as before.
+     *
+     * @return array<string, string>
+     */
+    private function multipartHeaders(string $property, mixed $headers, SchemaDialect $dialect): array
     {
         if (!is_array($headers) || array_is_list($headers)) {
             return [];
@@ -611,14 +679,91 @@ final readonly class RequestCaseArbitrary
             if (($definition['required'] ?? false) !== true) {
                 continue;
             }
-            /** @var mixed $headerValue */
-            $headerValue = is_scalar($definition['example'] ?? null) ? $definition['example'] : (is_scalar($definition['default'] ?? null) ? $definition['default'] : 'x-openapi');
-            $value = $this->scalar($headerValue);
-            ParameterSerializer::assertTransmittableHeader($name, $value);
+            $value = $this->partHeaderValue($definition, $dialect)
+                ?? throw UnsupportedGeneration::forSchema(sprintf('multipart property "%s" requires header "%s", and no value its schema admits can be generated', $property, $name));
+
+            try {
+                ParameterSerializer::assertTransmittableHeader($name, $value);
+            } catch (InvalidCase $defect) {
+                throw UnsupportedGeneration::forSchema(sprintf('multipart property "%s": %s', $property, $defect->getMessage()));
+            }
             $result[$name] = $value;
         }
 
         return $result;
+    }
+
+    /** @param array<array-key, mixed> $definition */
+    private function partHeaderValue(array $definition, SchemaDialect $dialect): ?string
+    {
+        $candidates = [...$this->scalarOf($definition['example'] ?? null), ...$this->scalarOf($definition['default'] ?? null), 'x-openapi'];
+        $schema = $definition['schema'] ?? null;
+        if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
+            return $this->scalar($candidates[0]);
+        }
+        /** @var array<string, mixed> $schema */
+        $list = SchemaShape::isArray($schema);
+        foreach ($candidates as $candidate) {
+            $wire = $this->scalar($candidate);
+            if (!$this->parameterSchemas->isHeaderSafe($wire, $list)) {
+                continue;
+            }
+            foreach ([$candidate, $wire] as $typed) {
+                if ($this->partHeaderAccepts($list ? [$typed] : $typed, $schema, $dialect)) {
+                    return $wire;
+                }
+            }
+        }
+        if ($list || SchemaShape::isObject($schema)) {
+            return null;
+        }
+
+        return $this->drawnHeaderValue($schema);
+    }
+
+    /** @return list<scalar> the value, when it is a scalar */
+    private function scalarOf(mixed $value): array
+    {
+        return is_scalar($value) ? [$value] : [];
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function partHeaderAccepts(mixed $value, array $schema, SchemaDialect $dialect): bool
+    {
+        try {
+            return $this->check->accepts($value, $schema, $dialect);
+        } catch (InvalidContract) {
+            return false;
+        }
+    }
+
+    /**
+     * A value drawn from a scalar header schema with the header rules a
+     * request header parameter is generated by, at a fixed seed: the header
+     * of every case is the same, as it was when it was always the literal.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function drawnHeaderValue(array $schema): ?string
+    {
+        $separator = ParameterSchemas::separatorOf('header', 'simple', $schema);
+
+        try {
+            $compiled = $this->compilerFor($separator)->compile($this->parameterSchemas->forLocation($schema, 'header', 'simple'));
+        } catch (UnsupportedGeneration) {
+            return null;
+        }
+        $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isHeaderSafe($value));
+        $random = new Random(self::PROBE_SEED);
+        for ($probe = 0; $probe < self::PROBES; ++$probe) {
+            try {
+                return WireValue::of($compiled->generate($random)->value);
+            } catch (GenerationExhaustedException) {
+                continue;
+            }
+        }
+
+        return null;
     }
 
     private function assertFormEncoding(mixed $encoding): void
@@ -652,6 +797,52 @@ final readonly class RequestCaseArbitrary
                 throw new UnsupportedGeneration('Multipart encoding supports only form style');
             }
         }
+    }
+
+    /**
+     * A parameter value travels as text: a list of scalars or an object of
+     * scalars at most. Whether a schema nests deeper is a fact of the
+     * document, so it is refused when the operation is compiled, not on the
+     * draw that first produces a nested value (#156).
+     *
+     * @param array<string, mixed> $schema
+     */
+    private function assertFlatParameter(array $schema): void
+    {
+        $nested = match (true) {
+            SchemaShape::isArray($schema) => $this->isNested($schema['items'] ?? null) || $this->anyNested($schema['prefixItems'] ?? null),
+            SchemaShape::isObject($schema) => $this->anyNested($schema['properties'] ?? null)
+                || $this->isNested($schema['additionalProperties'] ?? null)
+                || $this->anyNested($schema['patternProperties'] ?? null),
+            default => false,
+        };
+        if ($nested) {
+            throw UnsupportedGeneration::forSchema('Parameter values must be scalar, arrays, or objects with scalar properties');
+        }
+    }
+
+    private function anyNested(mixed $members): bool
+    {
+        if (!is_array($members)) {
+            return false;
+        }
+        foreach (array_keys($members) as $key) {
+            if ($this->isNested($members[$key])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isNested(mixed $member): bool
+    {
+        if (!is_array($member) || ($member !== [] && array_is_list($member))) {
+            return false;
+        }
+        /** @var array<string, mixed> $member */
+
+        return SchemaShape::isArray($member) || SchemaShape::isObject($member);
     }
 
     /** @param array<string, mixed> $schema */

@@ -196,4 +196,76 @@ final class ContainerArbitrariesTest
             Assert::true(abs($kinds[$kind] - $expected) < 110, sprintf('%s drawn %d times in 2800', $kind, $kinds[$kind]));
         }
     }
+
+    /**
+     * A bounded integer item domain wider than the integer range is too large
+     * to bound a `uniqueItems` list: it counts as unknown, not as a float
+     * returned where an int was promised (#158).
+     */
+    public function uniqueItemsOverAnIntegerDomainWiderThanTheIntegerRangeGenerates(): void
+    {
+        foreach ([[0, PHP_INT_MAX], [PHP_INT_MIN, PHP_INT_MAX], [PHP_INT_MIN, -1]] as [$minimum, $maximum]) {
+            $schema = ['type' => 'array', 'minItems' => 2, 'maxItems' => 3, 'uniqueItems' => true, 'items' => ['type' => 'integer', 'minimum' => $minimum, 'maximum' => $maximum]];
+            foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 10, seed: 2) as $value) {
+                Assert::true(is_array($value) && count($value) >= 2 && count(array_unique($value)) === count($value));
+            }
+        }
+    }
+
+    public function uniqueItemsOverTheLastIntegersStillCountsTheDomain(): void
+    {
+        Expect::exception(UnsupportedGeneration::class);
+        (new SchemaArbitraryCompiler())->compile(['type' => 'array', 'minItems' => 3, 'uniqueItems' => true, 'items' => ['type' => 'integer', 'minimum' => PHP_INT_MAX - 1, 'maximum' => PHP_INT_MAX]]);
+    }
+
+    /**
+     * Names are matched with the contract's own wrapper, so a `~` in a
+     * pattern is a character and not a delimiter (#159).
+     */
+    public function aPatternPropertyHoldingTheOldDelimiterGenerates(): void
+    {
+        $schema = ['type' => 'object', 'minProperties' => 1, 'additionalProperties' => false, 'patternProperties' => ['^a~[bc]$' => ['type' => 'integer']]];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 20, seed: 4) as $value) {
+            Assert::true(is_array($value) && $value !== []);
+            foreach (array_keys($value) as $name) {
+                Assert::true(in_array($name, ['a~b', 'a~c'], strict: true), (string) $name);
+            }
+        }
+    }
+
+    /**
+     * Under `u` a character is one character: `^.$` admits `é`, which bytes
+     * alone count as two (#159).
+     */
+    public function aPropertyNamesPatternReadsCharactersNotBytes(): void
+    {
+        $schema = ['type' => 'object', 'required' => ['é'], 'properties' => ['é' => ['type' => 'integer']], 'propertyNames' => ['pattern' => '^.$']];
+
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 10, seed: 4) as $value) {
+            Assert::true(is_array($value) && array_key_exists('é', $value));
+        }
+    }
+
+    /** `$` before a trailing newline is not the end of the name under `D`. */
+    public function aPropertyNamesPatternDoesNotMatchBeforeATrailingNewline(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: propertyNames excludes a declared property');
+        (new SchemaArbitraryCompiler())->compile(['type' => 'object', 'properties' => ["a\n" => ['type' => 'integer']], 'propertyNames' => ['pattern' => '^a$']]);
+    }
+
+    public function aPatternPropertyKeyPcreCannotCompileIsRefusedBeforeGeneration(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: patternProperties key is not supported: ^a(');
+        (new SchemaArbitraryCompiler())->compile(['type' => 'object', 'patternProperties' => ['^a(' => ['type' => 'integer']]]);
+    }
+
+    public function aPropertyNamesPatternPcreCannotCompileIsRefusedBeforeGeneration(): void
+    {
+        Expect::exception(UnsupportedGeneration::class)
+            ->withMessage('Unsupported OpenAPI schema generation: propertyNames pattern is not supported');
+        (new SchemaArbitraryCompiler())->compile(['type' => 'object', 'propertyNames' => ['pattern' => '^a(']]);
+    }
 }

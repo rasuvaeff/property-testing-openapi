@@ -213,17 +213,17 @@ final readonly class RequestMaterializer
     private function assertBaseUri(string $baseUri): void
     {
         if ($baseUri === '' || ($baseUri !== '/' && str_ends_with($baseUri, '/')) || preg_match('/[?#@\\s]/', $baseUri) === 1) {
-            throw new \InvalidArgumentException(sprintf('Base URI "%s" must be an absolute URI or a root-relative path without a trailing slash, userinfo, query, or fragment', $baseUri));
+            throw new InvalidConfiguration(sprintf('Base URI "%s" must be an absolute URI or a root-relative path without a trailing slash, userinfo, query, or fragment', $baseUri));
         }
         if (str_starts_with($baseUri, '/')) {
             if (str_starts_with($baseUri, '//')) {
-                throw new \InvalidArgumentException(sprintf('Base URI "%s" must not be protocol-relative', $baseUri));
+                throw new InvalidConfiguration(sprintf('Base URI "%s" must not be protocol-relative', $baseUri));
             }
 
             return;
         }
         if (preg_match('~^(?:https?)://[A-Za-z0-9.\-]+(?::[1-9][0-9]{0,4})?(?:/[^/?#][^?#]*)?\z~', $baseUri) !== 1) {
-            throw new \InvalidArgumentException(sprintf('Base URI "%s" must be http(s)://host[:port][/base] or a root-relative path', $baseUri));
+            throw new InvalidConfiguration(sprintf('Base URI "%s" must be http(s)://host[:port][/base] or a root-relative path', $baseUri));
         }
     }
 

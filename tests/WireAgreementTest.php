@@ -508,11 +508,13 @@ final class WireAgreementTest
 
     public function aPartUnderAMediaTypeThatIsNeitherTextNorJsonFailsClosed(): void
     {
-        Expect::exception(UnsupportedGeneration::class)->withMessage('Multipart property "meta" declares content type "application/xml", which this generator can write neither as text nor as JSON');
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation for operation "uploads.create", request body "multipart/form-data": Multipart property "meta" declares content type "application/xml", which this generator can write neither as text nor as JSON');
 
         $contract = $this->multipartContract(['meta' => ['type' => 'string']], ['meta' => ['contentType' => 'application/xml']]);
 
-        (new RequestCaseArbitrary())->forOperation($contract->operation('uploads.create'))->generate(new Random(1));
+        // Refused while the operation is compiled, whether or not a draw
+        // would include the part (#156).
+        (new RequestCaseArbitrary())->forOperation($contract->operation('uploads.create'));
     }
 
     /**

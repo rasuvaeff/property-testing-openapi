@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi;
 
+use Rasuvaeff\OpenApiContract\InvalidContract;
 use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Annotations;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Definitions;
@@ -109,9 +111,12 @@ final readonly class SchemaArbitraryCompiler
             return $this->composition->not($schema);
         }
         $this->assertSupported($schema);
-        if ($schema === []) {
+        if (Annotations::strip($schema) === []) {
+            // `{}` admits any value, and so does a schema that only
+            // describes one: an annotation constrains nothing (#160).
             return $this->containers->additionalValue();
         }
+        $schema = $this->enumWithinSiblings($schema);
         if (($schema['nullable'] ?? false) === true) {
             unset($schema['nullable']);
             // OAS 3.0: with an enum (or const), null is selectable only when
@@ -266,7 +271,7 @@ final readonly class SchemaArbitraryCompiler
             }
             /** @var array<string, mixed> $member */
             foreach (array_keys($member) as $keyword) {
-                if (!in_array($keyword, ['type', 'required', 'properties', 'minProperties', 'maxProperties', 'additionalProperties', 'description', 'title'], strict: true)) {
+                if (!Annotations::is($keyword) && !in_array($keyword, ['type', 'required', 'properties', 'minProperties', 'maxProperties', 'additionalProperties'], strict: true)) {
                     throw UnsupportedGeneration::forSchema(sprintf('dependentSchemas keyword "%s" is outside the constructive subset', $keyword));
                 }
             }
@@ -446,6 +451,74 @@ final readonly class SchemaArbitraryCompiler
         }
 
         throw UnsupportedGeneration::forSchema('a type, properties, or items declaration is required');
+    }
+
+    /**
+     * `enum` and `const` are one assertion among their siblings, not a way
+     * around them: the contract checks a member against `maximum`, `type`
+     * and the rest as well, so a member they reject is not a value of the
+     * schema (#160). The members are judged by the contract, each encoded the
+     * way the validator reads it. A `null` member is left alone: under OAS
+     * 3.0 it is `nullable` that admits it, and that keyword is gone by the
+     * time the compiler recurses into the schema it qualified. A `const` the
+     * siblings reject, and an `enum` none of whose members survives, admit
+     * nothing and are refused. The schema comes back untouched when every
+     * member passes, so what generates today keeps generating the same values.
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private function enumWithinSiblings(array $schema): array
+    {
+        $hasConst = array_key_exists('const', $schema);
+        if (!$hasConst && !is_array($schema['enum'] ?? null)) {
+            return $schema;
+        }
+        $siblings = $schema;
+        unset($siblings['enum'], $siblings['const'], $siblings['nullable']);
+        if (Annotations::strip($siblings) === []) {
+            return $schema;
+        }
+        $admits = fn(mixed $member): bool => $member === null || $this->siblingsAdmit($member, $siblings);
+        if ($hasConst) {
+            if (!$admits($schema['const'])) {
+                throw UnsupportedGeneration::forSchema('const is rejected by the keywords beside it');
+            }
+
+            return $schema;
+        }
+        /** @var array<array-key, mixed> $members */
+        $members = $schema['enum'];
+        $kept = array_values(array_filter($members, $admits));
+        if (count($kept) === count($members)) {
+            return $schema;
+        }
+        if ($kept === []) {
+            throw UnsupportedGeneration::forSchema('enum has no member the keywords beside it admit');
+        }
+        $schema['enum'] = $kept;
+
+        return $schema;
+    }
+
+    /** @param array<string, mixed> $siblings */
+    private function siblingsAdmit(mixed $member, array $siblings): bool
+    {
+        // The compiler is handed a schema without its document, so the
+        // dialect is read off the one keyword that tells them apart here:
+        // OAS 3.0 spells an exclusive bound as a boolean.
+        $dialect = is_bool($siblings['exclusiveMinimum'] ?? null) || is_bool($siblings['exclusiveMaximum'] ?? null)
+            ? SchemaDialect::OpenApi30
+            : SchemaDialect::OpenApi31;
+
+        try {
+            return $this->check->accepts($this->encoder->jsonValue($member, $siblings), $siblings, $dialect, $this->direction ?? SchemaDirection::Request);
+        } catch (InvalidContract|InvalidCase) {
+            // A sibling the contract cannot evaluate on its own is no reason
+            // to drop a member the document lists: the member is kept, as it
+            // was before this check existed.
+            return true;
+        }
     }
 
     /** @param array<string, mixed> $schema */

@@ -728,8 +728,11 @@ final class ContractSuiteTest
     // scales with the run count too, so the ratio stays put and only the
     // spread narrows. Setting each threshold at roughly a third of what the
     // dilution allows does fix it, and still fails loudly on the thing the
-    // gate is for — a branch reached zero times.
-    #[Property(runs: 900, generators: [ZooContracts::class, 'taggedCase'])]
+    // gate is for — a branch reached zero times. The run count follows the
+    // zoo too: 900 runs over 32 operations became 1100 over the 39 the zoo
+    // has since #152, and the half-an-operation gates went from 0.5% to 0.4%
+    // to stay as many standard deviations under their mean as they were.
+    #[Property(runs: 1100, generators: [ZooContracts::class, 'taggedCase'])]
     public function zooValidCasesPassTheBuiltInChecks(array $tagged): void
     {
         $key = $tagged['key'];
@@ -761,8 +764,8 @@ final class ContractSuiteTest
         if ($key === 'dual.create') {
             $mediaType = $case['body']['mediaType'] ?? null;
             Assert::true($mediaType === 'application/json' || $mediaType === 'application/x-www-form-urlencoded');
-            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.5);
-            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.5);
+            Classify::cover(condition: $mediaType === 'application/json', label: 'dual body as json', minPercent: 0.4);
+            Classify::cover(condition: $mediaType === 'application/x-www-form-urlencoded', label: 'dual body as form', minPercent: 0.4);
         }
         if ($key === 'enum.get') {
             Assert::same($case['path']['mode'], 'ok');
@@ -774,13 +777,13 @@ final class ContractSuiteTest
             foreach (is_array($value) && is_array($value['history'] ?? null) ? $value['history'] : [] as $entry) {
                 Assert::true(is_array($entry) && !array_key_exists('at', $entry));
             }
-            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 0.5);
+            Classify::cover(condition: is_array($value) && array_key_exists('history', $value), label: 'history present', minPercent: 0.4);
         }
         if ($key === 'search.get') {
             Assert::true(in_array($case['path']['scope'], ['all', 'mine'], strict: true));
             Assert::true($case['query']['limit'] !== 'null');
-            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 0.5);
-            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 0.5);
+            Classify::cover(condition: array_key_exists('cursor', $case['query']), label: 'nullable cursor present', minPercent: 0.4);
+            Classify::cover(condition: !array_key_exists('cursor', $case['query']), label: 'nullable cursor absent', minPercent: 0.4);
         }
     }
 

@@ -26,6 +26,53 @@ final class JsonBodyEncoderTest
 
     public static function encodingProvider(): iterable
     {
+        // A union or a conditional gives the value its shape when the schema
+        // itself declares none (#154).
+        yield 'empty value under anyOf of an object and null' => [
+            [],
+            ['anyOf' => [['type' => 'object', 'properties' => ['k' => ['type' => 'string']]], ['type' => 'null']]],
+            '{}',
+        ];
+        yield 'empty value under oneOf of an object and null' => [
+            [],
+            ['oneOf' => [['type' => 'null'], ['type' => 'object']]],
+            '{}',
+        ];
+        yield 'empty value under then' => [
+            [],
+            ['if' => ['const' => 1], 'then' => ['type' => 'object'], 'else' => ['type' => 'null']],
+            '{}',
+        ];
+        yield 'empty value under else' => [
+            [],
+            ['if' => ['const' => 1], 'then' => true, 'else' => ['properties' => []]],
+            '{}',
+        ];
+        yield 'empty value under a union of an array only' => [
+            [],
+            ['anyOf' => [['type' => 'array'], ['type' => 'null']]],
+            '[]',
+        ];
+        yield 'empty value under a union of both shapes stays as it was' => [
+            [],
+            ['anyOf' => [['type' => 'array'], ['type' => 'object']]],
+            '[]',
+        ];
+        yield 'a map takes the object branch, and its empty member stays an object' => [
+            ['o' => []],
+            ['anyOf' => [['type' => 'array', 'items' => ['type' => 'string']], ['type' => 'object', 'properties' => ['o' => ['type' => 'object']]]]],
+            '{"o":{}}',
+        ];
+        yield 'a list takes the array branch, and its empty item stays an object' => [
+            [[]],
+            ['anyOf' => [['type' => 'object'], ['type' => 'array', 'items' => ['type' => 'object']]]],
+            '[{}]',
+        ];
+        yield 'a referenced branch is read through $defs' => [
+            [],
+            ['$defs' => ['O' => ['type' => 'object']], 'anyOf' => [['$ref' => '#/$defs/O'], ['type' => 'null'], 'malformed']],
+            '{}',
+        ];
         // `contains` adds to `items`; it does not replace it.
         yield 'items keep their own type beside contains' => [
             [[]],

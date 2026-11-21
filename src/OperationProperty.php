@@ -160,14 +160,14 @@ final readonly class OperationProperty
     private static function resolveRuns(int $runs): int
     {
         if ($runs < 1) {
-            throw new \InvalidArgumentException('Runs must be greater than or equal to 1');
+            throw new InvalidConfiguration('Runs must be greater than or equal to 1');
         }
         $env = getenv('PROPERTY_RUNS');
         if ($env === false || $env === '') {
             return $runs;
         }
         if (preg_match('/^[1-9][0-9]*\z/', $env) !== 1) {
-            throw new \InvalidArgumentException(sprintf('PROPERTY_RUNS must be a positive integer, got "%s"', $env));
+            throw new InvalidConfiguration(sprintf('PROPERTY_RUNS must be a positive integer, got "%s"', $env));
         }
 
         return (int) $env;
@@ -180,7 +180,7 @@ final readonly class OperationProperty
             return null;
         }
         if (preg_match('/^-?[0-9]+\z/', $env) !== 1) {
-            throw new \InvalidArgumentException(sprintf('PROPERTY_SEED must be an integer, got "%s"', $env));
+            throw new InvalidConfiguration(sprintf('PROPERTY_SEED must be an integer, got "%s"', $env));
         }
 
         return (int) $env;
