@@ -7,6 +7,9 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\Operation;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\FormBodies;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartBodies;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Presence;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RawBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestCaseArbitrary;
 use Rasuvaeff\PropertyTesting\OpenApi\RequestMaterializer;
@@ -27,6 +30,9 @@ use Testo\Test;
 #[Test]
 #[Covers(RawBodies::class)]
 #[Covers(RequestCaseArbitrary::class)]
+#[Covers(FormBodies::class)]
+#[Covers(MultipartBodies::class)]
+#[Covers(Presence::class)]
 #[Covers(ResponseCaseArbitrary::class)]
 final class RawBodiesTest
 {

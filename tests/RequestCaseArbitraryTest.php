@@ -29,9 +29,11 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ConstructibleCategories;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\CorpusFromEnv;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\DirectionalSchemas;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\FormBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\LazyPhpRedisCorpusClient;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartBodies;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MultipartParser;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\BodyTargets;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\FormatRefusal;
@@ -43,6 +45,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\WitnessCheck;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Presence;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RedisDsn;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ResponseSchemas;
@@ -80,6 +83,9 @@ use Testo\Test;
 
 #[Test]
 #[Covers(RequestCaseArbitrary::class)]
+#[Covers(FormBodies::class)]
+#[Covers(MultipartBodies::class)]
+#[Covers(Presence::class)]
 #[Covers(NegativeRequestCaseArbitrary::class)]
 #[Covers(ParameterTargets::class)]
 #[Covers(PatternWitness::class)]
