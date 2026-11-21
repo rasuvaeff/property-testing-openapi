@@ -10,7 +10,6 @@ use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
-use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Annotations;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ContainerArbitraries;
@@ -19,7 +18,7 @@ use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\Unproducible;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\JsonBodyEncoder;
-use Rasuvaeff\PropertyTesting\Random;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
 
 /**
  * Compiles the explicit JSON-compatible schema subset into shrinkable values.
@@ -34,10 +33,6 @@ final readonly class SchemaArbitraryCompiler
      * collection budget.
      */
     private const int RECURSION_DEPTH = 3;
-
-    private const int CONDITIONAL_PROBES = 8;
-
-    private const int CONDITIONAL_PROBE_SEED = 11;
 
     private SchemaFacts $facts;
 
@@ -202,25 +197,25 @@ final readonly class SchemaArbitraryCompiler
         $pairs = [];
         if ($hasThen) {
             $true = $condition === false || $then === false
-                ? $this->impossible()
+                ? Probe::impossible()
                 : $this->compile(['allOf' => [$schema, $this->asSchema($condition), $this->asSchema($then)]]);
         } else {
             $true = $this->compile($schema);
             $true = Gen::filter($true, fn(mixed $value): bool => $this->matchesCondition($value, $condition));
         }
-        if ($this->yieldsSomething($true)) {
+        if (Probe::yields($true)) {
             $pairs[] = [1, $true];
         }
 
         if ($hasElse) {
             $false = ($else === false)
-                ? $this->impossible()
+                ? Probe::impossible()
                 : $this->compile(['allOf' => [$schema, $this->asSchema($else)]]);
         } else {
             $false = $this->compile($schema);
         }
         $false = Gen::filter($false, fn(mixed $value): bool => !$this->matchesCondition($value, $condition));
-        if ($this->yieldsSomething($false)) {
+        if (Probe::yields($false)) {
             $pairs[] = [1, $false];
         }
         if ($pairs === []) {
@@ -376,26 +371,7 @@ final readonly class SchemaArbitraryCompiler
         return $schema === true ? [] : $schema;
     }
 
-    private function impossible(): ArbitraryInterface
-    {
-        return Gen::filter(Gen::constant(null), static fn(): bool => false);
-    }
 
-    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
-    {
-        $random = new Random(self::CONDITIONAL_PROBE_SEED);
-        for ($probe = 0; $probe < self::CONDITIONAL_PROBES; ++$probe) {
-            try {
-                $arbitrary->generate($random);
-
-                return true;
-            } catch (GenerationExhaustedException) {
-                continue;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * A local reference into the schema's `$defs`: the compiled form of a

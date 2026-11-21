@@ -7,6 +7,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 use Rasuvaeff\OpenApiContract\SchemaDirection;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
 
@@ -147,7 +148,7 @@ final readonly class ContainerArbitraries
     {
         if ($schema === false) {
             /** @var ArbitraryInterface<mixed> $impossible */
-            $impossible = Gen::filter(Gen::constant(value: null), static fn(): bool => false);
+            $impossible = Probe::impossible();
 
             return $impossible;
         }

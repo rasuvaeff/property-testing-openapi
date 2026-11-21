@@ -7,10 +7,9 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile;
 use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
-use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
-use Rasuvaeff\PropertyTesting\Random;
 
 /**
  * Compiles the supported, constructive subset of composition keywords.
@@ -19,10 +18,6 @@ use Rasuvaeff\PropertyTesting\Random;
  */
 final readonly class CompositionArbitraries
 {
-    private const int PROBES = 8;
-
-    private const int PROBE_SEED = 11;
-
     public function __construct(
         private SchemaArbitraryCompiler $compiler,
         private SchemaFacts $facts,
@@ -154,7 +149,7 @@ final readonly class CompositionArbitraries
 
                 continue;
             }
-            if ($this->yieldsSomething($kept)) {
+            if (Probe::yields($kept)) {
                 $pairs[] = [1, $kept];
                 ++$numeric;
             }
@@ -189,28 +184,6 @@ final readonly class CompositionArbitraries
     private function positiveNumber(mixed $value): int|float|null
     {
         return (is_int($value) || is_float($value)) && $value > 0 ? $value : null;
-    }
-
-    /**
-     * Whether a filtered branch produces anything at all, judged the way the
-     * pattern probe does: deterministic draws, twice the budget the filter
-     * gets at run time, so a branch that fails here is one that would have
-     * exhausted mid-run.
-     */
-    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
-    {
-        $random = new Random(self::PROBE_SEED);
-        for ($probe = 0; $probe < self::PROBES; ++$probe) {
-            try {
-                $arbitrary->generate($random);
-
-                return true;
-            } catch (GenerationExhaustedException) {
-                continue;
-            }
-        }
-
-        return false;
     }
 
     /** @param array<string, mixed> $schema */

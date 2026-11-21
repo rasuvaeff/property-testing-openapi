@@ -15,6 +15,7 @@ use Rasuvaeff\PropertyTesting\GenerationExhaustedException;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\MediaType;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\ParameterSerializer;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Probe;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\RequestSchemas;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\SchemaShape;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\WireValue;
@@ -118,7 +119,7 @@ final readonly class RequestCaseArbitrary
                 // see, a `pattern`, whose alphabet is the pattern's own.
                 $compiled = Gen::filter($compiled, fn(mixed $value): bool => $this->parameterSchemas->isSeparatorSafe($value, $separator));
             }
-            if (($location === 'path' || $location === 'header') && $this->mentionsPattern($schema) && !$this->yieldsSomething($compiled)) {
+            if (($location === 'path' || $location === 'header') && $this->mentionsPattern($schema) && !Probe::yields($compiled)) {
                 // The rewrite cannot see inside a pattern; the filter above
                 // can, and a pattern none of whose strings survives the wire
                 // is refused here, by name, instead of exhausting mid-run.
@@ -144,28 +145,6 @@ final readonly class RequestCaseArbitrary
     private function mentionsPattern(array $schema): bool
     {
         return str_contains(json_encode($schema, JSON_THROW_ON_ERROR), '"pattern"');
-    }
-
-    /**
-     * Whether a filtered arbitrary produces anything, judged the way the
-     * compiler's pattern probe does: deterministic draws, each with the
-     * filter's own retry budget, so an arbitrary that fails here is one that
-     * would have exhausted mid-run.
-     */
-    private function yieldsSomething(ArbitraryInterface $arbitrary): bool
-    {
-        $random = new Random(self::PROBE_SEED);
-        for ($probe = 0; $probe < self::PROBES; ++$probe) {
-            try {
-                $arbitrary->generate($random);
-
-                return true;
-            } catch (GenerationExhaustedException) {
-                continue;
-            }
-        }
-
-        return false;
     }
 
     /**
