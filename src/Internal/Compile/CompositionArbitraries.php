@@ -164,6 +164,7 @@ final readonly class CompositionArbitraries
     /** @param array<string, mixed> $number */
     private function numberBranchAdmits(int $value, array $number): bool
     {
+        $number = SchemaFacts::exclusiveBounds($number, integer: false);
         $minimum = $this->facts->numberBound($number, 'minimum', -INF);
         $maximum = $this->facts->numberBound($number, 'maximum', INF);
         if ($value < $minimum || $value > $maximum) {

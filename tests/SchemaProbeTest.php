@@ -48,6 +48,9 @@ final class SchemaProbeTest
     public static function outOfRangeProvider(): iterable
     {
         yield 'integer minimum' => [['type' => 'integer', 'minimum' => 1], [0]];
+        yield 'numeric exclusive integer bounds' => [['type' => 'integer', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 9], [0, 9]];
+        yield 'numeric exclusive number bounds' => [['type' => 'number', 'exclusiveMinimum' => 0.5, 'exclusiveMaximum' => 9], [0.5, 9.0]];
+        yield 'a tighter inclusive bound beside a numeric exclusive one' => [['type' => 'integer', 'minimum' => 3, 'exclusiveMinimum' => 0], [2]];
         yield 'integer maximum' => [['type' => 'integer', 'maximum' => 9], [10]];
         yield 'both bounds, both sides offered' => [['type' => 'integer', 'minimum' => 1, 'maximum' => 9], [0, 10]];
         yield 'exclusive minimum is the bound itself' => [['type' => 'integer', 'minimum' => 1, 'exclusiveMinimum' => true], [1]];

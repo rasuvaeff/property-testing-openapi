@@ -193,6 +193,7 @@ final readonly class ScalarArbitraries
     /** @param array<string, mixed> $schema */
     public function integer(array $schema): ArbitraryInterface
     {
+        $schema = SchemaFacts::exclusiveBounds($schema, integer: true);
         $min = $this->facts->integerBound($schema, 'minimum', -1000);
         $max = $this->facts->integerBound($schema, 'maximum', 1000);
         if (($schema['exclusiveMinimum'] ?? false) === true) {
@@ -240,6 +241,7 @@ final readonly class ScalarArbitraries
     /** @param array<string, mixed> $schema */
     public function number(array $schema): ArbitraryInterface
     {
+        $schema = SchemaFacts::exclusiveBounds($schema, integer: false);
         $min = $this->facts->numberBound($schema, 'minimum', -1000.0);
         $max = $this->facts->numberBound($schema, 'maximum', 1000.0);
         if (!is_finite($min) || !is_finite($max)) {

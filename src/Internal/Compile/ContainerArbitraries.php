@@ -195,6 +195,9 @@ final readonly class ContainerArbitraries
             return count(array_unique(array_map(serialize(...), (array) $items['enum'])));
         }
 
+        if (($items['type'] ?? null) === 'integer') {
+            $items = SchemaFacts::exclusiveBounds($items, integer: true);
+        }
         if (($items['type'] ?? null) === 'integer' && is_int($items['minimum'] ?? null) && is_int($items['maximum'] ?? null)) {
             // An upper bound on the domain, not its size: a multipleOf would
             // thin it further. Enough to refuse `minItems: 3` over `0..1`

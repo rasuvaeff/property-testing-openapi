@@ -33,6 +33,7 @@ final class ZooContracts
         'tree.create', 'shipments.create',
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
+        'prices.create',
     ];
 
     /**
@@ -575,6 +576,24 @@ final class ZooContracts
                         ],
                         'encoding' => ['note' => ['headers' => ['X-Revision' => ['required' => true, 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9]]]]],
                     ]]],
+                    'responses' => ['204' => []],
+                ]],
+                // OAS 3.1 spells an exclusive bound as a number of its own
+                // (#166): `price > 0` from a real document, an integer above
+                // a fraction, and a bound tighter than the inclusive one.
+                '/prices' => ['post' => [
+                    'operationId' => 'prices.create',
+                    'parameters' => [['name' => 'limit', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'integer', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 10]]],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['price', 'quantity'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'price' => ['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 1000],
+                            'quantity' => ['type' => 'integer', 'exclusiveMinimum' => 0.5, 'maximum' => 5],
+                            'discount' => ['type' => 'number', 'minimum' => 0, 'maximum' => 50, 'exclusiveMaximum' => 1],
+                        ],
+                    ]]]],
                     'responses' => ['204' => []],
                 ]],
             ],

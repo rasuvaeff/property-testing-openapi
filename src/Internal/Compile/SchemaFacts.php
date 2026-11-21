@@ -55,6 +55,43 @@ final readonly class SchemaFacts
     }
 
     /**
+     * The OAS 3.1 (JSON Schema 2020-12) spelling of an exclusive bound — a
+     * number of its own, `exclusiveMinimum: 0` — in the OAS 3.0 spelling the
+     * compiler reads: the bound in `minimum`/`maximum` and a `true` flag
+     * beside it (#166). Where both a numeric exclusive bound and an inclusive
+     * one are declared, the tighter one is kept, as the validator applies
+     * both. An integer bound past a fraction is already exclusive — `> 0.5`
+     * is `>= 1` — so it is kept inclusive and rounded inward by
+     * {@see integerBound()}. A schema without a numeric exclusive bound comes
+     * back unchanged.
+     *
+     * @param Schema $schema
+     * @return Schema
+     */
+    public static function exclusiveBounds(array $schema, bool $integer): array
+    {
+        foreach (['exclusiveMinimum' => 'minimum', 'exclusiveMaximum' => 'maximum'] as $exclusive => $inclusive) {
+            $bound = $schema[$exclusive] ?? null;
+            if (!is_int($bound) && !is_float($bound)) {
+                continue;
+            }
+            $declared = $schema[$inclusive] ?? null;
+            $tighter = (!is_int($declared) && !is_float($declared))
+                || ($inclusive === 'minimum' ? $bound >= $declared : $bound <= $declared);
+            unset($schema[$exclusive]);
+            if (!$tighter) {
+                continue;
+            }
+            $schema[$inclusive] = $bound;
+            if (!$integer || floor((float) $bound) === (float) $bound) {
+                $schema[$exclusive] = true;
+            }
+        }
+
+        return $schema;
+    }
+
+    /**
      * A numeric bound of an integer schema; a fractional bound rounds inward
      * (`minimum: 0.5` admits 1, `maximum: 2.5` admits 2).
      *

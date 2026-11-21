@@ -510,11 +510,5 @@ final readonly class SchemaArbitraryCompiler
         if (array_key_exists('additionalProperties', $schema)) {
             $this->facts->additionalPropertiesSchema($schema);
         }
-        if (($schema['exclusiveMinimum'] ?? false) !== false && !is_bool($schema['exclusiveMinimum'])) {
-            throw UnsupportedGeneration::forSchema('numeric exclusiveMinimum is not supported');
-        }
-        if (($schema['exclusiveMaximum'] ?? false) !== false && !is_bool($schema['exclusiveMaximum'])) {
-            throw UnsupportedGeneration::forSchema('numeric exclusiveMaximum is not supported');
-        }
     }
 }

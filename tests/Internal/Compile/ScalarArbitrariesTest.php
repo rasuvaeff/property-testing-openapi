@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests\Internal\Compile;
 
 use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDialect;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
@@ -17,8 +19,60 @@ use Testo\Test;
 
 #[Test]
 #[Covers(ScalarArbitraries::class)]
+#[Covers(SchemaFacts::class)]
 final class ScalarArbitrariesTest
 {
+    /**
+     * The OAS 3.1 spelling of an exclusive bound is a number (#166): every
+     * value drawn is one the contract accepts, the values next to the bound
+     * are reached, and the bound itself never is.
+     *
+     * @param list<int|float> $reached
+     * @param list<int|float> $never
+     */
+    #[DataProvider('numericExclusiveProvider')]
+    public function aNumericExclusiveBoundIsHonouredAndReached(array $schema, array $reached, array $never): void
+    {
+        $values = Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 300, seed: 5);
+        foreach ($values as $value) {
+            Assert::true((new SchemaCheck())->accepts($value, $schema, SchemaDialect::OpenApi31), json_encode([$schema, $value], JSON_THROW_ON_ERROR));
+        }
+        foreach ($reached as $value) {
+            Assert::true(in_array($value, $values, strict: true), json_encode($value, JSON_THROW_ON_ERROR));
+        }
+        foreach ($never as $value) {
+            Assert::false(in_array($value, $values, strict: true), json_encode($value, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public static function numericExclusiveProvider(): iterable
+    {
+        yield 'integer above zero' => [['type' => 'integer', 'exclusiveMinimum' => 0, 'maximum' => 3], [1, 2, 3], [0]];
+        yield 'integer below three' => [['type' => 'integer', 'minimum' => 0, 'exclusiveMaximum' => 3], [0, 1, 2], [3]];
+        yield 'integer between both' => [['type' => 'integer', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 3], [1, 2], [0, 3]];
+        yield 'integer above a fraction' => [['type' => 'integer', 'exclusiveMinimum' => 0.5, 'maximum' => 2], [1, 2], [0]];
+        yield 'integer below a fraction' => [['type' => 'integer', 'minimum' => 0, 'exclusiveMaximum' => 2.5], [0, 1, 2], [3]];
+        yield 'integer above an integral float' => [['type' => 'integer', 'exclusiveMinimum' => 1.0, 'maximum' => 3], [2, 3], [1]];
+        yield 'a tighter inclusive minimum wins' => [['type' => 'integer', 'minimum' => 2, 'exclusiveMinimum' => 0, 'maximum' => 3], [2, 3], [1]];
+        yield 'a tighter exclusive minimum wins' => [['type' => 'integer', 'minimum' => 0, 'exclusiveMinimum' => 1, 'maximum' => 3], [2, 3], [1]];
+        yield 'a tighter inclusive maximum wins' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 1, 'exclusiveMaximum' => 3], [0, 1], [2]];
+        yield 'a tighter exclusive maximum wins' => [['type' => 'integer', 'minimum' => 0, 'maximum' => 3, 'exclusiveMaximum' => 2], [0, 1], [2]];
+        yield 'an equal bound is exclusive' => [['type' => 'integer', 'minimum' => 1, 'exclusiveMinimum' => 1, 'maximum' => 3, 'exclusiveMaximum' => 3], [2], [1, 3]];
+        yield 'number between both' => [['type' => 'number', 'exclusiveMinimum' => 0, 'exclusiveMaximum' => 1], [], [0.0, 1.0]];
+        yield 'number with a multiple' => [['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 0.3, 'multipleOf' => 0.1], [0.1, 0.2], [0.0]];
+        yield 'number with a tighter inclusive maximum' => [['type' => 'number', 'minimum' => 0, 'maximum' => 1, 'exclusiveMaximum' => 5, 'multipleOf' => 1], [0.0, 1.0], [2.0]];
+    }
+
+    public function aSchemaWithoutANumericExclusiveBoundIsUntouched(): void
+    {
+        $schema = ['type' => 'integer', 'minimum' => 0, 'exclusiveMinimum' => true, 'maximum' => 5, 'exclusiveMaximum' => false];
+
+        Assert::same(SchemaFacts::exclusiveBounds($schema, integer: true), $schema);
+        Assert::same(SchemaFacts::exclusiveBounds(['type' => 'number', 'exclusiveMinimum' => 0.5], integer: false), ['type' => 'number', 'minimum' => 0.5, 'exclusiveMinimum' => true]);
+        Assert::same(SchemaFacts::exclusiveBounds(['type' => 'integer', 'exclusiveMinimum' => 0.5], integer: true), ['type' => 'integer', 'minimum' => 0.5]);
+        Assert::same(SchemaFacts::exclusiveBounds(['type' => 'integer', 'maximum' => 1, 'exclusiveMaximum' => 3], integer: true), ['type' => 'integer', 'maximum' => 1]);
+    }
+
     public function aFormatStringHonoursItsLengthWindow(): void
     {
         foreach (Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => 'email', 'minLength' => 14, 'maxLength' => 20]), count: 50, seed: 1) as $value) {
