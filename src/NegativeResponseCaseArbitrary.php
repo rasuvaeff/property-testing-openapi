@@ -295,7 +295,7 @@ final readonly class NegativeResponseCaseArbitrary
     {
         $target = $this->targets->mediaTypeMismatch($operation, $status);
 
-        return $this->mutate($operation, $status, static function (array $case) use ($target): array {
+        return $this->mutate($operation, $status, json: true, mutation: static function (array $case) use ($target): array {
             $body = $case['body'];
             if ($body === null) {
                 throw new \LogicException('JSON response body expected for a media type misuse');
@@ -332,7 +332,7 @@ final readonly class NegativeResponseCaseArbitrary
         // The valid case is drawn first and the target second, so a case
         // carries the same body its seed produces on its own (#99).
         $drawn = Gen::record([
-            'case' => $this->valid->forOperation($operation, $status),
+            'case' => $this->jsonCases($operation, $status),
             'target' => Gen::elements($targets),
         ]);
 
@@ -364,7 +364,7 @@ final readonly class NegativeResponseCaseArbitrary
      */
     private function mutateBody(Operation $operation, int $status, string $kind, string $name, \Closure $mutation, bool $root = false): ArbitraryInterface
     {
-        return $this->mutate($operation, $status, fn(array $case): array => $this->writeBody($case, $kind, $name, $mutation, $root));
+        return $this->mutate($operation, $status, json: true, mutation: fn(array $case): array => $this->writeBody($case, $kind, $name, $mutation, $root));
     }
 
     /**
@@ -397,11 +397,30 @@ final readonly class NegativeResponseCaseArbitrary
      * @param \Closure(ResponseCaseData): ResponseCaseData $mutation
      * @return ArbitraryInterface<ResponseCaseData>
      */
-    private function mutate(Operation $operation, int $status, \Closure $mutation): ArbitraryInterface
+    private function mutate(Operation $operation, int $status, \Closure $mutation, bool $json = false): ArbitraryInterface
     {
         /** @var ArbitraryInterface<ResponseCaseData> $mutated */
-        $mutated = Gen::map($this->valid->forOperation($operation, $status), $mutation);
+        $mutated = Gen::map($json ? $this->jsonCases($operation, $status) : $this->valid->forOperation($operation, $status), $mutation);
 
         return $mutated;
+    }
+
+    /**
+     * The valid cases that carry the JSON body: a response may offer a body
+     * sent as it is beside it (#170), and a misuse of the JSON value is
+     * written over a JSON value only. Where JSON is the only body, every
+     * draw passes and the draws are the valid ones.
+     *
+     * @return ArbitraryInterface<ResponseCaseData>
+     */
+    private function jsonCases(Operation $operation, int $status): ArbitraryInterface
+    {
+        /** @var ArbitraryInterface<ResponseCaseData> $json */
+        $json = Gen::filter(
+            $this->valid->forOperation($operation, $status),
+            static fn(mixed $case): bool => is_array($case) && is_array($case['body'] ?? null) && ($case['body']['encoding'] ?? null) === 'json',
+        );
+
+        return $json;
     }
 }

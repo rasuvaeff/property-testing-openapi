@@ -89,7 +89,12 @@ final class RawBodiesTest
         yield 'octet stream without a schema' => ['application/octet-stream', [], 64];
     }
 
-    public function aRawMediaTypeBesideJsonIsLeftOut(): void
+    /**
+     * A raw media type whose schema it cannot write is skipped beside a
+     * JSON one, as an unrecognised media type is, rather than refusing an
+     * operation that generates (#170).
+     */
+    public function aRawMediaTypeItCannotWriteBesideJsonIsSkipped(): void
     {
         $operation = $this->contract(['required' => true, 'content' => [
             'text/plain' => ['schema' => ['type' => 'object']],
@@ -102,17 +107,40 @@ final class RawBodiesTest
         }
     }
 
-    public function aRawResponseBesideJsonIsLeftOut(): void
+    /**
+     * A raw media type is drawn beside a JSON one, on a request and on a
+     * response, so an operation that also accepts `text/plain` exercises it
+     * (#170). The zoo's `memos.create` checks such cases end to end.
+     */
+    public function aRawBodyIsDrawnBesideJson(): void
     {
-        $operation = $this->contract([], ['200' => ['description' => 'two', 'content' => [
+        $contract = $this->contract(['required' => true, 'content' => [
+            'application/json' => ['schema' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
+            'text/plain' => ['schema' => ['type' => 'string', 'maxLength' => 8]],
+        ]], ['200' => ['description' => 'two', 'content' => [
             'text/plain' => ['schema' => ['type' => 'string']],
             'application/json' => ['schema' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
-        ]]], method: 'get')->operation('op');
-        $arbitrary = (new ResponseCaseArbitrary())->forOperation($operation, 200);
-
-        foreach (range(1, 20) as $seed) {
-            Assert::same($arbitrary->generate(new Random($seed))->value['body']['encoding'] ?? null, 'json');
+        ]]]);
+        $operation = $contract->operation('op');
+        $requests = (new RequestCaseArbitrary())->forOperation($operation);
+        $responses = (new ResponseCaseArbitrary())->forOperation($operation, 200);
+        $seen = ['request' => [], 'response' => []];
+        foreach (range(1, 40) as $seed) {
+            $request = $requests->generate(new Random($seed))->value['body'];
+            $response = $responses->generate(new Random($seed))->value['body'];
+            $seen['request'][$request['encoding'] ?? 'none'] = $request['mediaType'] ?? null;
+            $seen['response'][$response['encoding'] ?? 'none'] = $response['mediaType'] ?? null;
+            if (($request['encoding'] ?? null) === 'raw') {
+                Assert::true(is_string($request['value']) && $request['value'] !== '' && mb_strlen($request['value']) <= 8);
+            }
         }
+        ksort($seen['request']);
+        ksort($seen['response']);
+
+        Assert::same($seen, [
+            'request' => ['json' => 'application/json', 'raw' => 'text/plain'],
+            'response' => ['json' => 'application/json', 'raw' => 'text/plain'],
+        ]);
     }
 
     /**

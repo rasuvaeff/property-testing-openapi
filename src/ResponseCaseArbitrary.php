@@ -224,73 +224,77 @@ final readonly class ResponseCaseArbitrary
             ?? throw new UnsupportedGeneration(sprintf('Response header "%s" must carry scalar values', $name));
     }
 
-    /** @param array<string, mixed> $definition */
-    private function body(array $definition, string $operationKey, int $status): ArbitraryInterface
-    {
-        try {
-            $raw = $this->rawMedia($definition);
-            if ($raw !== null) {
-                return RawBodies::arbitrary($raw['mediaType'], $raw['schema'], $this->schemas);
-            }
-        } catch (UnsupportedGeneration $refusal) {
-            throw $refusal->inOperation($operationKey, sprintf('response "%d" body', $status));
-        }
-        $media = $this->jsonMedia($definition, 'Response content declares no JSON media type');
-        if ($media === null) {
-            return Gen::constant(null);
-        }
-        $mediaType = $media['mediaType'];
-
-        try {
-            $compiled = $this->schemas->compile($media['schema']);
-        } catch (UnsupportedGeneration $refusal) {
-            throw $refusal->inOperation($operationKey, sprintf('response "%d" body "%s"', $status, $mediaType));
-        }
-
-        return Gen::map($compiled, static fn(mixed $value): array => [
-            'mediaType' => $mediaType,
-            'encoding' => 'json',
-            'value' => $value,
-        ]);
-    }
-
     /**
-     * The first media type sent as it is (`text/plain`,
-     * `application/octet-stream`), when the Response Object declares no JSON
-     * one (#170): a JSON media type keeps being the one generated, so a
-     * response that generated before draws what it always drew.
+     * The first JSON media type the Response Object declares, and beside it
+     * every media type sent as it is (`text/plain`,
+     * `application/octet-stream`, #170), drawn evenly. A raw media type whose
+     * schema cannot be generated is skipped where another body can be, and
+     * refuses the response only when it is all there is.
      *
      * @param array<string, mixed> $definition
-     * @return null|array{mediaType: non-empty-string, schema: array<string, mixed>}
      */
-    private function rawMedia(array $definition): ?array
+    private function body(array $definition, string $operationKey, int $status): ArbitraryInterface
     {
         $content = $definition['content'] ?? null;
-        if (!is_array($content)) {
-            return null;
+        if (!is_array($content) || $content === []) {
+            return Gen::constant(null);
         }
-        foreach (array_keys($content) as $mediaType) {
-            if (is_string($mediaType) && MediaType::isJson($mediaType)) {
-                return null;
+        /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
+        $bodies = [];
+        $media = $this->firstJsonMedia($content);
+        if ($media !== null) {
+            $mediaType = $media['mediaType'];
+
+            try {
+                $compiled = $this->schemas->compile($media['schema']);
+            } catch (UnsupportedGeneration $refusal) {
+                throw $refusal->inOperation($operationKey, sprintf('response "%d" body "%s"', $status, $mediaType));
             }
+            /** @var ArbitraryInterface<mixed> $json */
+            $json = Gen::map($compiled, static fn(mixed $value): array => [
+                'mediaType' => $mediaType,
+                'encoding' => 'json',
+                'value' => $value,
+            ]);
+            $bodies[] = [1, $json];
         }
+        $rawRefusal = null;
         foreach ($content as $mediaType => $mediaDefinition) {
             if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition) || !RawBodies::carries($mediaType)) {
                 continue;
             }
-            $schema = $mediaDefinition['schema'] ?? [];
-            if ($schema === true) {
-                $schema = [];
-            }
-            if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
-                throw UnsupportedGeneration::forSchema(sprintf('Response "%s" schema must be an object', $mediaType));
-            }
-            /** @var array<string, mixed> $schema */
 
-            return ['mediaType' => $mediaType, 'schema' => $this->responseSchemas->effective($schema)];
+            try {
+                $bodies[] = [1, RawBodies::arbitrary($mediaType, $this->rawSchema($mediaType, $mediaDefinition), $this->schemas)];
+            } catch (UnsupportedGeneration $refusal) {
+                $rawRefusal ??= $refusal->inOperation($operationKey, sprintf('response "%d" body', $status));
+            }
+        }
+        if ($bodies === []) {
+            throw $rawRefusal ?? new UnsupportedGeneration('Response content declares no JSON media type');
         }
 
-        return null;
+        return count($bodies) === 1 ? $bodies[0][1] : Gen::frequency($bodies);
+    }
+
+    /**
+     * The schema of a media type sent as it is, narrowed to the response.
+     *
+     * @param array<array-key, mixed> $mediaDefinition
+     * @return array<string, mixed>
+     */
+    private function rawSchema(string $mediaType, array $mediaDefinition): array
+    {
+        $schema = $mediaDefinition['schema'] ?? [];
+        if ($schema === true) {
+            $schema = [];
+        }
+        if (!is_array($schema) || ($schema !== [] && array_is_list($schema))) {
+            throw UnsupportedGeneration::forSchema(sprintf('Response "%s" schema must be an object', $mediaType));
+        }
+        /** @var array<string, mixed> $schema */
+
+        return $this->responseSchemas->effective($schema);
     }
 
     /**
@@ -312,6 +316,16 @@ final readonly class ResponseCaseArbitrary
         if (!is_array($content) || $content === []) {
             return null;
         }
+
+        return $this->firstJsonMedia($content) ?? throw new UnsupportedGeneration($missing);
+    }
+
+    /**
+     * @param array<array-key, mixed> $content
+     * @return null|array{mediaType: non-empty-string, schema: array<string, mixed>}
+     */
+    private function firstJsonMedia(array $content): ?array
+    {
         foreach ($content as $mediaType => $mediaDefinition) {
             if (!is_string($mediaType) || $mediaType === '' || !is_array($mediaDefinition) || !MediaType::isJson($mediaType)) {
                 continue;
@@ -325,6 +339,6 @@ final readonly class ResponseCaseArbitrary
             return ['mediaType' => $mediaType, 'schema' => $this->responseSchemas->effective($schema)];
         }
 
-        throw new UnsupportedGeneration($missing);
+        return null;
     }
 }
