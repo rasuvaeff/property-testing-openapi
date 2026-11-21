@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\PropertyTesting\OpenApi\Tests\Internal\Compile;
 
+use Rasuvaeff\OpenApiContract\SchemaCheck;
+use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\CompositionArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
@@ -18,6 +20,71 @@ use Testo\Test;
 #[Covers(CompositionArbitraries::class)]
 final class CompositionArbitrariesTest
 {
+    /**
+     * `oneOf` over objects told apart by a required property pinned with a
+     * `const` or an `enum` (#167): every value is accepted by exactly one
+     * branch, and every branch is drawn.
+     */
+    #[DataProvider('taggedOneOfProvider')]
+    public function aTaggedOneOfDrawsValuesExactlyOneBranchAccepts(array $schema, string $tag, int $branches): void
+    {
+        $check = new SchemaCheck();
+        /** @var list<array<string, mixed>> $members */
+        $members = $schema['oneOf'];
+        $defs = $schema['$defs'] ?? [];
+        $seen = [];
+        foreach (Gen::sample((new SchemaArbitraryCompiler())->compile($schema), count: 120, seed: 9) as $value) {
+            Assert::true(is_array($value) && array_key_exists($tag, $value), json_encode($value, JSON_THROW_ON_ERROR));
+            $json = json_decode(json_encode($value, JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT), flags: JSON_THROW_ON_ERROR);
+            $accepting = array_keys(array_filter($members, static fn(array $member): bool => $check->accepts($json, $defs === [] ? $member : $member + ['$defs' => $defs], SchemaDialect::OpenApi31)));
+
+            Assert::same(count($accepting), 1, json_encode($value, JSON_THROW_ON_ERROR));
+            Assert::true($check->accepts($json, $schema, SchemaDialect::OpenApi31));
+            $seen[$accepting[0]] = true;
+        }
+
+        Assert::same(count($seen), $branches);
+    }
+
+    public static function taggedOneOfProvider(): iterable
+    {
+        $cat = ['type' => 'object', 'required' => ['kind', 'lives'], 'properties' => ['kind' => ['type' => 'string', 'const' => 'cat'], 'lives' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9]]];
+        $dog = ['type' => 'object', 'required' => ['kind'], 'properties' => ['kind' => ['type' => 'string', 'const' => 'dog'], 'good' => ['type' => 'boolean']]];
+        yield 'two consts' => [['oneOf' => [$cat, $dog]], 'kind', 2];
+        yield 'enums that do not meet' => [['oneOf' => [
+            ['type' => 'object', 'required' => ['t'], 'properties' => ['t' => ['enum' => ['a', 'b']]]],
+            ['type' => 'object', 'required' => ['t'], 'properties' => ['t' => ['enum' => ['c', 1]]]],
+            ['type' => 'object', 'required' => ['t'], 'properties' => ['t' => ['const' => true]]],
+        ]], 't', 3];
+        yield 'a tag that is not the first pinned property' => [['oneOf' => [
+            ['type' => 'object', 'required' => ['v', 't'], 'properties' => ['v' => ['const' => 1], 't' => ['const' => 'x']]],
+            ['type' => 'object', 'required' => ['v', 't'], 'properties' => ['v' => ['const' => 1], 't' => ['const' => 'y']]],
+        ]], 't', 2];
+        yield 'references into $defs' => [['$defs' => ['Cat' => $cat, 'Dog' => $dog], 'oneOf' => [['$ref' => '#/$defs/Cat'], ['$ref' => '#/$defs/Dog']]], 'kind', 2];
+    }
+
+    #[DataProvider('untaggedOneOfProvider')]
+    public function aOneOfWithoutAProvableTagIsRefused(array $schema): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage('Unsupported OpenAPI schema generation: oneOf branches must be provably disjoint');
+
+        (new SchemaArbitraryCompiler())->compile($schema);
+    }
+
+    public static function untaggedOneOfProvider(): iterable
+    {
+        $object = static fn(array $tag, bool $required = true): array => ['type' => 'object', 'required' => $required ? ['t'] : [], 'properties' => ['t' => $tag]];
+        yield 'the same const twice' => [['oneOf' => [$object(['const' => 'a']), $object(['const' => 'a'])]]];
+        yield 'enums that meet' => [['oneOf' => [$object(['enum' => ['a', 'b']]), $object(['enum' => ['b', 'c']])]]];
+        yield 'one and one point zero are one number' => [['oneOf' => [$object(['const' => 1]), $object(['const' => 1.0])]]];
+        yield 'a tag one branch does not require' => [['oneOf' => [$object(['const' => 'a']), $object(['const' => 'b'], required: false)]]];
+        yield 'a tag one branch does not pin' => [['oneOf' => [$object(['const' => 'a']), $object(['type' => 'string'])]]];
+        yield 'an object tag' => [['oneOf' => [$object(['const' => ['a' => 1, 'b' => 2]]), $object(['const' => ['b' => 2, 'a' => 1]])]]];
+        yield 'an empty enum' => [['oneOf' => [$object(['enum' => []]), $object(['const' => 'b'])]]];
+        yield 'a branch that is not an object' => [['oneOf' => [['type' => 'object', 'required' => ['t'], 'properties' => ['t' => ['const' => 'a']]], ['required' => ['t'], 'properties' => 'x']]]];
+        yield 'a tag only the later branches share' => [['oneOf' => [$object(['const' => 'a']), ['type' => 'object', 'required' => ['u'], 'properties' => ['u' => ['const' => 'b']]]]]];
+    }
+
     public function anUnevaluatedPropertiesSiblingClosesTheConjunction(): void
     {
         $schema = ['allOf' => [['type' => 'object']], 'unevaluatedProperties' => false];

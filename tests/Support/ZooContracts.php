@@ -34,6 +34,7 @@ final class ZooContracts
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
         'prices.create', 'batches.create', 'hosts.create', 'notes.create', 'blobs.put',
+        'animals.create',
     ];
 
     /**
@@ -648,8 +649,28 @@ final class ZooContracts
                     'requestBody' => ['content' => ['application/octet-stream' => ['schema' => ['type' => 'string', 'format' => 'binary']]]],
                     'responses' => ['204' => []],
                 ]],
+                // `oneOf` over objects told apart by a required `const`
+                // property, through component references as real documents
+                // write it (#167).
+                '/animals' => ['post' => [
+                    'operationId' => 'animals.create',
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'oneOf' => [['$ref' => '#/components/schemas/Cat'], ['$ref' => '#/components/schemas/Dog']],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
             ],
-            'components' => ['schemas' => ['Named' => [
+            'components' => ['schemas' => ['Cat' => [
+                'type' => 'object',
+                'required' => ['kind', 'lives'],
+                'additionalProperties' => false,
+                'properties' => ['kind' => ['type' => 'string', 'const' => 'cat'], 'lives' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 9]],
+            ], 'Dog' => [
+                'type' => 'object',
+                'required' => ['kind'],
+                'additionalProperties' => false,
+                'properties' => ['kind' => ['type' => 'string', 'const' => 'dog'], 'good' => ['type' => 'boolean']],
+            ], 'Named' => [
                 'type' => 'object',
                 'description' => 'Has a name',
                 'required' => ['name'],
