@@ -187,7 +187,7 @@ final readonly class RequestCaseArbitrary
         }
         $content = $operation->requestBody['content'] ?? null;
         if (!is_array($content)) {
-            throw new UnsupportedGeneration('Request body content must be an object');
+            throw UnsupportedGeneration::forSchema('Request body content must be an object')->inOperation($operation->key, 'request body');
         }
         /** @var list<array{int, ArbitraryInterface<mixed>}> $bodies */
         $bodies = [];
@@ -200,7 +200,7 @@ final readonly class RequestCaseArbitrary
                 $schema = [];
             }
             if ($schema === false) {
-                throw new UnsupportedGeneration(sprintf('Request body "%s" declares the false schema, which admits no value', $mediaType));
+                throw UnsupportedGeneration::forSchema('the false schema admits no value')->inOperation($operation->key, sprintf('request body "%s"', $mediaType));
             }
             $normalized = MediaType::normalize($mediaType);
             $schema = $this->requestSchemas->effective($schema);
@@ -216,7 +216,7 @@ final readonly class RequestCaseArbitrary
             }
         }
         if ($bodies === []) {
-            throw new UnsupportedGeneration('Request body has no supported media type');
+            throw UnsupportedGeneration::forSchema('Request body has no supported media type')->inOperation($operation->key, 'request body');
         }
 
         // Every declared media type this package can generate, not the first
@@ -354,23 +354,23 @@ final readonly class RequestCaseArbitrary
     {
         $properties = is_array($schema['properties'] ?? null) ? (array) $schema['properties'] : [];
         if ($properties !== [] && array_is_list($properties)) {
-            throw new UnsupportedGeneration('Multipart properties must be an object');
+            throw UnsupportedGeneration::forSchema('Multipart properties must be an object');
         }
         $required = $schema['required'] ?? [];
         if (!is_array($required) || !array_is_list($required)) {
-            throw new UnsupportedGeneration('Multipart required must be a list');
+            throw UnsupportedGeneration::forSchema('Multipart required must be a list');
         }
         $requiredNames = [];
         foreach ($required as $name) {
             if (!is_string($name)) {
-                throw new UnsupportedGeneration('Multipart required must contain property names');
+                throw UnsupportedGeneration::forSchema('Multipart required must contain property names');
             }
             $requiredNames[$name] = true;
         }
         $shape = [];
         foreach ($properties as $name => $property) {
             if (!is_string($name) || !is_array($property) || array_is_list($property)) {
-                throw new UnsupportedGeneration('Multipart properties must contain named schema objects');
+                throw UnsupportedGeneration::forSchema('Multipart properties must contain named schema objects');
             }
             /** @var array<string, mixed> $property */
             if (($property['readOnly'] ?? false) === true) {
@@ -415,11 +415,11 @@ final readonly class RequestCaseArbitrary
         if (SchemaShape::isArray($schema)) {
             $items = $schema['items'] ?? null;
             if (!is_array($items) || array_is_list($items)) {
-                throw new UnsupportedGeneration('Multipart array items must be a schema object');
+                throw UnsupportedGeneration::forSchema('Multipart array items must be a schema object');
             }
             /** @var array<string, mixed> $items */
             if (SchemaShape::isArray($items) || SchemaShape::isObject($items)) {
-                throw new UnsupportedGeneration('Nested multipart array items are not supported');
+                throw UnsupportedGeneration::forSchema('Nested multipart array items are not supported');
             }
             $item = $this->multipartProperty($items);
             $min = is_int($schema['minItems'] ?? null) ? (int) $schema['minItems'] : 0;
@@ -430,7 +430,7 @@ final readonly class RequestCaseArbitrary
                 : Gen::arrayOf($item, $min, $max);
         }
         if (SchemaShape::isObject($schema)) {
-            throw new UnsupportedGeneration('Nested multipart object properties are not supported');
+            throw UnsupportedGeneration::forSchema('Nested multipart object properties are not supported');
         }
 
         // A text part is written verbatim into a CRLF-delimited body, and the
@@ -772,14 +772,14 @@ final readonly class RequestCaseArbitrary
             return;
         }
         if (!is_array($encoding) || array_is_list($encoding)) {
-            throw new UnsupportedGeneration('Form encoding must be an object');
+            throw UnsupportedGeneration::forSchema('Form encoding must be an object');
         }
         foreach ($encoding as $name => $configuration) {
             if (!is_string($name) || !is_array($configuration) || array_is_list($configuration)) {
-                throw new UnsupportedGeneration('Form encoding entries must be objects');
+                throw UnsupportedGeneration::forSchema('Form encoding entries must be objects');
             }
             if (($configuration['style'] ?? 'form') !== 'form' || (isset($configuration['explode']) && !is_bool($configuration['explode']))) {
-                throw new UnsupportedGeneration('Form encoding supports only form style and boolean explode');
+                throw UnsupportedGeneration::forSchema('Form encoding supports only form style and boolean explode');
             }
         }
     }
@@ -790,11 +790,11 @@ final readonly class RequestCaseArbitrary
             return;
         }
         if (!is_array($encoding) || array_is_list($encoding)) {
-            throw new UnsupportedGeneration('Multipart encoding must be an object');
+            throw UnsupportedGeneration::forSchema('Multipart encoding must be an object');
         }
         foreach ($encoding as $name => $configuration) {
             if (!is_string($name) || !is_array($configuration) || array_is_list($configuration) || ($configuration['style'] ?? 'form') !== 'form') {
-                throw new UnsupportedGeneration('Multipart encoding supports only form style');
+                throw UnsupportedGeneration::forSchema('Multipart encoding supports only form style');
             }
         }
     }
@@ -849,7 +849,7 @@ final readonly class RequestCaseArbitrary
     private function assertObjectSchema(array $schema, string $message): void
     {
         if (!SchemaShape::isObject($schema)) {
-            throw new UnsupportedGeneration($message);
+            throw UnsupportedGeneration::forSchema($message);
         }
     }
 
@@ -882,7 +882,7 @@ final readonly class RequestCaseArbitrary
     private function scalar(mixed $value): string
     {
         return WireValue::of($value)
-            ?? throw new UnsupportedGeneration('Parameter values must be scalar, arrays, or objects with scalar properties');
+            ?? throw UnsupportedGeneration::forSchema('Parameter values must be scalar, arrays, or objects with scalar properties');
     }
 
 
