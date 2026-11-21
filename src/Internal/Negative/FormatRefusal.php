@@ -15,7 +15,7 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative;
  * (#103).
  *
  * `Unsupported` is the case worth surfacing. Someone who writes
- * `format: hostname` and sees the operation's negative phase running has no
+ * `format: phone` and sees the operation's negative phase running has no
  * way to learn that this particular constraint contributes nothing.
  *
  * @internal

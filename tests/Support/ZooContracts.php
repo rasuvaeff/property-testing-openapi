@@ -33,7 +33,7 @@ final class ZooContracts
         'tree.create', 'shipments.create',
         'composed.create', 'codes.create', 'nullableObjects.create', 'years.create', 'annotated.create',
         'parts.create', 'owners.create',
-        'prices.create', 'batches.create',
+        'prices.create', 'batches.create', 'hosts.create',
     ];
 
     /**
@@ -609,6 +609,29 @@ final class ZooContracts
                             'note' => ['type' => 'string', 'minLength' => 70],
                             'ids' => ['type' => 'array', 'minItems' => 18, 'items' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 9]],
                             'flags' => ['type' => 'object', 'minProperties' => 17, 'additionalProperties' => ['type' => 'boolean']],
+                        ],
+                    ]]]],
+                    'responses' => ['204' => []],
+                ]],
+                // The four formats the contract validates and the generator
+                // used to refuse (#168), on every wire they can travel.
+                '/hosts/{name}' => ['post' => [
+                    'operationId' => 'hosts.create',
+                    'parameters' => [
+                        ['name' => 'name', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'hostname']],
+                        ['name' => 'address', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'ipv6']],
+                        ['name' => 'X-At', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'time']],
+                        ['name' => 'ttl', 'in' => 'cookie', 'schema' => ['type' => 'string', 'format' => 'duration']],
+                    ],
+                    'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'required' => ['host', 'address', 'opens', 'period'],
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'host' => ['type' => 'string', 'format' => 'hostname'],
+                            'address' => ['type' => 'string', 'format' => 'ipv6'],
+                            'opens' => ['type' => 'string', 'format' => 'time'],
+                            'period' => ['type' => 'string', 'format' => 'duration'],
                         ],
                     ]]]],
                     'responses' => ['204' => []],

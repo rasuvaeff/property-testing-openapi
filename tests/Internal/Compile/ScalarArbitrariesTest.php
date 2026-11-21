@@ -7,7 +7,11 @@ namespace Rasuvaeff\PropertyTesting\OpenApi\Tests\Internal\Compile;
 use Rasuvaeff\OpenApiContract\SchemaCheck;
 use Rasuvaeff\OpenApiContract\SchemaDialect;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\SchemaFacts;
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\OpenApi\Internal\Negative\SchemaProbe;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\PropertyTesting\OpenApi\Internal\Compile\ScalarArbitraries;
 use Rasuvaeff\PropertyTesting\OpenApi\SchemaArbitraryCompiler;
 use Rasuvaeff\PropertyTesting\OpenApi\UnsupportedGeneration;
@@ -92,6 +96,87 @@ final class ScalarArbitrariesTest
         yield 'minLength past the budget' => [['type' => 'string', 'minLength' => 65], 65, 65];
         yield 'minLength past the budget with room declared' => [['type' => 'string', 'minLength' => 100, 'maxLength' => 120], 100, 100];
         yield 'a maximum past the budget is still capped' => [['type' => 'string', 'minLength' => 60, 'maxLength' => 120], 60, 64];
+    }
+
+    /**
+     * The four formats the contract validates and the generator used to
+     * refuse (#168): every value drawn is one the contract accepts, and each
+     * format is drawn often enough for that to mean something.
+     *
+     * @param array{format: string, value: mixed} $drawn
+     */
+    #[Property(runs: 400)]
+    public function everyValueOfANewFormatIsOneTheContractAccepts(array $drawn): void
+    {
+        $schema = ['type' => 'string', 'format' => $drawn['format']];
+
+        Classify::cover($drawn['format'] === 'hostname', 'hostname', 15.0);
+        Classify::cover($drawn['format'] === 'ipv6', 'ipv6', 15.0);
+        Classify::cover($drawn['format'] === 'time', 'time', 15.0);
+        Classify::cover($drawn['format'] === 'duration', 'duration', 15.0);
+        Assert::true(is_string($drawn['value']));
+        Assert::true((new SchemaCheck())->accepts($drawn['value'], $schema, SchemaDialect::OpenApi31), json_encode($drawn, JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function everyValueOfANewFormatIsOneTheContractAcceptsGenerators(): array
+    {
+        return ['drawn' => Gen::flatMap(
+            Gen::elements(['hostname', 'ipv6', 'time', 'duration']),
+            static fn(mixed $format): ArbitraryInterface => Gen::map(
+                (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format]),
+                static fn(mixed $value): array => ['format' => $format, 'value' => $value],
+            ),
+        )];
+    }
+
+    /**
+     * The length band each new format is generated in: a window inside it
+     * keeps the format, one outside it is refused at compile time.
+     */
+    #[DataProvider('newFormatBandProvider')]
+    public function aNewFormatStaysInsideItsLengthBand(string $format, int $shortest, int $longest): void
+    {
+        $lengths = array_map(static fn(mixed $value): int => is_string($value) ? strlen($value) : -1, Gen::sample((new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format]), count: 300, seed: 6));
+
+        Assert::true(min($lengths) >= $shortest && max($lengths) <= $longest, json_encode([min($lengths), max($lengths)], JSON_THROW_ON_ERROR));
+    }
+
+    public static function newFormatBandProvider(): iterable
+    {
+        yield 'hostname' => ['hostname', 1, 32];
+        yield 'ipv6' => ['ipv6', 15, 39];
+        yield 'time' => ['time', 9, 14];
+        yield 'duration' => ['duration', 8, 11];
+    }
+
+    #[DataProvider('newFormatBandProvider')]
+    public function aNewFormatOutsideItsLengthBandIsRefused(string $format, int $shortest, int $longest): void
+    {
+        Expect::exception(UnsupportedGeneration::class)->withMessage(sprintf('Unsupported OpenAPI schema generation: format "%s" cannot satisfy the length window', $format));
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format, 'minLength' => $longest + 1]);
+    }
+
+    #[DataProvider('newFormatBandProvider')]
+    public function aNewFormatBelowItsLengthBandIsRefused(string $format, int $shortest): void
+    {
+        if ($shortest === 1) {
+            // A hostname is never shorter than one character: no window
+            // under its band is a non-empty one.
+            Assert::same($shortest, 1);
+
+            return;
+        }
+        Expect::exception(UnsupportedGeneration::class)->withMessage(sprintf('Unsupported OpenAPI schema generation: format "%s" cannot satisfy the length window', $format));
+
+        (new SchemaArbitraryCompiler())->compile(['type' => 'string', 'format' => $format, 'maxLength' => $shortest - 1]);
+    }
+
+    #[DataProvider('newFormatBandProvider')]
+    public function theWitnessOfANewFormatIsOneTheContractRejects(string $format): void
+    {
+        Assert::false((new SchemaCheck())->accepts(SchemaProbe::FORMAT_WITNESSES[$format], ['type' => 'string', 'format' => $format], SchemaDialect::OpenApi31));
     }
 
     public function aFormatStringHonoursItsLengthWindow(): void

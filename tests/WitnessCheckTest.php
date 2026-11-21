@@ -109,7 +109,7 @@ final class WitnessCheckTest
     {
         yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
         yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], FormatRefusal::Unsupported];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Unsupported];
         yield 'url is deliberately unsupported' => [['type' => 'string', 'format' => 'url'], FormatRefusal::Unsupported];
         yield 'supported format on a non-string' => [['type' => 'integer', 'format' => 'int64'], FormatRefusal::Unsupported];
         yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
@@ -126,14 +126,14 @@ final class WitnessCheckTest
     public function anUnsupportedFormatIsNamedInTheRefusal(): void
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
-            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'hostname'], 'specPointer' => '#/h'],
-            ['name' => 'when', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'duration'], 'specPointer' => '#/w'],
+            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'phone'], 'specPointer' => '#/h'],
+            ['name' => 'when', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'byte'], 'specPointer' => '#/w'],
         ]);
 
         try {
             (new ParameterTargets())->formatMismatch($operation);
         } catch (UnsupportedGeneration $exception) {
-            Assert::string($exception->getMessage())->contains('no witness is held for format "hostname", "duration"');
+            Assert::string($exception->getMessage())->contains('no witness is held for format "phone", "byte"');
 
             return;
         }
@@ -148,7 +148,7 @@ final class WitnessCheckTest
     public function onlyAFormatRefusalNamesFormats(): void
     {
         $operation = new Operation(key: 'op', operationId: 'op', method: 'GET', path: '/op', parameters: [
-            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'hostname'], 'specPointer' => '#/h'],
+            ['name' => 'host', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'allowReserved' => false, 'schema' => ['type' => 'string', 'format' => 'phone'], 'specPointer' => '#/h'],
         ]);
 
         try {

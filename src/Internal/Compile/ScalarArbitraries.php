@@ -47,6 +47,10 @@ final readonly class ScalarArbitraries
         'url' => [12, 55],
         'date-time' => [29, 29],
         'date' => [10, 10],
+        'hostname' => [1, 32],
+        'ipv6' => [15, 39],
+        'time' => [9, 14],
+        'duration' => [8, 11],
     ];
 
     /**
@@ -146,6 +150,10 @@ final readonly class ScalarArbitraries
 
                 return $value->format('Y-m-d');
             }),
+            'hostname' => $this->hostname(),
+            'ipv6' => $this->ipv6(),
+            'time' => $this->time(),
+            'duration' => $this->duration(),
             default => throw UnsupportedGeneration::forSchema(sprintf('format "%s" is outside the supported format subset', $format)),
         };
         if ($pattern !== null) {
@@ -166,6 +174,72 @@ final readonly class ScalarArbitraries
         }
 
         return $arbitrary;
+    }
+
+    /**
+     * One to three dot-separated labels, each a letter followed by up to nine
+     * letters or digits: a name every reader of RFC 1123 accepts, and one the
+     * contract's `hostname` check accepts (#168).
+     *
+     * @return ArbitraryInterface<string>
+     */
+    private function hostname(): ArbitraryInterface
+    {
+        /** @var ArbitraryInterface<string> $hostname */
+        $hostname = Gen::stringMatching('^[a-z][a-z0-9]{0,9}(\\.[a-z][a-z0-9]{0,9}){0,2}$');
+
+        return $hostname;
+    }
+
+    /**
+     * Eight groups of one to four lowercase hex digits, uncompressed: the
+     * full RFC 4291 form, with no `::` for a reader to disagree about.
+     *
+     * @return ArbitraryInterface<string>
+     */
+    private function ipv6(): ArbitraryInterface
+    {
+        $group = Gen::intBetween(0, 0xffff);
+
+        return Gen::map(
+            Gen::tuple($group, $group, $group, $group, $group, $group, $group, $group),
+            static fn(mixed $groups): string => implode(':', array_map(static fn(mixed $group): string => dechex((int) $group), (array) $groups)),
+        );
+    }
+
+    /**
+     * An RFC 3339 `full-time`: hours, minutes and seconds with a `Z` or a
+     * numeric offset. A leap second is left out — whether one is valid
+     * depends on a date the value does not carry.
+     *
+     * @return ArbitraryInterface<string>
+     */
+    private function time(): ArbitraryInterface
+    {
+        return Gen::map(
+            Gen::tuple(Gen::intBetween(0, 23), Gen::intBetween(0, 59), Gen::intBetween(0, 59), Gen::elements(['Z', '+01:00', '-08:30'])),
+            static function (mixed $parts): string {
+                /** @var array{int, int, int, string} $parts */
+                return sprintf('%02d:%02d:%02d%s', $parts[0], $parts[1], $parts[2], $parts[3]);
+            },
+        );
+    }
+
+    /**
+     * An ISO 8601 duration of days, hours and minutes (`P3DT4H5M`): the form
+     * both RFC 3339 appendix A and the contract's check read the same way.
+     *
+     * @return ArbitraryInterface<string>
+     */
+    private function duration(): ArbitraryInterface
+    {
+        return Gen::map(
+            Gen::tuple(Gen::intBetween(1, 30), Gen::intBetween(0, 23), Gen::intBetween(0, 59)),
+            static function (mixed $parts): string {
+                /** @var array{int, int, int} $parts */
+                return sprintf('P%dDT%dH%dM', $parts[0], $parts[1], $parts[2]);
+            },
+        );
     }
 
     /**

@@ -35,6 +35,10 @@ final readonly class SchemaProbe
         'uri-reference' => '%',
         'date' => 'not-a-date',
         'date-time' => 'not-a-date-time',
+        'hostname' => '-not-a-hostname',
+        'ipv6' => 'not-an-ipv6',
+        'time' => 'not-a-time',
+        'duration' => 'not-a-duration',
     ];
 
     /**

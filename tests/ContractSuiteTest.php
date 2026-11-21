@@ -729,7 +729,7 @@ final class ContractSuiteTest
             'info' => ['title' => 'Hosts', 'version' => '1.0.0'],
             'paths' => ['/hosts' => ['get' => [
                 'operationId' => 'hosts.get',
-                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'hostname']]],
+                'parameters' => [['name' => 'host', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'phone']]],
                 'responses' => ['204' => ['description' => 'ok']],
             ]]],
         ]);
@@ -739,7 +739,7 @@ final class ContractSuiteTest
         $format = array_values(array_filter($coverage['hosts.get']['skipped'], static fn(array $entry): bool => $entry['kind'] === 'format' && $entry['side'] === 'parameter'));
 
         Assert::same(count($format), 1);
-        Assert::string($format[0]['reason'])->contains('no witness is held for format "hostname"');
+        Assert::string($format[0]['reason'])->contains('no witness is held for format "phone"');
     }
 
     /**

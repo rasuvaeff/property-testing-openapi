@@ -120,7 +120,7 @@ final class SchemaProbeTest
         yield 'date' => [['type' => 'string', 'format' => 'date'], ['not-a-date']];
         yield 'date-time' => [['type' => 'string', 'format' => 'date-time'], ['not-a-date-time']];
         yield 'a length bound no longer refuses' => [['type' => 'string', 'format' => 'email', 'maxLength' => 255], ['not-an-email']];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], []];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], []];
         yield 'url is deliberately unsupported' => [['type' => 'string', 'format' => 'url'], []];
         yield 'no format' => [['type' => 'string'], []];
         yield 'non-string format value' => [['type' => 'string', 'format' => ['email']], []];
@@ -184,7 +184,7 @@ final class SchemaProbeTest
 
     public static function unsupportedFormatProvider(): iterable
     {
-        yield 'unsupported' => [['type' => 'string', 'format' => 'hostname'], 'hostname'];
+        yield 'unsupported' => [['type' => 'string', 'format' => 'phone'], 'phone'];
         yield 'supported' => [['type' => 'string', 'format' => 'email'], null];
         yield 'none declared' => [['type' => 'string'], null];
         yield 'empty' => [['type' => 'string', 'format' => ''], null];
@@ -201,7 +201,7 @@ final class SchemaProbeTest
     {
         yield 'no format declared' => [['type' => 'string', 'maxLength' => 3], FormatRefusal::NotDeclared];
         yield 'format is not a string' => [['type' => 'string', 'format' => ['email']], FormatRefusal::NotDeclared];
-        yield 'unsupported format' => [['type' => 'string', 'format' => 'hostname'], FormatRefusal::Unsupported];
+        yield 'unsupported format' => [['type' => 'string', 'format' => 'phone'], FormatRefusal::Unsupported];
         yield 'supported format on a number type' => [['type' => 'integer', 'format' => 'date'], FormatRefusal::NotAString];
         yield 'supported format without a type' => [['format' => 'date'], FormatRefusal::NotAString];
         yield 'no refusal' => [['type' => 'string', 'format' => 'email'], null];
