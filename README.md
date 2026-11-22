@@ -22,7 +22,7 @@ before it reaches a transport.
 
 ## Requirements
 
-- PHP 8.3 – 8.5
+- PHP 8.3 – 8.6
 - `ext-mbstring`
 - `rasuvaeff/openapi-contract` ^0.18 and `rasuvaeff/property-testing-core` ^1.0
 - `psr/http-message`, `psr/http-factory` and `psr/http-server-handler`
