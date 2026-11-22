@@ -22,7 +22,7 @@ styles и JSON, form-urlencoded или multipart request body, после чег
 
 ## Требования
 
-- PHP 8.3 – 8.5
+- PHP 8.3 – 8.6
 - `ext-mbstring`
 - `rasuvaeff/openapi-contract` ^0.18 и `rasuvaeff/property-testing-core` ^1.0
 - реализации `psr/http-message`, `psr/http-factory` и
