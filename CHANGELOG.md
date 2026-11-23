@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.23.0 — 2026-11-23
+
+- **Changed:** requires `rasuvaeff/openapi-contract` `^0.19`. Draws are unchanged;
+  a document whose `$ref`s are percent-encoded is now read instead of refused.
+
 ## 0.22.1 — 2026-11-22
 
 - **Changed:** PHP 8.6 is supported: the `php` constraint is widened to
